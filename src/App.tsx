@@ -1,0 +1,263 @@
+import { useEffect, useState, useRef, useCallback } from 'react'
+import { TopBar } from './components/layout/TopBar'
+import { LeftLibraryPanel } from './components/layout/LeftLibraryPanel'
+import { RightInspector } from './components/layout/RightInspector'
+import { PlanetCanvas } from './components/planet/PlanetCanvas'
+import { PlanetRack } from './components/planet/PlanetRack'
+import { DroneLayer } from './components/planet/DroneLayer'
+import { GranularLayer } from './components/planet/GranularLayer'
+import { FMDroneLayer } from './components/planet/FMDroneLayer'
+import { NoisePadLayer } from './components/planet/NoisePadLayer'
+import { SamplerLayer } from './components/planet/SamplerLayer'
+import { OneShotLayer } from './components/planet/OneShotLayer'
+import { SamplerInstrumentPanel } from './components/sampler/SamplerInstrumentPanel'
+import { OneShotSamplerPanel } from './components/sampler/OneShotSamplerPanel'
+import { ChordGeometryLab } from './components/chord/ChordGeometryLab'
+import { DevRouteView } from './components/dev/DevRouteView'
+import type { PlanetTool } from './components/planet/PlanetCanvas'
+import { usePlanetStore } from './store/planetStore'
+import { useCanvasSettingsStore } from './store/canvasSettingsStore'
+import { loadBuiltinSamples } from './lib/loadBuiltinSamples'
+import { initMidi } from './audio/midiManager'
+import { initToneContext } from './audio/audioLatencySettings'
+
+// Apply saved audio latency setting before any Tone.start() call
+initToneContext()
+
+type AppMode = 'planet' | 'chord-lab' | 'dev'
+
+const RACK_MIN = 120
+const RACK_MAX = 340
+const RACK_DEFAULT = 220
+
+export default function App() {
+  const [appMode, setAppMode] = useState<AppMode>('planet')
+  const [planetTool, setPlanetTool] = useState<PlanetTool>('select')
+  const simpleTheme  = usePlanetStore(s => s.simParams.simpleTheme)
+  const probeMass    = usePlanetStore(s => s.simParams.probeMass)
+  const updateSimParams = usePlanetStore(s => s.updateSimParams)
+  const nextPlanetDefaults = usePlanetStore(s => s.nextPlanetDefaults)
+  const nextSunDefaults    = usePlanetStore(s => s.nextSunDefaults)
+  const updateNextPlanetDefaults = usePlanetStore(s => s.updateNextPlanetDefaults)
+  const updateNextSunDefaults    = usePlanetStore(s => s.updateNextSunDefaults)
+  const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
+  const [leftCollapsed, setLeftCollapsed] = useState(false)
+  const [rightCollapsed, setRightCollapsed] = useState(false)
+  const [rackCollapsed, setRackCollapsed] = useState(false)
+  const [rackH, setRackH] = useState(RACK_DEFAULT)
+  const [samplerPanel, setSamplerPanel]   = useState<{ bodyId: string; slotKey: string } | null>(null)
+  const [oneShotPanel, setOneShotPanel]   = useState<{ bodyId: string; slotKey: string } | null>(null)
+  const rackDragging = useRef(false)
+  const rackStartY   = useRef(0)
+  const rackStartH   = useRef(RACK_DEFAULT)
+
+  useEffect(() => {
+    loadBuiltinSamples()
+    initMidi()
+  }, [])
+
+  const onRackDividerMouseDown = useCallback((e: React.MouseEvent) => {
+    rackDragging.current = true
+    rackStartY.current   = e.clientY
+    rackStartH.current   = rackH
+
+    function onMove(me: MouseEvent) {
+      if (!rackDragging.current) return
+      const delta = rackStartY.current - me.clientY
+      setRackH(Math.max(RACK_MIN, Math.min(RACK_MAX, rackStartH.current + delta)))
+    }
+    function onUp() {
+      rackDragging.current = false
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup',   onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup',   onUp)
+  }, [rackH])
+
+  return (
+    <div style={{
+      width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      filter: monochromeMode ? 'grayscale(1)' : undefined,
+    }}>
+      <TopBar appMode={appMode} onSetAppMode={setAppMode} />
+      <DroneLayer />
+      <GranularLayer />
+      <FMDroneLayer />
+      <NoisePadLayer />
+      <SamplerLayer />
+      <OneShotLayer />
+
+      {appMode === 'chord-lab' ? (
+        /* ── Chord Geometry Lab ─────────────────────────────────────────── */
+        <ChordGeometryLab />
+      ) : appMode === 'dev' ? (
+        /* ── Dev Mode: Audio Routing ────────────────────────────────────── */
+        <DevRouteView />
+      ) : (
+        /* ── Planet mode ────────────────────────────────────────────────── */
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+          {/* Upper area: left panel + canvas + mixer */}
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+            <LeftLibraryPanel
+              collapsed={leftCollapsed}
+              onToggleCollapsed={() => setLeftCollapsed(v => !v)}
+            />
+
+            {/* Canvas area */}
+            <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#0a0a0f' }}>
+              <PlanetCanvas tool={planetTool} onSelectTool={() => setPlanetTool('select')} />
+
+              {/* Planet toolbar — top-left */}
+              <div style={{
+                position: 'absolute', top: 8, left: 8,
+                display: 'flex', gap: 4,
+                background: simpleTheme ? 'rgba(255,255,255,0.90)' : 'rgba(10,10,20,0.80)',
+                borderRadius: 8, padding: 5,
+                border: simpleTheme ? '0.5px solid rgba(0,0,0,0.10)' : '0.5px solid rgba(255,255,255,0.10)',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                backdropFilter: 'blur(4px)',
+              }}>
+                {([
+                  ['select',     'Select'],
+                  ['add-sun',    '☀ Sun'],
+                  ['add-planet', '● Planet'],
+                  ['probe',      '⊕ Probe'],
+                ] as [PlanetTool, string][]).map(([id, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => setPlanetTool(id)}
+                    style={{
+                      fontSize: 10, fontWeight: 600, padding: '3px 9px',
+                      borderRadius: 5,
+                      border: simpleTheme
+                        ? '0.5px solid rgba(0,0,0,0.12)'
+                        : '0.5px solid rgba(255,255,255,0.15)',
+                      background: planetTool === id ? 'rgba(139,92,246,0.22)' : 'transparent',
+                      color: planetTool === id
+                        ? '#a78bfa'
+                        : simpleTheme ? '#444' : 'rgba(255,255,255,0.55)',
+                      cursor: 'pointer', fontFamily: 'inherit',
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+                {/* Next body mass — always visible; edits planet or star mass depending on active tool */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 3,
+                  borderLeft: simpleTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
+                  paddingLeft: 6, marginLeft: 2,
+                  opacity: (planetTool === 'add-planet' || planetTool === 'add-sun') ? 1 : 0.45,
+                }}>
+                  <span style={{ fontSize: 9, color: simpleTheme ? '#888' : 'rgba(255,255,255,0.45)', fontWeight: 600 }}>
+                    {planetTool === 'add-sun' ? '☀' : '●'} m=
+                  </span>
+                  <input
+                    type="number"
+                    value={planetTool === 'add-sun' ? nextSunDefaults.mass : nextPlanetDefaults.mass}
+                    min={1}
+                    step={1}
+                    onChange={e => {
+                      const v = Math.max(1, Math.round(Number(e.target.value)))
+                      if (planetTool === 'add-sun') updateNextSunDefaults({ mass: v })
+                      else updateNextPlanetDefaults({ mass: v })
+                    }}
+                    style={{
+                      width: 52, fontSize: 10, fontFamily: 'monospace', fontWeight: 600,
+                      padding: '2px 4px', borderRadius: 4,
+                      border: simpleTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
+                      background: planetTool === 'add-sun' ? 'rgba(245,158,11,0.12)' : 'rgba(96,165,250,0.12)',
+                      color: planetTool === 'add-sun' ? '#f59e0b' : '#60a5fa',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+                {/* Probe mass — only visible when probe tool is active */}
+                {planetTool === 'probe' && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 3,
+                    borderLeft: simpleTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
+                    paddingLeft: 6, marginLeft: 2,
+                  }}>
+                    <span style={{ fontSize: 9, color: simpleTheme ? '#888' : 'rgba(255,255,255,0.45)', fontWeight: 600 }}>m=</span>
+                    <input
+                      type="number"
+                      value={probeMass}
+                      min={0}
+                      step={10}
+                      onChange={e => updateSimParams({ probeMass: Math.max(0, Number(e.target.value)) })}
+                      style={{
+                        width: 46, fontSize: 10, fontFamily: 'monospace', fontWeight: 600,
+                        padding: '2px 4px', borderRadius: 4,
+                        border: simpleTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
+                        background: 'rgba(139,92,246,0.12)',
+                        color: '#a78bfa',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Mixer panel (right) */}
+            <RightInspector
+              mode="planet"
+              planetTool={planetTool}
+              collapsed={rightCollapsed}
+              onToggleCollapsed={() => setRightCollapsed(v => !v)}
+            />
+
+            {/* Sampler instrument editor panel — temporarily hidden */}
+            {false && samplerPanel && (
+              <SamplerInstrumentPanel
+                bodyId={samplerPanel.bodyId}
+                slotKey={samplerPanel.slotKey}
+                onClose={() => setSamplerPanel(null)}
+              />
+            )}
+
+            {/* One-shot sampler panel */}
+            {oneShotPanel && (
+              <OneShotSamplerPanel
+                bodyId={oneShotPanel.bodyId}
+                slotKey={oneShotPanel.slotKey}
+                onClose={() => setOneShotPanel(null)}
+              />
+            )}
+          </div>
+
+          {/* Rack divider */}
+          {!rackCollapsed && (
+            <div
+              onMouseDown={onRackDividerMouseDown}
+              style={{
+                height: 4, flexShrink: 0,
+                background: simpleTheme ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.75)',
+                cursor: 'ns-resize',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <div style={{ display: 'flex', gap: 3 }}>
+                {[0,1,2].map(i => (
+                  <div key={i} style={{ width: 14, height: 1, background: simpleTheme ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.06)', borderRadius: 1 }} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Planet Rack — full width at bottom */}
+          <PlanetRack
+            height={rackH}
+            collapsed={rackCollapsed}
+            onToggleCollapsed={() => setRackCollapsed(v => !v)}
+            onExtendSampler={(bId, sk) => setSamplerPanel({ bodyId: bId, slotKey: sk })}
+            onExtendOneShot={(bId, sk) => setOneShotPanel({ bodyId: bId, slotKey: sk })}
+            planetTool={planetTool}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
