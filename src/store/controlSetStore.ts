@@ -100,6 +100,19 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
   },
   // ── Effect ─────────────────────────────────────────────────────────────────
   {
+    id: 'effect-empty',
+    name: 'Empty',
+    icon: '∅',
+    color: '#6b7280',
+    category: 'effect',
+    description:
+      'グローバルエフェクトを上書きするための空スロット。\n' +
+      'このボディにだけエフェクトを無効にしたいときに使う。',
+    params: {
+      effectorType: 'none',
+    },
+  },
+  {
     id: 'effect-reverb',
     name: 'Reverb',
     icon: '〜',
@@ -110,6 +123,7 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       '範囲内の他の天体の音にリバーブがかかる。',
     params: {
       effectorType: 'reverb',
+      reverbMode:   'freeverb',      // lightweight default; switch to 'convolution' for HQ
       effectorDistance: 200,
       effectorMaxWet: 0.7,
       effectorDecay: 2.5,
@@ -265,6 +279,21 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
   },
   // ── Instrument ─────────────────────────────────────────────────────────────
   {
+    id: 'instrument-empty',
+    name: 'Empty',
+    icon: '∅',
+    color: '#6b7280',
+    category: 'instrument',
+    description:
+      'グローバルインストゥルメントを上書きするための空スロット。\n' +
+      'このボディにだけインストゥルメントを無効にしたいときに使う。',
+    params: {
+      oscSynthType:   'off',
+      ambientOscType: 'off',
+      oneShotType:    'off',
+    },
+  },
+  {
     id: 'instrument-osc-synth',
     name: 'Osc Synth',
     icon: '∿',
@@ -278,6 +307,8 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       oscSynthType:            'osc-synth',
       oscSynthWaveform:        'sine',
       oscSynthAttack:          0.05,
+      oscSynthDecay:           0.3,
+      oscSynthSustain:         0.8,
       oscSynthRelease:         1.5,
       oscSynthFilterCutoff:    2000,
       oscSynthFilterResonance: 0.5,
@@ -286,6 +317,56 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       oscSynthLfoRate:         1.0,
       oscSynthLfoDepth:        0.3,
       oscSynthLfoWaveform:     'sine',
+    },
+  },
+  {
+    id: 'instrument-osc-synth-orbit',
+    name: 'Osc Synth Orbit',
+    icon: '⊙',
+    color: '#c084fc',
+    category: 'instrument',
+    description:
+      'ADSR・LFO の全パラメータを軌道情報から自動計算するOscSynth。\n' +
+      'Attack/Release ← 公転周期 (T)  /  Decay・LFO ← 離心率 (ε)\n' +
+      'Sustain ← 距離 (r)  /  Filter Cutoff ← 速度 (v)\n' +
+      '各 rate はラックの orbit map から個別に調整できます。',
+    params: {
+      oscSynthType:            'osc-synth',
+      oscSynthWaveform:        'sine',
+      // Manual fallback values (used when orbit stats unavailable)
+      oscSynthAttack:          0.5,
+      oscSynthDecay:           2.0,
+      oscSynthSustain:         0.8,
+      oscSynthRelease:         3.0,
+      oscSynthFilterCutoff:    1200,
+      oscSynthFilterResonance: 0.5,
+      oscSynthLevel:           0.7,
+      oscSynthLfoTarget:       'filter',
+      oscSynthLfoRate:         2.0,
+      oscSynthLfoDepth:        0.5,
+      oscSynthLfoWaveform:     'sine',
+      // ── Orbit sources ────────────────────────────────────────────────────
+      // Attack  ← period  (T 0.3–25s × 0.06 → A 0.02–1.5s)
+      oscSynthAttackSource:    'period',
+      oscSynthAttackRate:      0.06,
+      // Decay   ← eccentricity  (ε 0–0.95 × 8.0 → D 0–7.6s)
+      oscSynthDecaySource:     'eccentricity',
+      oscSynthDecayRate:       8.0,
+      // Sustain ← distance  (r ~280 × 0.003 → S ~0.84, clamped 0–1)
+      oscSynthSustainSource:   'distance',
+      oscSynthSustainRate:     0.003,
+      // Release ← period  (T 0.3–25s × 0.2 → R 0.06–5s)
+      oscSynthReleaseSource:   'period',
+      oscSynthReleaseRate:     0.2,
+      // Cutoff  ← velocity  (v ~1.89 × 600 → ~1134 Hz)
+      oscSynthCutoffSource:    'velocity',
+      oscSynthCutoffRate:      600,
+      // LFO Rate ← eccentricity  (ε 0–0.95 × 5.0 → 0–4.75 Hz)
+      oscSynthLfoRateSource:   'eccentricity',
+      oscSynthLfoRateRate:     5.0,
+      // LFO Depth ← eccentricity  (ε 0–0.95 × 0.8 → depth 0–0.76)
+      oscSynthLfoDepthSource:  'eccentricity',
+      oscSynthLfoDepthRate:    0.8,
     },
   },
   {
@@ -373,7 +454,8 @@ export const MAX_EFFECTS  = 6
 export const MAX_TRIGGERS = 4
 
 export const DEFAULT_BODY_RACKS: Record<string, BodyRackOverride> = {
-  sun: { instrument: null },
+  sun:       { triggers: ['trigger-empty'], instrument: 'instrument-empty', effects: ['effect-empty'] },
+  perturber: { triggers: ['trigger-empty'], instrument: 'instrument-osc-synth-orbit', effects: ['effect-empty'] },
 }
 
 /** Blank rack — used when clearing. Empty trigger list = no trigger. */

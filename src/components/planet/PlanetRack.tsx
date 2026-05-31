@@ -49,6 +49,7 @@ const PARAM_CFG: Record<string, ParamCfg> = {
   standpointMaxDist:     { type: 'number',  label: 'sp dist',   step: 50,   min: 10 },
   standpointMinVol:      { type: 'number',  label: 'sp vol',    step: 0.05, min: 0,   max: 1 },
   effectorType:          { type: 'select',  label: 'fx type',   options: ['none', 'reverb', 'delay', 'distortion', 'chorus'] },
+  reverbMode:            { type: 'select',  label: 'rvb mode',  options: ['convolution', 'freeverb'], optionLabels: ['Conv (HQ)', 'Freeverb (lite)'] },
   effectorDistance:      { type: 'number',  label: 'fx dist',   step: 20,   min: 10 },
   effectorMaxWet:        { type: 'number',  label: 'fx wet',    step: 0.05, min: 0,   max: 1 },
   effectorDecay:         { type: 'number',  label: 'decay',     step: 0.5,  min: 0.1, max: 15 },
@@ -109,14 +110,16 @@ const PARAM_CFG: Record<string, ParamCfg> = {
   // Osc Synth params
   oscSynthType:            { type: 'select', label: 'type',    options: ['off', 'osc-synth'], optionLabels: ['— off', 'Osc Synth'] },
   oscSynthWaveform:        { type: 'select', label: 'wave',    options: ['sine', 'triangle', 'sawtooth', 'square'], optionLabels: ['Sine', 'Triangle', 'Saw', 'Square'] },
-  oscSynthAttack:          { type: 'number', label: 'attack',  step: 0.01, min: 0.001, max: 20 },
-  oscSynthRelease:         { type: 'number', label: 'release', step: 0.1,  min: 0.01,  max: 30 },
-  oscSynthFilterCutoff:    { type: 'number', label: 'cutoff',  step: 50,   min: 80,    max: 12000 },
-  oscSynthFilterResonance: { type: 'number', label: 'Q',       step: 0.05, min: 0.01,  max: 15 },
-  oscSynthLevel:           { type: 'number', label: 'level',   step: 0.05, min: 0,     max: 1 },
+  oscSynthAttack:          { type: 'number', label: 'attack',  step: 0.01,  min: 0.001, max: 20 },
+  oscSynthDecay:           { type: 'number', label: 'decay',   step: 0.01,  min: 0.01,  max: 20 },
+  oscSynthSustain:         { type: 'number', label: 'sustain', step: 0.01,  min: 0,     max: 1 },
+  oscSynthRelease:         { type: 'number', label: 'release', step: 0.1,   min: 0.01,  max: 30 },
+  oscSynthFilterCutoff:    { type: 'number', label: 'cutoff',  step: 50,    min: 80,    max: 12000 },
+  oscSynthFilterResonance: { type: 'number', label: 'Q',       step: 0.05,  min: 0.01,  max: 15 },
+  oscSynthLevel:           { type: 'number', label: 'level',   step: 0.05,  min: 0,     max: 1 },
   oscSynthLfoTarget:       { type: 'select', label: 'lfo →',   options: ['off', 'pitch', 'filter', 'amplitude'], optionLabels: ['Off', 'Pitch', 'Filter', 'Amp'] },
-  oscSynthLfoRate:         { type: 'number', label: 'lfo rate', step: 0.01, min: 0.01, max: 20 },
-  oscSynthLfoDepth:        { type: 'number', label: 'lfo depth', step: 0.01, min: 0,   max: 1 },
+  oscSynthLfoRate:         { type: 'number', label: 'lfo rate',  step: 0.01, min: 0.01, max: 20 },
+  oscSynthLfoDepth:        { type: 'number', label: 'lfo depth', step: 0.01, min: 0,    max: 1 },
   oscSynthLfoWaveform:     { type: 'select', label: 'lfo wave',  options: ['sine', 'triangle', 'sawtooth', 'square'], optionLabels: ['Sine', 'Triangle', 'Saw', 'Square'] },
   // Ambient Oscillator params
   ambientOscType:            { type: 'select', label: 'type',    options: ['off', 'ambient-osc'], optionLabels: ['— off', 'Ambient Osc'] },
@@ -192,7 +195,8 @@ const SAMPLER_2COL_ORDER = [
 
 const OSC_SYNTH_2COL_KEYS = new Set([
   'oscSynthWaveform', 'oscSynthLevel',
-  'oscSynthAttack', 'oscSynthRelease',
+  'oscSynthAttack',   'oscSynthDecay',
+  'oscSynthSustain',  'oscSynthRelease',
   'oscSynthFilterCutoff', 'oscSynthFilterResonance',
   'oscSynthLfoTarget', 'oscSynthLfoWaveform',
   'oscSynthLfoRate', 'oscSynthLfoDepth',
@@ -200,8 +204,10 @@ const OSC_SYNTH_2COL_KEYS = new Set([
 const OSC_SYNTH_2COL_LABELS: Record<string, string> = {
   oscSynthWaveform:        'wave',
   oscSynthLevel:           'level',
-  oscSynthAttack:          'atk',
-  oscSynthRelease:         'rel',
+  oscSynthAttack:          'A',
+  oscSynthDecay:           'D',
+  oscSynthSustain:         'S',
+  oscSynthRelease:         'R',
   oscSynthFilterCutoff:    'cutoff',
   oscSynthFilterResonance: 'Q',
   oscSynthLfoTarget:       'lfo→',
@@ -211,11 +217,118 @@ const OSC_SYNTH_2COL_LABELS: Record<string, string> = {
 }
 const OSC_SYNTH_2COL_ORDER = [
   'oscSynthWaveform',        'oscSynthLevel',
-  'oscSynthAttack',          'oscSynthRelease',
+  'oscSynthAttack',          'oscSynthDecay',
+  'oscSynthSustain',         'oscSynthRelease',
   'oscSynthFilterCutoff',    'oscSynthFilterResonance',
   'oscSynthLfoTarget',       'oscSynthLfoWaveform',
   'oscSynthLfoRate',         'oscSynthLfoDepth',
 ]
+
+// ── OscSynth Orbit: 2-col grid for non-orbit params only ─────────────────────
+
+const OSC_SYNTH_ORBIT_2COL_ORDER = [
+  'oscSynthWaveform',        'oscSynthLevel',
+  'oscSynthLfoTarget',       'oscSynthLfoWaveform',
+  'oscSynthFilterResonance', '',
+]
+
+// ── OscSynth orbit-map entries ────────────────────────────────────────────────
+
+type OscOrbitEntry = {
+  key: string; label: string
+  srcKey: string; rateKey: string
+  dfltSrc: string; dfltRate: number
+  min: number; max: number
+  unit: string; precision: number
+}
+
+const OSC_ORBIT_MAP_ENTRIES: OscOrbitEntry[] = [
+  { key: 'oscSynthAttack',       label: 'A',   srcKey: 'oscSynthAttackSource',   rateKey: 'oscSynthAttackRate',   dfltSrc: 'period',       dfltRate: 0.06,  min: 0.001, max: 20,    unit: 's',  precision: 3 },
+  { key: 'oscSynthDecay',        label: 'D',   srcKey: 'oscSynthDecaySource',    rateKey: 'oscSynthDecayRate',    dfltSrc: 'eccentricity', dfltRate: 8.0,   min: 0.01,  max: 20,    unit: 's',  precision: 3 },
+  { key: 'oscSynthSustain',      label: 'S',   srcKey: 'oscSynthSustainSource',  rateKey: 'oscSynthSustainRate',  dfltSrc: 'distance',     dfltRate: 0.003, min: 0,     max: 1,     unit: '',   precision: 2 },
+  { key: 'oscSynthRelease',      label: 'R',   srcKey: 'oscSynthReleaseSource',  rateKey: 'oscSynthReleaseRate',  dfltSrc: 'period',       dfltRate: 0.2,   min: 0.01,  max: 30,    unit: 's',  precision: 3 },
+  { key: 'oscSynthFilterCutoff', label: 'cut', srcKey: 'oscSynthCutoffSource',   rateKey: 'oscSynthCutoffRate',   dfltSrc: 'velocity',     dfltRate: 600,   min: 80,    max: 12000, unit: 'Hz', precision: 0 },
+  { key: 'oscSynthLfoRate',      label: 'lfR', srcKey: 'oscSynthLfoRateSource',  rateKey: 'oscSynthLfoRateRate',  dfltSrc: 'eccentricity', dfltRate: 5.0,   min: 0.01,  max: 20,    unit: 'Hz', precision: 2 },
+  { key: 'oscSynthLfoDepth',     label: 'lfD', srcKey: 'oscSynthLfoDepthSource', rateKey: 'oscSynthLfoDepthRate', dfltSrc: 'eccentricity', dfltRate: 0.8,   min: 0,     max: 1,     unit: '',   precision: 2 },
+]
+
+const OSC_SRC_ABBREV: Record<string, string> = {
+  manual: '—', period: 'T', eccentricity: 'ε', distance: 'r', velocity: 'v', bound: 'B',
+}
+
+// ── OscScope: mini oscilloscope for Osc Synth Orbit ──────────────────────────
+
+function OscScope({ bodyId, accent }: { bodyId: string | null; accent: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx2d = canvas.getContext('2d')
+    if (!ctx2d) return
+
+    const buf = new Uint8Array(256)
+    let raf: number
+
+    const draw = () => {
+      const engine   = bodyId ? getBodyOscSynthEngine(bodyId) : null
+      const analyser = engine?.analyserNode ?? null
+      const w = canvas.width
+      const h = canvas.height
+
+      ctx2d.clearRect(0, 0, w, h)
+
+      if (analyser && engine?.isActive) {
+        analyser.getByteTimeDomainData(buf)
+        const len = buf.length
+        ctx2d.beginPath()
+        ctx2d.strokeStyle = accent
+        ctx2d.lineWidth   = 1.2
+        ctx2d.globalAlpha = 0.9
+        for (let i = 0; i < len; i++) {
+          const x = (i / (len - 1)) * w
+          const y = ((buf[i] - 128) / 128) * (h * 0.42) + h / 2
+          if (i === 0) ctx2d.moveTo(x, y)
+          else         ctx2d.lineTo(x, y)
+        }
+        ctx2d.stroke()
+      } else {
+        // Idle: flat center line
+        ctx2d.beginPath()
+        ctx2d.strokeStyle = accent
+        ctx2d.lineWidth   = 0.8
+        ctx2d.globalAlpha = 0.2
+        ctx2d.moveTo(0, h / 2)
+        ctx2d.lineTo(w, h / 2)
+        ctx2d.stroke()
+      }
+      ctx2d.globalAlpha = 1
+
+      raf = requestAnimationFrame(draw)
+    }
+
+    raf = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(raf)
+  }, [bodyId, accent])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={200}
+      height={38}
+      style={{
+        width: '100%',
+        height: 38,
+        display: 'block',
+        borderRadius: 4,
+        background: `${accent}0a`,
+        border: `0.5px solid ${accent}30`,
+        marginTop: 2,
+        boxSizing: 'border-box',
+      }}
+    />
+  )
+}
 
 // ── Rack orbit input column helpers ──────────────────────────────────────────
 
@@ -235,16 +348,25 @@ function RackStatRow({ label, val, hint, dimText }: {
 
 /** Thin vertical VU bar, absolute-positioned on the right inner edge of a SlotCard. */
 function SlotMeterStrip({ bodyId, accent, simple }: { bodyId: string; accent: string; simple: boolean }) {
-  const [level, setLevel] = useState(0)
+  const fillRef = useRef<HTMLDivElement>(null)
+  const trackBg = simple ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)'
   useEffect(() => {
-    const id = window.setInterval(() => setLevel(getBodyOutputLevel(bodyId)), 50)
+    const el = fillRef.current
+    if (!el) return
+    let prevLevel = -1
+    const id = window.setInterval(() => {
+      const level = getBodyOutputLevel(bodyId)
+      if (Math.abs(level - prevLevel) < 0.005) return   // skip if unchanged
+      prevLevel = level
+      const color = level > 0.85 ? '#f87171' : level > 0.55 ? '#fbbf24' : accent
+      el.style.height  = `${level * 100}%`
+      el.style.background = color
+    }, 50)
     return () => window.clearInterval(id)
-  }, [bodyId])
-  const fillColor = level > 0.85 ? '#f87171' : level > 0.55 ? '#fbbf24' : accent
-  const trackBg   = simple ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)'
+  }, [bodyId, accent])
   return (
     <div style={{ position: 'absolute', right: 3, top: 5, bottom: 5, width: 3, borderRadius: 2, overflow: 'hidden', background: trackBg }}>
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${level * 100}%`, background: fillColor, borderRadius: 2, transition: 'height 0.05s linear' }} />
+      <div ref={fillRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '0%', background: accent, borderRadius: 2, transition: 'height 0.05s linear' }} />
     </div>
   )
 }
@@ -255,23 +377,26 @@ const FLASH_FADE_MS = 350
 
 /** Pulsing dot that flashes when the body is triggered. */
 function TriggerFlashDot({ bodyId, accent }: { bodyId: string; accent: string }) {
-  const [opacity, setOpacity] = useState(0)
+  const dotRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    const el = dotRef.current
+    if (!el) return
     const id = window.setInterval(() => {
-      const age = getBodyTriggerAge(bodyId)
-      if (!isFinite(age)) { setOpacity(0); return }
-      setOpacity(Math.max(0, 1 - age / FLASH_FADE_MS))
+      const age     = getBodyTriggerAge(bodyId)
+      const opacity = isFinite(age) ? Math.max(0, 1 - age / FLASH_FADE_MS) : 0
+      el.style.opacity    = String(0.25 + opacity * 0.75)
+      el.style.background = opacity > 0.05 ? accent : 'transparent'
+      el.style.boxShadow  = opacity > 0.05 ? `0 0 ${(opacity * 7).toFixed(1)}px ${accent}` : 'none'
     }, 16)
     return () => window.clearInterval(id)
-  }, [bodyId])
+  }, [bodyId, accent])
   return (
-    <div style={{
+    <div ref={dotRef} style={{
       position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)',
       width: 7, height: 7, borderRadius: '50%',
-      background: opacity > 0.05 ? accent : 'transparent',
+      background: 'transparent',
       border: `0.5px solid ${accent}66`,
-      boxShadow: opacity > 0.05 ? `0 0 ${opacity * 7}px ${accent}` : 'none',
-      opacity: 0.25 + opacity * 0.75,
+      opacity: 0.25,
       pointerEvents: 'none',
     }} />
   )
@@ -388,23 +513,26 @@ function RackMixerColumn({ bodyId, simple }: { bodyId: string | null; simple: bo
 const ORBIT_FLASH_FADE_MS = 400
 
 function OrbitTriggerMonitor({ bodyId, simple }: { bodyId: string; simple: boolean }) {
-  const [opacity, setOpacity] = useState(0)
+  const dotRef = useRef<HTMLDivElement>(null)
+  const col = simple ? '#7c3aed' : '#a78bfa'
   useEffect(() => {
+    const el = dotRef.current
+    if (!el) return
     const id = window.setInterval(() => {
-      const age = getBodyTriggerAge(bodyId)
-      setOpacity(isFinite(age) ? Math.max(0, 1 - age / ORBIT_FLASH_FADE_MS) : 0)
+      const age     = getBodyTriggerAge(bodyId)
+      const opacity = isFinite(age) ? Math.max(0, 1 - age / ORBIT_FLASH_FADE_MS) : 0
+      el.style.opacity    = String(0.2 + opacity * 0.8)
+      el.style.background = opacity > 0.05 ? col : 'transparent'
+      el.style.boxShadow  = opacity > 0.05 ? `0 0 ${(opacity * 8).toFixed(1)}px ${col}` : 'none'
     }, 16)
     return () => window.clearInterval(id)
-  }, [bodyId])
-  const col = simple ? '#7c3aed' : '#a78bfa'
+  }, [bodyId, col])
   return (
-    <div style={{
+    <div ref={dotRef} style={{
       width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
-      background: opacity > 0.05 ? col : 'transparent',
+      background: 'transparent',
       border: `0.8px solid ${col}55`,
-      boxShadow: opacity > 0.05 ? `0 0 ${opacity * 8}px ${col}` : 'none',
-      opacity: 0.2 + opacity * 0.8,
-      transition: 'box-shadow 0.04s',
+      opacity: 0.2,
     }} />
   )
 }
@@ -1666,11 +1794,51 @@ function SlotCard({
   const isAmbientOscOn = isAmbientOsc && effectiveAmbientOscType === 'ambient-osc'
 
   // ── Osc Synth active detection ─────────────────────────────────────────────
-  const isOscSynth = cs.id === 'instrument-osc-synth'
-  const effectiveOscSynthType = isOscSynth
+  const isOscSynth      = cs.id === 'instrument-osc-synth'
+  const isOscSynthOrbit = cs.id === 'instrument-osc-synth-orbit'
+  const effectiveOscSynthType = (isOscSynth || isOscSynthOrbit)
     ? String((overrides as Record<string, unknown>)['oscSynthType'] ?? cs.params.oscSynthType ?? 'off')
     : 'off'
-  const isOscSynthOn = isOscSynth && effectiveOscSynthType === 'osc-synth'
+  const isOscSynthOn = (isOscSynth || isOscSynthOrbit) && effectiveOscSynthType === 'osc-synth'
+
+  // ── Osc Synth Orbit: live orbit stats for source/rate display ──────────────
+  const [oscOrbitStats, setOscOrbitStats] = useState<ReturnType<typeof computeOrbitStats>>(null)
+  useEffect(() => {
+    if (!isOscSynthOrbit || !bodyId) { setOscOrbitStats(null); return }
+    const poll = () => {
+      const { bodies: bs, simParams: sp } = usePlanetStore.getState()
+      const liveBodies = getPlanetLiveBodySnapshot()
+      const liveById   = new Map(liveBodies.map(b => [b.id, b]))
+      const eff = bs.map(b => { const l = liveById.get(b.id); return l ? { ...b, x: l.x, y: l.y, vx: l.vx, vy: l.vy } : b })
+      const lb  = eff.find(b => b.id === bodyId)
+      setOscOrbitStats(lb ? computeOrbitStats(lb, eff, sp.G) : null)
+    }
+    poll()
+    const id = window.setInterval(poll, 100)
+    return () => window.clearInterval(id)
+  }, [isOscSynthOrbit, bodyId])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  function oscEp(key: string, dflt: unknown): unknown {
+    const ov = overrides as Record<string, unknown>
+    return key in ov ? ov[key] : (cs.params as Record<string, unknown>)[key] ?? dflt
+  }
+
+  function oscLiveVal(entry: OscOrbitEntry): number | null {
+    const src = String(oscEp(entry.srcKey, entry.dfltSrc))
+    if (src === 'manual' || !oscOrbitStats) return null
+    const rate = Number(oscEp(entry.rateKey, entry.dfltRate))
+    let raw: number
+    switch (src) {
+      case 'period':       raw = oscOrbitStats.T_real * rate; break
+      case 'eccentricity': raw = oscOrbitStats.ecc    * rate; break
+      case 'distance':     raw = oscOrbitStats.r      * rate; break
+      case 'velocity':     raw = oscOrbitStats.speed  * rate; break
+      case 'bound':        raw = (oscOrbitStats.bound ? 1 : 0) * rate; break
+      default: return null
+    }
+    if (!isFinite(raw)) return null
+    return Math.max(entry.min, Math.min(entry.max, raw))
+  }
 
   // ── Orbit trigger detection ────────────────────────────────────────────────
   const isOrbitTrigger = cs.id === 'orbit'
@@ -1777,8 +1945,8 @@ function SlotCard({
         if (['ambientOscWaveform','ambientOscAttack','ambientOscRelease','ambientOscFilterCutoff',
              'ambientOscFilterResonance','ambientOscLevel','ambientOscNote'].includes(key) && !isAmbientOscOn) return null
         // Osc Synth sub-params: only when oscSynthType is 'osc-synth'
-        if (['oscSynthWaveform','oscSynthAttack','oscSynthRelease','oscSynthFilterCutoff',
-             'oscSynthFilterResonance','oscSynthLevel',
+        if (['oscSynthWaveform','oscSynthAttack','oscSynthDecay','oscSynthSustain','oscSynthRelease',
+             'oscSynthFilterCutoff','oscSynthFilterResonance','oscSynthLevel',
              'oscSynthLfoTarget','oscSynthLfoRate','oscSynthLfoDepth','oscSynthLfoWaveform'].includes(key) && !isOscSynthOn) return null
         // When OscSynth is on, 2-col sub-params render in the dedicated block below
         if (isOscSynthOn && OSC_SYNTH_2COL_KEYS.has(key)) return null
@@ -1918,7 +2086,7 @@ function SlotCard({
       {/* OscSynth 2-column param grid */}
       {isOscSynthOn && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 5px' }}>
-          {OSC_SYNTH_2COL_ORDER.map((key, idx) => {
+          {(isOscSynthOrbit ? OSC_SYNTH_ORBIT_2COL_ORDER : OSC_SYNTH_2COL_ORDER).map((key, idx) => {
             const cfg = PARAM_CFG[key]
             if (!cfg) return <div key={`_e${idx}`} />
             const isOv    = key in overrides
@@ -1946,7 +2114,7 @@ function SlotCard({
                       if (n === baseVal) resetSlotParam(slotKey, key)
                       else setSlotOverride(slotKey, { [key]: n } as Partial<PlanetSimParams>)
                     }}
-                    style={{ flex: 1, minWidth: 0, fontSize: 8, fontFamily: 'monospace', textAlign: 'right', border: bdr, borderRadius: 3, padding: '1px 3px', background: bg, color: inputCol }}
+                    style={{ flex: 1, minWidth: 0, fontSize: 9, fontFamily: 'monospace', textAlign: 'right', border: bdr, borderRadius: 3, padding: '3px 3px', background: bg, color: inputCol }}
                   />
                 )}
                 {cfg.type === 'select' && (
@@ -1957,12 +2125,89 @@ function SlotCard({
                       if (v === baseVal || raw === String(baseVal)) resetSlotParam(slotKey, key)
                       else setSlotOverride(slotKey, { [key]: v } as Partial<PlanetSimParams>)
                     }}
-                    style={{ flex: 1, minWidth: 0, fontSize: 7.5, border: bdr, borderRadius: 3, padding: '1px 2px', background: bg, color: inputCol, fontFamily: 'inherit' }}
+                    style={{ flex: 1, minWidth: 0, fontSize: 8, border: bdr, borderRadius: 3, padding: '2px 2px', background: bg, color: inputCol, fontFamily: 'inherit' }}
                   >
                     {(cfg as ParamCfgSel).options.map((opt, i) => (
                       <option key={opt} value={opt}>{(cfg as ParamCfgSel).optionLabels?.[i] ?? opt}</option>
                     ))}
                   </select>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* OscSynth Orbit: oscilloscope + source/rate controls + live computed values */}
+      {isOscSynthOrbit && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {/* Oscilloscope */}
+          <OscScope bodyId={bodyId ?? null} accent={accent} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, margin: '5px 0 2px' }}>
+            <div style={{ flex: 1, height: '0.5px', background: accent + '30' }} />
+            <span style={{ fontSize: 6, fontWeight: 800, color: dimText, textTransform: 'uppercase', letterSpacing: '0.10em', lineHeight: 1 }}>orbit map</span>
+            <div style={{ flex: 1, height: '0.5px', background: accent + '30' }} />
+          </div>
+          {/* Live orbit stats */}
+          {oscOrbitStats ? (
+            <div style={{ display: 'flex', gap: 6, marginBottom: 3 }}>
+              {([
+                { k: 'T', v: `${oscOrbitStats.T_real.toFixed(1)}s` },
+                { k: 'ε', v: oscOrbitStats.ecc.toFixed(2) },
+                { k: 'r', v: `${Math.round(oscOrbitStats.r)}` },
+                { k: 'v', v: oscOrbitStats.speed.toFixed(1) },
+                { k: 'B', v: oscOrbitStats.bound ? '1' : '0' },
+              ] as const).map(({ k, v }) => (
+                <div key={k} style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
+                  <span style={{ fontSize: 6, color: dimText, lineHeight: 1 }}>{k}</span>
+                  <span style={{ fontSize: 7.5, fontFamily: 'monospace', color: accent, lineHeight: 1, opacity: 0.85 }}>{v}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 6.5, color: dimText, fontStyle: 'italic', marginBottom: 3 }}>{bodyId ? 'no orbit' : 'no body'}</div>
+          )}
+          {/* Per-param rows */}
+          {OSC_ORBIT_MAP_ENTRIES.map(entry => {
+            const src  = String(oscEp(entry.srcKey,  entry.dfltSrc))
+            const rate = Number(oscEp(entry.rateKey, entry.dfltRate))
+            const live = oscLiveVal(entry)
+            const isOrbit = src !== 'manual'
+            const srcBg  = isOrbit ? `${accent}14` : inputBg
+            const srcBdr = isOrbit ? `0.5px solid ${accent}55` : `0.5px solid ${simple ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)'}`
+            return (
+              <div key={entry.key} style={{ display: 'flex', alignItems: 'center', gap: 2, minHeight: 16 }}>
+                <span style={{ fontSize: 7, fontWeight: isOrbit ? 700 : 400, color: isOrbit ? accent : dimText, width: 20, textAlign: 'right', flexShrink: 0, lineHeight: 1 }}>
+                  {entry.label}
+                </span>
+                <select
+                  value={src}
+                  onChange={e => setSlotOverride(slotKey, { [entry.srcKey]: e.target.value } as Partial<PlanetSimParams>)}
+                  style={{ width: 30, fontSize: 7.5, border: srcBdr, borderRadius: 3, padding: '1px 1px', background: srcBg, color: isOrbit ? accent : inputCol, fontFamily: 'inherit' }}
+                >
+                  {Object.entries(OSC_SRC_ABBREV).map(([val, lbl]) => (
+                    <option key={val} value={val}>{lbl}</option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 6.5, color: dimText, lineHeight: 1, flexShrink: 0 }}>×</span>
+                <input
+                  type="number"
+                  value={rate}
+                  min={0.0001} step={0.01}
+                  onChange={e => setSlotOverride(slotKey, { [entry.rateKey]: Number(e.target.value) } as Partial<PlanetSimParams>)}
+                  style={{ width: 40, fontSize: 7.5, fontFamily: 'monospace', textAlign: 'right', border: `0.5px solid ${simple ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)'}`, borderRadius: 3, padding: '1px 2px', background: inputBg, color: inputCol }}
+                />
+                {live !== null ? (
+                  <>
+                    <span style={{ fontSize: 6.5, color: accent, opacity: 0.6, lineHeight: 1, flexShrink: 0 }}>→</span>
+                    <span style={{ fontSize: 7.5, fontFamily: 'monospace', color: accent, lineHeight: 1, minWidth: 36, textAlign: 'right' }}>
+                      {entry.precision === 0
+                        ? `${Math.round(live)}${entry.unit}`
+                        : `${live.toFixed(entry.precision)}${entry.unit}`}
+                    </span>
+                  </>
+                ) : (
+                  <span style={{ fontSize: 6.5, color: dimText, opacity: 0.4, lineHeight: 1, marginLeft: 4 }}>—</span>
                 )}
               </div>
             )

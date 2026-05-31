@@ -226,8 +226,10 @@ export interface PlanetSimParams {
   // ── Osc Synth instrument (triggered, same engine as ambient-osc + LFO) ──
   oscSynthType:            'off' | 'osc-synth'
   oscSynthWaveform:        OscillatorType
-  oscSynthAttack:          number           // seconds (0.01–20)
-  oscSynthRelease:         number           // seconds (0.01–30)
+  oscSynthAttack:          number           // A: seconds (0.001–20)
+  oscSynthDecay:           number           // D: seconds (0.01–20)
+  oscSynthSustain:         number           // S: 0–1
+  oscSynthRelease:         number           // R: seconds (0.01–30)
   oscSynthFilterCutoff:    number           // Hz (80–12000)
   oscSynthFilterResonance: number           // Q (0.01–15)
   oscSynthLevel:           number           // 0–1
@@ -238,6 +240,10 @@ export interface PlanetSimParams {
   // Orbit-driven source selectors for OscSynth params
   oscSynthAttackSource:    OscOrbitSource
   oscSynthAttackRate:      number
+  oscSynthDecaySource:     OscOrbitSource
+  oscSynthDecayRate:       number
+  oscSynthSustainSource:   OscOrbitSource
+  oscSynthSustainRate:     number
   oscSynthReleaseSource:   OscOrbitSource
   oscSynthReleaseRate:     number
   oscSynthCutoffSource:    OscOrbitSource
@@ -270,7 +276,7 @@ export const DEFAULT_NEXT_PLANET: NextBodyDefaults = {
 export type DroneMode = 'manual' | 'orbit'
 
 /** Which orbit metric drives an OscSynth param when not 'manual'. */
-export type OscOrbitSource = 'manual' | 'period' | 'eccentricity' | 'distance' | 'velocity'
+export type OscOrbitSource = 'manual' | 'period' | 'eccentricity' | 'distance' | 'velocity' | 'bound'
 
 export const BODY_DRONE_DEFAULTS = {
   droneType: 'none' as DroneType,
@@ -463,6 +469,8 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   oscSynthType:            'off',
   oscSynthWaveform:        'sine',
   oscSynthAttack:          0.05,
+  oscSynthDecay:           0.3,
+  oscSynthSustain:         0.8,
   oscSynthRelease:         1.5,
   oscSynthFilterCutoff:    2000,
   oscSynthFilterResonance: 0.5,
@@ -473,6 +481,10 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   oscSynthLfoWaveform:     'sine',
   oscSynthAttackSource:    'manual',
   oscSynthAttackRate:      0.05,
+  oscSynthDecaySource:     'manual',
+  oscSynthDecayRate:       0.05,
+  oscSynthSustainSource:   'manual',
+  oscSynthSustainRate:     1.0,
   oscSynthReleaseSource:   'manual',
   oscSynthReleaseRate:     0.1,
   oscSynthCutoffSource:    'manual',

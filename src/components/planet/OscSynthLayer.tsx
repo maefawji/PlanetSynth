@@ -53,6 +53,7 @@ function orbitVal(
     case 'eccentricity': raw = stats.ecc    * rate; break
     case 'distance':     raw = stats.r      * rate; break
     case 'velocity':     raw = stats.speed  * rate; break
+    case 'bound':        raw = (stats.bound ? 1 : 0) * rate; break
     default: return manualVal
   }
   if (!isFinite(raw)) return manualVal
@@ -100,20 +101,24 @@ async function syncEngines(engines: EngineMap): Promise<void> {
     const orbitStats = computeOrbitStats(liveBody, effectiveBodies, G)
 
     // Read manual values
-    const manualAttack  = Number(ep.oscSynthAttack          ?? 0.05)
-    const manualRelease = Number(ep.oscSynthRelease         ?? 1.5)
-    const manualCutoff  = Number(ep.oscSynthFilterCutoff    ?? 2000)
-    const manualLfoRate = Number(ep.oscSynthLfoRate          ?? 1.0)
-    const manualLfoDep  = Number(ep.oscSynthLfoDepth         ?? 0.3)
+    const manualAttack   = Number(ep.oscSynthAttack          ?? 0.05)
+    const manualDecay    = Number(ep.oscSynthDecay           ?? 0.3)
+    const manualSustain  = Number(ep.oscSynthSustain         ?? 0.8)
+    const manualRelease  = Number(ep.oscSynthRelease         ?? 1.5)
+    const manualCutoff   = Number(ep.oscSynthFilterCutoff    ?? 2000)
+    const manualLfoRate  = Number(ep.oscSynthLfoRate          ?? 1.0)
+    const manualLfoDep   = Number(ep.oscSynthLfoDepth         ?? 0.3)
 
     const p: AmbientOscillatorParams = {
-      waveform:         (ep.oscSynthWaveform    as OscillatorType) ?? 'sine',
-      attack:  orbitVal(String(ep.oscSynthAttackSource  ?? 'manual'), manualAttack,  orbitStats, Number(ep.oscSynthAttackRate  ?? 0.05), 0.001, 20),
-      release: orbitVal(String(ep.oscSynthReleaseSource ?? 'manual'), manualRelease, orbitStats, Number(ep.oscSynthReleaseRate ?? 0.1),  0.01,  30),
-      filterCutoff:    orbitVal(String(ep.oscSynthCutoffSource   ?? 'manual'), manualCutoff,  orbitStats, Number(ep.oscSynthCutoffRate   ?? 5.0), 80, 12000),
+      waveform:  (ep.oscSynthWaveform as OscillatorType) ?? 'sine',
+      attack:  orbitVal(String(ep.oscSynthAttackSource   ?? 'manual'), manualAttack,  orbitStats, Number(ep.oscSynthAttackRate   ?? 0.05), 0.001, 20),
+      decay:   orbitVal(String(ep.oscSynthDecaySource    ?? 'manual'), manualDecay,   orbitStats, Number(ep.oscSynthDecayRate    ?? 0.05), 0.01,  20),
+      sustain: orbitVal(String(ep.oscSynthSustainSource  ?? 'manual'), manualSustain, orbitStats, Number(ep.oscSynthSustainRate  ?? 1.0),  0,     1),
+      release: orbitVal(String(ep.oscSynthReleaseSource  ?? 'manual'), manualRelease, orbitStats, Number(ep.oscSynthReleaseRate  ?? 0.1),  0.01,  30),
+      filterCutoff:    orbitVal(String(ep.oscSynthCutoffSource  ?? 'manual'), manualCutoff, orbitStats, Number(ep.oscSynthCutoffRate  ?? 5.0), 80, 12000),
       filterResonance: Number(ep.oscSynthFilterResonance ?? 0.5),
       level:           Number(ep.oscSynthLevel           ?? 0.7),
-      lfoTarget:       (ep.oscSynthLfoTarget   as LfoTarget) ?? 'off',
+      lfoTarget:       (ep.oscSynthLfoTarget as LfoTarget) ?? 'off',
       lfoRate:  orbitVal(String(ep.oscSynthLfoRateSource  ?? 'manual'), manualLfoRate, orbitStats, Number(ep.oscSynthLfoRateRate  ?? 0.1), 0.01, 20),
       lfoDepth: orbitVal(String(ep.oscSynthLfoDepthSource ?? 'manual'), manualLfoDep,  orbitStats, Number(ep.oscSynthLfoDepthRate ?? 1.0), 0,    1),
       lfoWaveform:     (ep.oscSynthLfoWaveform as OscillatorType) ?? 'sine',

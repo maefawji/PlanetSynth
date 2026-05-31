@@ -1075,6 +1075,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
 
             ensureEffectorBus(eff.id, {
               type:               effType,
+              reverbMode:         (effOverride.reverbMode              ?? eff.reverbMode              ?? 'convolution') as string,
               decay:              (effOverride.effectorDecay           ?? eff.effectorDecay           ?? 2.5)  as number,
               delayTime,
               feedback:           Math.max(0, Math.min(0.9, Number(effOverride.effectorFeedback ?? eff.effectorFeedback ?? 0.4))),

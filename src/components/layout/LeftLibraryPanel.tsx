@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Waves, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Waves, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star } from 'lucide-react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { usePlanetStore, BODY_DRONE_DEFAULTS, BODY_MIDI_DEFAULTS, DEFAULT_BODIES, DEFAULT_SIM_PARAMS, type PlanetBody, type PlanetSimParams } from '../../store/planetStore'
 import { useProjectStore } from '../../store/projectStore'
@@ -35,7 +35,7 @@ interface LeftLibraryPanelProps {
 export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPanelProps) {
   const t = useTheme()
   const [activePanel, setActivePanel] = useState<
-    | 'canvas' | 'planet-presets' | 'planet-samples'
+    | 'canvas' | 'universe-presets' | 'planet-presets' | 'planet-samples'
     | 'planet-triggers'
     | 'planet-controls-trigger' | 'planet-controls-instrument' | 'planet-controls-effect'
     | 'planet-playback' | 'planet-localization' | 'planet-adsr'
@@ -221,11 +221,18 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
           <FolderOpen size={14} />
         </RailButton>
         <RailButton
+          active={activePanel === 'universe-presets' && !collapsed}
+          title="Universe Presets"
+          onClick={() => { setActivePanel('universe-presets'); if (collapsed) onToggleCollapsed() }}
+        >
+          <Sun size={14} />
+        </RailButton>
+        <RailButton
           active={activePanel === 'planet-presets' && !collapsed}
           title="Planet Presets"
           onClick={() => { setActivePanel('planet-presets'); if (collapsed) onToggleCollapsed() }}
         >
-          <Sun size={14} />
+          <Star size={14} />
         </RailButton>
         <RailButton
           active={activePanel === 'planet-triggers' && !collapsed}
@@ -316,6 +323,9 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         />
       )}
 
+      {!collapsed && activePanel === 'universe-presets' && (
+        <UniversePresetPanel />
+      )}
       {!collapsed && activePanel === 'planet-presets' && (
         <PlanetPresetPanel />
       )}
@@ -1248,7 +1258,7 @@ const SOLAR_SYSTEM_SIM: Partial<PlanetSimParams> = {
   sampleLoopMode: 'loop',
 }
 
-function PlanetPresetPanel() {
+function UniversePresetPanel() {
   const t = useTheme()
   const applyPreset = usePlanetStore(s => s.applyPreset)
   const resetBodyRacksToDefaults = useControlSetStore(s => s.resetBodyRacksToDefaults)
@@ -1264,7 +1274,7 @@ function PlanetPresetPanel() {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-      <SectionHeader label="Planet Presets" />
+      <SectionHeader label="Universe Presets" />
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px' }}>
         <button
           onClick={applyDefaultTrio}
@@ -1326,6 +1336,268 @@ function PlanetPresetPanel() {
         <div style={{ fontSize: 9, color: t.textDim, lineHeight: 1.5, marginTop: 10 }}>
           プリセット適用時は現在の body 配置を置き換え、シミュレーションを再初期化します。
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Planet Preset (individual body) panel ─────────────────────────────────────
+
+const BODY_PRESETS_KEY = 'planet-body-presets-v1'
+
+interface BodyPresetEntry {
+  id: string
+  name: string
+  createdAt: number
+  bodyInfo: {
+    name: string
+    type: string
+    mass: number
+    color: string
+    muted: boolean
+    volume: number
+    midiChannel: number
+    midiNote: number
+    midiVelocity: number
+  }
+  rack: {
+    triggers: string[]
+    instrument: string | null
+    effects: string[]
+  }
+}
+
+function loadBodyPresetsFromStorage(): BodyPresetEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem(BODY_PRESETS_KEY) ?? '[]') as BodyPresetEntry[]
+  } catch {
+    return []
+  }
+}
+
+function saveBodyPresetsToStorage(presets: BodyPresetEntry[]): void {
+  localStorage.setItem(BODY_PRESETS_KEY, JSON.stringify(presets))
+}
+
+function PlanetPresetPanel() {
+  const t = useTheme()
+  const { bodies, selectedBodyId } = usePlanetStore()
+  const updateBody = usePlanetStore(s => s.updateBody)
+  const { getBodyEffectiveRack, setBodySlot, addBodyTrigger, addBodyEffect, clearBodyRack } = useControlSetStore()
+
+  const [presets, setPresets] = useState<BodyPresetEntry[]>(() => loadBodyPresetsFromStorage())
+  const [saveName, setSaveName] = useState('')
+
+  const selectedBody = bodies.find(b => b.id === selectedBodyId) ?? null
+
+  function handleSave() {
+    if (!selectedBody) return
+    const rack = getBodyEffectiveRack(selectedBody.id)
+    const name = saveName.trim() || selectedBody.name
+    const entry: BodyPresetEntry = {
+      id: `bp-${Date.now()}`,
+      name,
+      createdAt: Date.now(),
+      bodyInfo: {
+        name: selectedBody.name,
+        type: selectedBody.type,
+        mass: selectedBody.mass,
+        color: selectedBody.color,
+        muted: selectedBody.muted,
+        volume: selectedBody.volume,
+        midiChannel: selectedBody.midiChannel,
+        midiNote: selectedBody.midiNote,
+        midiVelocity: selectedBody.midiVelocity,
+      },
+      rack: {
+        triggers: [...rack.triggers],
+        instrument: rack.instrument,
+        effects: [...rack.effects],
+      },
+    }
+    const next = [entry, ...presets]
+    setPresets(next)
+    saveBodyPresetsToStorage(next)
+    setSaveName('')
+  }
+
+  function handleApply(preset: BodyPresetEntry) {
+    if (!selectedBodyId) return
+    updateBody(selectedBodyId, {
+      name: preset.bodyInfo.name,
+      mass: preset.bodyInfo.mass,
+      color: preset.bodyInfo.color,
+      muted: preset.bodyInfo.muted,
+      volume: preset.bodyInfo.volume,
+      midiChannel: preset.bodyInfo.midiChannel,
+      midiNote: preset.bodyInfo.midiNote,
+      midiVelocity: preset.bodyInfo.midiVelocity,
+    })
+    clearBodyRack(selectedBodyId)
+    setBodySlot(selectedBodyId, 'instrument', preset.rack.instrument)
+    for (const trig of preset.rack.triggers) {
+      addBodyTrigger(selectedBodyId, trig)
+    }
+    for (const eff of preset.rack.effects) {
+      addBodyEffect(selectedBodyId, eff)
+    }
+  }
+
+  function handleDelete(id: string) {
+    const next = presets.filter(p => p.id !== id)
+    setPresets(next)
+    saveBodyPresetsToStorage(next)
+  }
+
+  function formatDate(ts: number): string {
+    const d = new Date(ts)
+    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <SectionHeader label="Planet Presets" />
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px' }}>
+
+        {/* ── Save section ─────────────────────────────────────────────────── */}
+        <div style={{
+          marginBottom: 10,
+          padding: '8px',
+          background: t.sectionBg,
+          borderRadius: 7,
+          border: `0.5px solid ${t.panelBorder}`,
+        }}>
+          {selectedBody ? (
+            <>
+              <div style={{ fontSize: 10, color: t.textMid, marginBottom: 6 }}>
+                Save{' '}
+                <span style={{ color: selectedBody.color, fontWeight: 700 }}>
+                  {selectedBody.name}
+                </span>{' '}
+                as preset
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  value={saveName}
+                  onChange={e => setSaveName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSave() }}
+                  placeholder={selectedBody.name}
+                  style={{
+                    flex: 1,
+                    background: t.inputBg,
+                    border: `0.5px solid ${t.btnBorder}`,
+                    borderRadius: 5,
+                    color: t.inputText,
+                    fontSize: 11,
+                    padding: '4px 6px',
+                    fontFamily: 'inherit',
+                    outline: 'none',
+                  }}
+                />
+                <button
+                  onClick={handleSave}
+                  style={{
+                    background: 'rgba(6,182,212,0.15)',
+                    border: `0.5px solid rgba(6,182,212,0.4)`,
+                    borderRadius: 5,
+                    color: '#06b6d4',
+                    fontSize: 11,
+                    padding: '4px 10px',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Save
+                </button>
+              </div>
+              <div style={{ fontSize: 9, color: t.textDim, marginTop: 5, lineHeight: 1.45 }}>
+                body情報 + rack（コントロールセット名のみ、パラメータ値は含まない）
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 10, color: t.textDim }}>
+              ボディを選択するとプリセットとして保存できます
+            </div>
+          )}
+        </div>
+
+        {/* ── Preset list ──────────────────────────────────────────────────── */}
+        {presets.length === 0 ? (
+          <div style={{ fontSize: 9.5, color: t.textDim, textAlign: 'center', marginTop: 20 }}>
+            保存されたプリセットはありません
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {presets.map(preset => (
+              <div
+                key={preset.id}
+                style={{
+                  border: `0.5px solid ${t.panelBorder}`,
+                  borderRadius: 7,
+                  padding: '8px',
+                  background: t.sectionBg,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: t.text }}>{preset.name}</div>
+                  <button
+                    onClick={() => handleDelete(preset.id)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: t.textDim,
+                      fontSize: 14,
+                      lineHeight: 1,
+                      padding: '0 2px',
+                      marginTop: -1,
+                    }}
+                    title="Delete preset"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div style={{ fontSize: 9, color: t.textMid, lineHeight: 1.5, marginBottom: 6 }}>
+                  <span>{preset.bodyInfo.type}</span>
+                  {' · '}
+                  <span>mass {preset.bodyInfo.mass}</span>
+                  {' · '}
+                  <span>note {preset.bodyInfo.midiNote}</span>
+                  <br />
+                  <span>inst: <span style={{ color: t.text }}>{preset.rack.instrument ?? 'none'}</span></span>
+                  {preset.rack.triggers.length > 0 && (
+                    <><br /><span>trg: <span style={{ color: t.text }}>{preset.rack.triggers.join(', ')}</span></span></>
+                  )}
+                  {preset.rack.effects.length > 0 && (
+                    <><br /><span>fx: <span style={{ color: t.text }}>{preset.rack.effects.join(', ')}</span></span></>
+                  )}
+                  <br />
+                  <span style={{ color: t.textDim }}>{formatDate(preset.createdAt)}</span>
+                </div>
+                {selectedBodyId && (
+                  <button
+                    onClick={() => handleApply(preset)}
+                    style={{
+                      width: '100%',
+                      background: 'rgba(6,182,212,0.08)',
+                      border: `0.5px solid rgba(6,182,212,0.3)`,
+                      borderRadius: 5,
+                      color: '#06b6d4',
+                      fontSize: 10,
+                      padding: '3px 6px',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(6,182,212,0.15)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'rgba(6,182,212,0.08)')}
+                  >
+                    Apply to selected body
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

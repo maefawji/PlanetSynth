@@ -26,8 +26,10 @@ export type LfoTarget = 'off' | 'pitch' | 'filter' | 'amplitude'
 
 export type AmbientOscillatorParams = {
   waveform:         OscillatorType  // 'sine' | 'triangle' | 'sawtooth' | 'square'
-  attack:           number          // fade-in time constant (seconds)
-  release:          number          // fade-out time constant (seconds)
+  attack:           number          // A: time to reach peak (seconds)
+  decay:            number          // D: time to fall from peak to sustain (seconds)
+  sustain:          number          // S: sustain level relative to peak (0–1)
+  release:          number          // R: time to fall to silence after noteOff (seconds)
   filterCutoff:     number          // low-pass cutoff Hz
   filterResonance:  number          // filter Q
   level:            number          // master amplitude 0–1
@@ -39,10 +41,11 @@ export type AmbientOscillatorParams = {
 }
 
 interface Voice {
-  osc:      OscillatorNode
-  amp:      GainNode
-  filter:   BiquadFilterNode
-  targetLevel: number   // final gain target (level × velocity)
+  osc:          OscillatorNode
+  amp:          GainNode
+  filter:       BiquadFilterNode
+  targetLevel:  number   // peak gain (level × velocity)
+  sustainLevel: number   // sustain gain (targetLevel × sustain)
 }
 
 // ── MIDI → Hz ─────────────────────────────────────────────────────────────────
@@ -64,12 +67,17 @@ export class AmbientOscillatorEngine {
   private lfoDepthGain: GainNode          | null = null
   private _lfoTarget:   LfoTarget = 'off'
 
+  // Oscilloscope analyser (parallel tap from panner output)
+  private _analyser:    AnalyserNode      | null = null
+
   private _outputScale = 1
   private _outputPan   = 0
 
   params: AmbientOscillatorParams = {
     waveform:         'sine',
     attack:           1.5,
+    decay:            0.5,
+    sustain:          0.8,
     release:          3.0,
     filterCutoff:     1200,
     filterResonance:  0.3,
@@ -91,6 +99,12 @@ export class AmbientOscillatorEngine {
     this.panner.pan.value   = this._outputPan
     this.bodyOut.gain.value = this._outputScale
     this.panner.connect(this.bodyOut)
+
+    // Oscilloscope: parallel tap from panner (no output — analysis only)
+    this._analyser = this.ctx.createAnalyser()
+    this._analyser.fftSize = 256
+    this._analyser.smoothingTimeConstant = 0
+    this.panner.connect(this._analyser)
 
     // LFO — always running; target determines what it modulates
     this.lfoOsc       = this.ctx.createOscillator()
@@ -166,8 +180,14 @@ export class AmbientOscillatorEngine {
     osc.type            = p.waveform
     osc.frequency.value = freq
 
+    // ── ADSR envelope ────────────────────────────────────────────────────────
+    const attack       = Math.max(0.001, p.attack)
+    const decay        = Math.max(0.001, p.decay)
+    const sustainLevel = Math.max(0.0001, targetLevel * Math.max(0, Math.min(1, p.sustain)))
+
     amp.gain.setValueAtTime(0.0001, now)
-    amp.gain.setTargetAtTime(targetLevel, now, Math.max(0.01, p.attack / 3))
+    amp.gain.linearRampToValueAtTime(targetLevel, now + attack)         // Attack
+    amp.gain.setTargetAtTime(sustainLevel, now + attack, decay / 3)    // Decay → Sustain
 
     filter.type            = 'lowpass'
     filter.frequency.value = p.filterCutoff
@@ -178,7 +198,7 @@ export class AmbientOscillatorEngine {
     filter.connect(this.panner)
     osc.start(now)
 
-    const voice: Voice = { osc, amp, filter, targetLevel }
+    const voice: Voice = { osc, amp, filter, targetLevel, sustainLevel }
     this.voices.set(note, voice)
 
     // Wire LFO to new voice if target is pitch or filter
@@ -245,9 +265,13 @@ export class AmbientOscillatorEngine {
         voice.filter.Q.setTargetAtTime(p.filterResonance, now, 0.05)
       }
       if (patch.level !== undefined && prev.level !== p.level) {
-        const newTarget = voice.targetLevel * (p.level / Math.max(0.0001, prev.level))
-        voice.targetLevel = newTarget
-        voice.amp.gain.setTargetAtTime(Math.max(0.0001, newTarget), now, 0.05)
+        const ratio = p.level / Math.max(0.0001, prev.level)
+        voice.targetLevel  = voice.targetLevel  * ratio
+        voice.sustainLevel = voice.targetLevel  * Math.max(0, Math.min(1, p.sustain))
+        voice.amp.gain.setTargetAtTime(Math.max(0.0001, voice.sustainLevel), now, 0.05)
+      } else if (patch.sustain !== undefined) {
+        voice.sustainLevel = voice.targetLevel * Math.max(0, Math.min(1, p.sustain))
+        voice.amp.gain.setTargetAtTime(Math.max(0.0001, voice.sustainLevel), now, 0.05)
       }
     }
 
@@ -287,6 +311,10 @@ export class AmbientOscillatorEngine {
     return this.bodyOut!
   }
 
+  get analyserNode(): AnalyserNode | null {
+    return this._analyser
+  }
+
   get isActive(): boolean {
     return this.voices.size > 0
   }
@@ -297,6 +325,8 @@ export class AmbientOscillatorEngine {
     this.noteOffAll()
     try { this.lfoOsc?.stop(); this.lfoOsc?.disconnect(); this.lfoDepthGain?.disconnect() } catch (_) {}
     this.lfoOsc = null; this.lfoDepthGain = null
+    try { this._analyser?.disconnect() } catch (_) {}
+    this._analyser = null
     const release = this.params.release
     setTimeout(() => {
       try { this.panner?.disconnect(); this.bodyOut?.disconnect() } catch (_) {}

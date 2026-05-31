@@ -60,13 +60,14 @@ export function getBodyTriggerAge(bodyId: string): number {
 // is conceptually "emitted" by the effector body — muting/quieting it silences
 // all the wet output from that effector, while source bodies still play dry.
 
-type EffectorEffect = Tone.Reverb | Tone.FeedbackDelay | Tone.Distortion | Tone.Chorus | Tone.Phaser | Tone.AutoFilter | Tone.BitCrusher | Tone.Gain
+type EffectorEffect = Tone.Reverb | Tone.Freeverb | Tone.FeedbackDelay | Tone.Distortion | Tone.Chorus | Tone.Phaser | Tone.AutoFilter | Tone.BitCrusher | Tone.Gain
 
 interface EffectorBus {
   inputGain:  Tone.Gain    // source signal enters here (send-level controlled)
   effect:     EffectorEffect // the active effect node (wet=1)
   outputGain: Tone.Gain    // scales final output by effector body's volume/mute
   effectType: string       // tracks which type is instantiated
+  reverbMode: string       // 'convolution' | 'freeverb' — for reverb change detection
 }
 
 export interface EffectorBusParams {
@@ -74,6 +75,7 @@ export interface EffectorBusParams {
   // reverb / freeze
   decay?: number
   freezeDecay?: number
+  reverbMode?: string   // 'convolution' (default) | 'freeverb'
   // delay
   delayTime?: number
   feedback?: number
@@ -116,6 +118,12 @@ function destroyEffectNode(bus: EffectorBus) {
   if ((bus.effect as Tone.Chorus | Tone.AutoFilter).stop) {
     try { (bus.effect as Tone.Chorus | Tone.AutoFilter).stop() } catch (_) {}
   }
+}
+
+/** Maps reverb decay time (s) to Freeverb roomSize (0–0.97). */
+function decayToRoomSize(decay: number): number {
+  // decay 0.5→0.45  /  2.5→0.58  /  7→0.72  /  15→0.97
+  return Math.max(0.1, Math.min(0.97, 0.4 + (Math.min(decay, 15) / 15) * 0.57))
 }
 
 function createEffectNode(params: EffectorBusParams): EffectorEffect {
@@ -165,8 +173,16 @@ function createEffectNode(params: EffectorBusParams): EffectorEffect {
       // Input 1 (self-send) and Input 2 (proximity rack sends) are mixed
       // at inputGain and passed directly to outputGain → Destination.
       return new Tone.Gain(1)
-    default: // 'reverb'
+    default: { // 'reverb'
+      if ((params.reverbMode ?? 'convolution') === 'freeverb') {
+        return new Tone.Freeverb({
+          roomSize:   decayToRoomSize(params.decay ?? 2.5),
+          dampening:  3000,
+          wet: 1,
+        })
+      }
       return new Tone.Reverb({ decay: params.decay ?? 2.5, preDelay: 0.02, wet: 1 })
+    }
   }
 }
 
@@ -186,8 +202,11 @@ export function ensureEffectorBus(bodyId: string, params: EffectorBusParams): vo
   const existing = effectorBuses.get(bodyId)
 
   if (existing) {
-    if (existing.effectType !== params.type) {
-      // Type changed — destroy and recreate below
+    const newReverbMode = params.reverbMode ?? 'convolution'
+    const typeChanged   = existing.effectType !== params.type
+    const reverbModeChanged = params.type === 'reverb' && existing.reverbMode !== newReverbMode
+    if (typeChanged || reverbModeChanged) {
+      // Type or reverb mode changed — destroy and recreate below
       destroyEffectNode(existing)
       try { existing.inputGain.disconnect();  existing.inputGain.dispose()  } catch (_) {}
       try { existing.outputGain.disconnect(); existing.outputGain.dispose() } catch (_) {}
@@ -217,8 +236,16 @@ export function ensureEffectorBus(bodyId: string, params: EffectorBusParams): vo
       const fx = existing.effect
       switch (params.type) {
         case 'reverb':
-          if (params.decay !== undefined && Math.abs((fx as Tone.Reverb).decay as number - params.decay) > 0.05)
-            (fx as Tone.Reverb).decay = params.decay
+          if ((existing.reverbMode ?? 'convolution') === 'freeverb') {
+            if (params.decay !== undefined) {
+              const rs = decayToRoomSize(params.decay)
+              if (Math.abs((fx as Tone.Freeverb).roomSize.value - rs) > 0.01)
+                ;(fx as Tone.Freeverb).roomSize.rampTo(rs, 0.1)
+            }
+          } else {
+            if (params.decay !== undefined && Math.abs((fx as Tone.Reverb).decay as number - params.decay) > 0.05)
+              (fx as Tone.Reverb).decay = params.decay
+          }
           break
         case 'delay':
           if (params.delayTime !== undefined) {
@@ -270,7 +297,7 @@ export function ensureEffectorBus(bodyId: string, params: EffectorBusParams): vo
   inputGain.connect(effect)
   effect.connect(outputGain)
   outputGain.toDestination()
-  effectorBuses.set(bodyId, { inputGain, effect, outputGain, effectType: params.type })
+  effectorBuses.set(bodyId, { inputGain, effect, outputGain, effectType: params.type, reverbMode: params.reverbMode ?? 'convolution' })
 }
 
 /** Tear down an effector bus and all its send connections. */
