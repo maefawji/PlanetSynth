@@ -52,6 +52,10 @@ export function getPlanetLiveBodySnapshot(): LiveBodySnap[] {
 const _smoothedPeriods = new Map<string, number>()
 const PERIOD_SMOOTH_ALPHA = 0.015  // slow alpha → stable rate for time-stretch
 
+// Reusable acceleration buffers for verletStep — eliminates per-step heap allocation
+let _prevAxBuf = new Float64Array(0)
+let _prevAyBuf = new Float64Array(0)
+
 /** Returns the smoothed (EMA) orbital period for a body, in sim-time units. */
 export function getSmoothedPeriod(bodyId: string): number | null {
   return _smoothedPeriods.get(bodyId) ?? null
@@ -195,13 +199,16 @@ function verletStep(bodies: LiveBody[], params: Pick<PlanetSimParams, 'G' | 'eps
     b.x += b.vx * dt + 0.5 * b.ax * dt * dt
     b.y += b.vy * dt + 0.5 * b.ay * dt * dt
   }
-  const prevAx = bodies.map(b => b.ax)
-  const prevAy = bodies.map(b => b.ay)
+  if (_prevAxBuf.length < bodies.length) {
+    _prevAxBuf = new Float64Array(bodies.length)
+    _prevAyBuf = new Float64Array(bodies.length)
+  }
+  for (let i = 0; i < bodies.length; i++) { _prevAxBuf[i] = bodies[i].ax; _prevAyBuf[i] = bodies[i].ay }
   computeAccels(bodies, G, eps)
   for (let i = 0; i < bodies.length; i++) {
     if (bodies[i].fixed) continue
-    bodies[i].vx += 0.5 * (prevAx[i] + bodies[i].ax) * dt
-    bodies[i].vy += 0.5 * (prevAy[i] + bodies[i].ay) * dt
+    bodies[i].vx += 0.5 * (_prevAxBuf[i] + bodies[i].ax) * dt
+    bodies[i].vy += 0.5 * (_prevAyBuf[i] + bodies[i].ay) * dt
   }
 }
 
@@ -278,7 +285,13 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
   const { bodies: storeBodies, simParams: storeParams, selectedBodyId, selectedBodyIds, resetSeq, setSelectedBodyId } = usePlanetStore()
 
   // ── Simulation refs (declared first so all effects can use them) ─────────
-  const storeBodiesRef  = useRef<PlanetBody[]>(storeBodies)
+  const storeBodiesRef    = useRef<PlanetBody[]>(storeBodies)
+  // O(1) body lookup — kept in sync with storeBodiesRef
+  const storeBodiesMapRef  = useRef<Map<string, PlanetBody>>(new Map(storeBodies.map(b => [b.id, b])))
+  // Per-frame caches: populated once at frame start, reused throughout the RAF loop
+  const bodyParamsCacheRef = useRef<Map<string, Partial<PlanetSimParams>>>(new Map())
+  const trigParamsCacheRef = useRef<Map<string, Partial<PlanetSimParams>[]>>(new Map())
+  const rackCacheRef       = useRef<Map<string, { triggers: string[]; instrument: string | null; effects: string[] }>>(new Map())
   const liveBodiesRef   = useRef<LiveBody[]>([])
   const trailsRef       = useRef<Map<string, TrailRing>>(new Map())
   const simParamsRef    = useRef<PlanetSimParams>(storeParams)
@@ -335,7 +348,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
       }
     }
 
-    storeBodiesRef.current = storeBodies
+    storeBodiesRef.current    = storeBodies
+    storeBodiesMapRef.current = new Map(storeBodies.map(b => [b.id, b]))
   }, [storeBodies])
 
   const projectSamplesRef = useRef(useProjectStore.getState().project.samples)
@@ -522,6 +536,19 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
       const bodies = liveBodiesRef.current
       const trails = trailsRef.current
 
+      // ── Per-frame caches (ONE store read + O(n) build; reused everywhere) ────
+      const csStore  = useControlSetStore.getState()
+      const sbMap    = storeBodiesMapRef.current
+      const bpCache  = bodyParamsCacheRef.current
+      const tpCache  = trigParamsCacheRef.current
+      const rkCache  = rackCacheRef.current
+      bpCache.clear(); tpCache.clear(); rkCache.clear()
+      for (const b of bodies) {
+        bpCache.set(b.id, csStore.getBodyEffectiveParams(b.id))
+        tpCache.set(b.id, csStore.getBodyTriggerParamsList(b.id))
+        rkCache.set(b.id, csStore.getBodyEffectiveRack(b.id))
+      }
+
       // Update module-level snapshot for orbit-preview (every frame, cheap)
       _liveBodiesSnap = bodies.map(b => ({ ...b }))
       _simParamsSnap  = { G: params.G, epsilon: params.epsilon, dt: params.dt }
@@ -585,6 +612,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
               tperiodIntervalMsRef.current.delete(id)
               planetBodyStatsCache.delete(id)
               toggleStateRef.current.delete(id)
+              storeBodiesMapRef.current.delete(id)
             }
             computeAccels(liveBodiesRef.current, params.G, params.epsilon)
           }
@@ -594,15 +622,13 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
         // Rack-only: a body participates only when its rack slot sets rendezvousDistance > 0.
         // There is no global fallback — global simParams values are ignored here.
         {
-          const sb      = storeBodiesRef.current
           const samples = projectSamplesRef.current
           const prevIn  = prevInRef.current
           const togSt   = toggleStateRef.current
-          const csStore = useControlSetStore.getState()
 
           // Helper: fire or toggle a sample for one body, using its effective params
           function fireOrToggle(bodyId: string, sampleId: string | null, rate: number, vol: number) {
-            const sbi = sb.find(b => b.id === bodyId)
+            const sbi = sbMap.get(bodyId)
             if (sbi?.muted) return                     // body is muted — skip
 
             // ── MIDI OUT ─ Note On to instrument ─────────────────────────────
@@ -627,7 +653,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
             const sample = resolveBodySamplerSample(bodyId, sampleId, samples)
             if (!sample) return
             // Per-body rack overrides global params for this body
-            const bodyOverride = csStore.getBodyEffectiveParams(bodyId)
+            const bodyOverride = bpCache.get(bodyId) ?? {}
             const effectiveMode = (bodyOverride.rendezvousTriggerMode ?? 'oneshot') as string
             const triggerPlaybackMode = (bodyOverride.triggerPlaybackMode ?? params.triggerPlaybackMode) as string
             const spatial = computeBodyRackOutputSpatial(bodyId, bodies, params, bodyOverride)
@@ -665,8 +691,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
             for (let j = i + 1; j < bodies.length; j++) {
               const bi = bodies[i], bj = bodies[j]
               // Use the larger of the two bodies' effective rendezvous distance
-              const biOverride = csStore.getBodyEffectiveParams(bi.id)
-              const bjOverride = csStore.getBodyEffectiveParams(bj.id)
+              const biOverride = bpCache.get(bi.id) ?? {}
+              const bjOverride = bpCache.get(bj.id) ?? {}
               const rdDistI = (biOverride.rendezvousDistance as number | undefined) ?? 0
               const rdDistJ = (bjOverride.rendezvousDistance as number | undefined) ?? 0
               const rdDist  = Math.max(rdDistI, rdDistJ)
@@ -677,8 +703,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
               const wasIn = prevIn.get(key) ?? false
               const isIn  = dist <= rdDist
               if (isIn && !wasIn) {
-                const sbi = sb.find(b => b.id === bi.id)
-                const sbj = sb.find(b => b.id === bj.id)
+                const sbi = sbMap.get(bi.id)
+                const sbj = sbMap.get(bj.id)
                 const relV = Math.sqrt((bi.vx - bj.vx) ** 2 + (bi.vy - bj.vy) ** 2)
                 const rate = Math.max(0.3, Math.min(3.0, 0.5 + relV * 0.3))
                 const vol  = Math.max(0.2, Math.min(1.0, 1.0 - dist / (rdDist * 2)))
@@ -692,7 +718,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
           // Body-probe rendezvous (when probe is active)
           if (toolRef.current === 'probe' && mp) {
             for (const b of bodies) {
-              const bOverride = csStore.getBodyEffectiveParams(b.id)
+              const bOverride = bpCache.get(b.id) ?? {}
               const rdDist = (bOverride.rendezvousDistance as number | undefined) ?? 0
               if (rdDist <= 0) continue
               const dx = mp.x - b.x, dy = mp.y - b.y
@@ -701,7 +727,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
               const wasIn = prevIn.get(key) ?? false
               const isIn  = dist <= rdDist
               if (isIn && !wasIn) {
-                const sbi = sb.find(s => s.id === b.id)
+                const sbi = sbMap.get(b.id)
                 fireOrToggle(b.id, sbi?.sampleId ?? null, 1 + dist * 0.002, 0.85)
               }
               prevIn.set(key, isIn)
@@ -721,11 +747,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
 
         // Advance simulation clock (only when running)
         if (!params.paused) simTimeRef.current += params.dt * STEPS_PER_FRAME
-        const sbArr    = storeBodiesRef.current
         const smpArr   = projectSamplesRef.current
         const mp       = mousePosWorldRef.current
-        // ── Per-frame store snapshot (read once, reuse for all bodies) ─────────
-        const csStore  = useControlSetStore.getState()
 
         for (const b of bodies) {
           const dx = b.x - cmX, dy = b.y - cmY
@@ -789,8 +812,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
           }
 
           // Merge per-body rack on top of global params for this body
-          // (computed ONCE per body per frame — reused in all trigger/spatial sections)
-          const bodyOverride   = csStore.getBodyEffectiveParams(b.id)
+          // (pre-computed at frame start — O(1) lookup here)
+          const bodyOverride   = bpCache.get(b.id) ?? {}
           const bodyParams     = Object.keys(bodyOverride).length > 0
             ? { ...params, ...bodyOverride }
             : params
@@ -805,10 +828,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
           // ── Per-trigger orbit evaluation ──────────────────────────────────────
           // Each trigger in the rack fires independently with its own params.
           // Using prevAccum / newAccum (already computed above) for orbit crossing detection.
-          const sbi   = sbArr.find(s => s.id === b.id)
+          const sbi   = sbMap.get(b.id)
           if (!params.paused && sbi && !sbi.muted && newAccum !== 0) {
-            const triggerParamsList = csStore.getBodyTriggerParamsList(b.id)
-            const rack = csStore.getBodyEffectiveRack(b.id)
+            const triggerParamsList = tpCache.get(b.id) ?? []
+            const rack = rkCache.get(b.id) ?? { triggers: [] as string[], instrument: null as string | null, effects: [] as string[] }
 
             for (let ti = 0; ti < triggerParamsList.length; ti++) {
               const tp       = triggerParamsList[ti]
@@ -972,7 +995,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
               ?? ((bodyParams.orbitStretchMode as boolean | undefined) ? 'rate' : 'off')
             const isActive = stretchMode !== 'off' && !params.paused && isFinite(period) && period > 0
 
-            const sbi = sbArr.find(s => s.id === b.id)
+            const sbi = sbMap.get(b.id)
 
             if (isActive) {
               if (sbi?.muted) {
@@ -1043,13 +1066,11 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
       // Every frame: for each effector body, route nearby planets' samples
       // into its reverb bus proportional to closeness (wet = maxWet × (1 - d/maxDist))
       {
-        const sb      = storeBodiesRef.current
         const smpArr  = projectSamplesRef.current
-        const csStore = useControlSetStore.getState()
         // A body is an effector if its per-body rack overrides effectorType to 'reverb',
         // OR if its direct body property effectorType is set.
-        const effectors = sb.filter(b => {
-          const eff = csStore.getBodyEffectiveParams(b.id)
+        const effectors = storeBodiesRef.current.filter(b => {
+          const eff = bpCache.get(b.id) ?? {}
           const effType = (eff.effectorType ?? b.effectorType ?? 'none') as string
           return effType !== 'none'
         })
@@ -1058,7 +1079,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
             const effLive = bodies.find(b => b.id === eff.id)
             if (!effLive) continue
             // Merge rack-level overrides on top of body properties
-            const effOverride = csStore.getBodyEffectiveParams(eff.id)
+            const effOverride = bpCache.get(eff.id) ?? {}
             const effDist    = (effOverride.effectorDistance    ?? eff.effectorDistance    ?? 200)   as number
             const effMaxWet  = (effOverride.effectorMaxWet      ?? eff.effectorMaxWet      ?? 0.7)   as number
             const effType    = (effOverride.effectorType        ?? eff.effectorType        ?? 'reverb') as string
@@ -1122,7 +1143,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
               if (b.id === eff.id) continue
               const dx = b.x - effLive.x, dy = b.y - effLive.y
               const dist = Math.sqrt(dx * dx + dy * dy)
-              const sbBody = sb.find(s => s.id === b.id)
+              const sbBody = sbMap.get(b.id)
 
               if (dist <= effDist) {
                 const sendLevel = sendMaxGain * Math.max(0, 1 - dist / effDist)
@@ -1347,6 +1368,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
       }
       storeState.addBody(newBody)
       storeBodiesRef.current = [...storeBodiesRef.current, newBody]
+      storeBodiesMapRef.current.set(newBody.id, newBody)
       liveBodiesRef.current.push({
         id: newBody.id, mass: newBody.mass, x: dp.bodyX, y: dp.bodyY,
         vx, vy, ax: 0, ay: 0, fixed: newBody.fixed,
@@ -1484,7 +1506,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
             if (!ring || ring.count < 2) return null
             const pts = trailToPoints(ring)
             if (!pts) return null
-            const sb = storeBodiesRef.current.find(s => s.id === b.id)
+            const sb = storeBodiesMapRef.current.get(b.id)
             return (
               <polyline key={`trail-${b.id}`} points={pts} fill="none"
                 stroke={sb?.color ?? '#888'} strokeWidth={1.2 / zoom} strokeOpacity={trailOpacity} />
@@ -1493,7 +1515,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
 
           {/* Velocity vectors */}
           {storeParams.showVelocityVectors && bodies.map(b => {
-            const sb = storeBodiesRef.current.find(s => s.id === b.id)
+            const sb = storeBodiesMapRef.current.get(b.id)
             return (
               <line key={`vel-${b.id}`}
                 x1={b.x} y1={b.y} x2={b.x + b.vx * 25} y2={b.y + b.vy * 25}
@@ -1504,7 +1526,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
 
           {/* Bodies */}
           {bodies.map(b => {
-            const sb        = storeBodiesRef.current.find(s => s.id === b.id)
+            const sb        = storeBodiesMapRef.current.get(b.id)
             const type      = sb?.type  ?? 'planet'
             const color     = sb?.color ?? '#888'
             const samplerSample = resolveBodySamplerSample(b.id, sb?.sampleId, projectSamplesRef.current)
@@ -1539,8 +1561,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
                 )}
                 {/* Effector ring + influence radius */}
                 {(() => {
-                  const sb = storeBodiesRef.current.find(s => s.id === b.id)
-                  const rackOv  = useControlSetStore.getState().getBodyEffectiveParams(b.id)
+                  const sb = storeBodiesMapRef.current.get(b.id)
+                  const rackOv  = bodyParamsCacheRef.current.get(b.id) ?? {}
                   const effType = (rackOv.effectorType ?? sb?.effectorType ?? 'none') as string
                   if (effType === 'none') return null
                   const effDist = ((rackOv.effectorDistance ?? sb?.effectorDistance ?? 200) as number)
@@ -1622,7 +1644,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
                 })()}
                 {/* Orbit trigger position markers */}
                 {(() => {
-                  const bodyOv = useControlSetStore.getState().getBodyEffectiveParams(b.id)
+                  const bodyOv = bodyParamsCacheRef.current.get(b.id) ?? {}
                   const bp = Object.keys(bodyOv).length > 0 ? { ...storeParams, ...bodyOv } : storeParams
                   if (!bp.showOrbitTriggerMarkers || bp.orbitTriggerMode !== 'orbit-complete') return null
                   const stats = planetBodyStatsCache.get(b.id)
