@@ -84,55 +84,18 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       rendezvousDistance: 0,
     },
   },
-  // ── Instrument ─────────────────────────────────────────────────────────────
   {
-    id: 'instrument-sampler',
-    name: 'Sampler',
-    icon: '▶',
-    color: '#06b6d4',
-    category: 'instrument',
+    id: 'trigger-chord-test',
+    name: 'Chord Test',
+    icon: '♩',
+    color: '#34d399',
+    category: 'trigger',
     description:
-      'サンプルを再生するインストゥルメント。\n' +
-      'ループ/ワンショット/ピンポン、スタート/エンドポイント、逆再生などをサポート。',
+      'C3 / E3 / G3 の3ボタンで各音をマニュアル送信。\n' +
+      'Ambient Osc や One-Shot のテストに使う開発用トリガー。',
     params: {
-      samplerType:        'sampler',
-      samplerMode:        'auto',
-      samplerSampleId:    null,
-      samplerVolume:      0.7,
-      samplerPlayMode:    'loop',
-      samplerSampleStart: 0,
-      samplerSampleEnd:   1,
-      samplerLoopStart:   0,
-      samplerLoopEnd:     1,
-      samplerReverse:     false,
-      samplerDetune:      0,
-      samplerAttack:      0.01,
-      samplerRelease:     1.0,
-      samplerReverbMix:   0.3,
-      orbitStretchMode:   false,
-    },
-  },
-  {
-    id: 'instrument-pad-drone',
-    name: 'Pad Drone',
-    icon: '♪',
-    color: '#8b5cf6',
-    category: 'instrument',
-    description:
-      'このbodyに持続するドローンパッドを割り当てる。\n' +
-      '軌道しながら常時発音するウォームなパッド音源。',
-    params: {
-      droneType: 'pad',
-      droneMode: 'orbit',
-      droneRootNote: 'A2',
-      droneVolume: 0.35,
-      droneBrightness: 1200,
-      droneMelt: 0.5,
-      droneDetune: 8,
-      droneMotion: 0.4,
-      droneAttack: 6.0,
-      droneRelease: 12.0,
-      droneReverbMix: 0.55,
+      orbitTriggerMode: 'none',
+      rendezvousDistance: 0,
     },
   },
   // ── Effect ─────────────────────────────────────────────────────────────────
@@ -300,65 +263,50 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       micPickupGain: 1.0,      // Input 2: max gain at distance=0
     },
   },
-  // ── Instrument (Granular / FM / Noise) ─────────────────────────────────────
+  // ── Instrument ─────────────────────────────────────────────────────────────
   {
-    id: 'instrument-granular',
-    name: 'Granular',
-    icon: '⋯',
-    color: '#a3e635',
+    id: 'instrument-osc-synth',
+    name: 'Osc Synth',
+    icon: '∿',
+    color: '#a78bfa',
     category: 'instrument',
     description:
-      '読み込み済みサンプルをマイクログレインに分解してリアルタイム再生。\n' +
-      '粒子感のある霞・雲のようなアンビエントテクスチャを生み出す。',
+      'AmbientOscillatorEngine をトリガー駆動で使うシンセ。\n' +
+      'OscView と同じ仕様: 波形・フィルター・LFO (Pitch/Filter/Amp) を装備。\n' +
+      'Manual / Chord Test / Orbit などのトリガーで noteOn/noteOff が発火。',
     params: {
-      droneType: 'none',
-      granularType: 'grain',
-      granularVolume: 0.6,
-      granularGrainSize: 0.08,
-      granularOverlap: 0.04,
-      granularDetune: 0,
-      granularReverbMix: 0.5,
+      oscSynthType:            'osc-synth',
+      oscSynthWaveform:        'sine',
+      oscSynthAttack:          0.05,
+      oscSynthRelease:         1.5,
+      oscSynthFilterCutoff:    2000,
+      oscSynthFilterResonance: 0.5,
+      oscSynthLevel:           0.7,
+      oscSynthLfoTarget:       'off',
+      oscSynthLfoRate:         1.0,
+      oscSynthLfoDepth:        0.3,
+      oscSynthLfoWaveform:     'sine',
     },
   },
   {
-    id: 'instrument-fm-drone',
-    name: 'FM Drone',
-    icon: '⌁',
-    color: '#f59e0b',
+    id: 'instrument-ambient-osc',
+    name: 'Ambient Osc',
+    icon: '∿',
+    color: '#818cf8',
     category: 'instrument',
     description:
-      '2オペレーターFM合成による持続ドローン。\n' +
-      '軌道の離心率でFMインデックスが変化し、金属的・ガラス的な倍音を生む。',
+      'シンプルな持続オシレーター。ゆっくりしたattack/releaseで滑らかなアンビエントサウンドを生む。\n' +
+      'サイン波・三角波・ノコギリ波・矩形波をサポート。ローパスフィルター内蔵。\n' +
+      'noteOn/noteOffをMIDIやトリガーから叩ける設計。',
     params: {
-      droneType: 'none',
-      fmDroneType: 'fm',
-      fmDroneRootNote: 'A2',
-      fmDroneRatio: 3,
-      fmDroneIndex: 3,
-      fmDroneVolume: 0.35,
-      fmDroneAttack: 4.0,
-      fmDroneRelease: 8.0,
-      fmDroneReverbMix: 0.5,
-    },
-  },
-  {
-    id: 'instrument-noise-pad',
-    name: 'Noise Pad',
-    icon: '≈',
-    color: '#94a3b8',
-    category: 'instrument',
-    description:
-      'ブラウンノイズを共鳴バンドパスフィルターで整形した持続パッド。\n' +
-      '風・息・宇宙的なアトモスフィアを生む。軌道に合わせてフィルターが動く。',
-    params: {
-      droneType: 'none',
-      noisePadType: 'noise',
-      noisePadVolume: 0.3,
-      noisePadFreq: 600,
-      noisePadQ: 8,
-      noisePadAttack: 3.0,
-      noisePadRelease: 6.0,
-      noisePadReverbMix: 0.6,
+      ambientOscType:            'ambient-osc',
+      ambientOscWaveform:        'sine',
+      ambientOscAttack:          1.5,
+      ambientOscRelease:         3.0,
+      ambientOscFilterCutoff:    1200,
+      ambientOscFilterResonance: 0.3,
+      ambientOscLevel:           0.5,
+      ambientOscNote:            60,
     },
   },
   {
@@ -435,7 +383,7 @@ function emptyRack(): BodyRack {
 
 /** Initial global rack — orbit trigger pre-assigned so app starts with timing. */
 function defaultGlobalRack(): BodyRack {
-  return { triggers: ['orbit'], instrument: 'instrument-oneshot', effects: [] }
+  return { triggers: ['orbit'], instrument: 'instrument-oneshot-stretch', effects: [] }
 }
 
 function defaultBodyRacks(): Record<string, BodyRackOverride> {

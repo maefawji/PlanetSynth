@@ -303,7 +303,7 @@ function PlanetMixerSection() {
             ↻ Trig</button>
           <button onClick={() => updateSimParams({ paused: !simParams.paused })}
             style={{ flex: 1, padding: '5px 4px', background: t.inputBg, border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 9.5, fontWeight: 600, color: simParams.paused ? t.textMid : t.text, fontFamily: 'inherit' }}>
-            {simParams.paused ? '■ Paused' : '⏸ Pause'}</button>
+            {simParams.paused ? '▶ Play' : '⏸ Pause'}</button>
           <button onClick={restartSim}
             style={{ flex: 1, padding: '5px 4px', background: t.inputBg, border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 9.5, color: t.textMid, fontFamily: 'inherit' }}>
             ⟳ Restart</button>

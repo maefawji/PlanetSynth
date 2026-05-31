@@ -1792,6 +1792,14 @@ function CanvasSettingsPanel() {
             />
             <span style={{ fontSize: 10, color: t.textMid }}>Monochrome mode</span>
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+            <input
+              type="checkbox"
+              checked={settings.showModeBar}
+              onChange={e => update({ showModeBar: e.target.checked })}
+            />
+            <span style={{ fontSize: 10, color: t.textMid }}>Show mode bar</span>
+          </label>
         </SettingsGroup>
         <SettingsGroup label="Drawing">
           <NumberSetting label="Circle r" value={settings.circleRadius} min={1} step={1} onChange={circleRadius => {

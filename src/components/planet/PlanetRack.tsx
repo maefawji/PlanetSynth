@@ -21,6 +21,8 @@ import { sendMidiNote, getMidiSendAge, getMidiReceiveAge, isMidiReady } from '..
 import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import type { OneShotState } from '../../audio/OneShotSamplerEngine'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
+import { getBodyAmbientOscEngine } from './AmbientOscillatorLayer'
+import { getBodyOscSynthEngine } from './OscSynthLayer'
 
 // ── Param editor config ───────────────────────────────────────────────────────
 
@@ -104,6 +106,27 @@ const PARAM_CFG: Record<string, ParamCfg> = {
   noisePadReverbMix: { type: 'number', label: 'reverb',  step: 0.05, min: 0,  max: 1 },
   // One-shot sampler params
   oneShotType:       { type: 'select', label: 'type',   options: ['off', 'oneshot'], optionLabels: ['— off', 'One-Shot'] },
+  // Osc Synth params
+  oscSynthType:            { type: 'select', label: 'type',    options: ['off', 'osc-synth'], optionLabels: ['— off', 'Osc Synth'] },
+  oscSynthWaveform:        { type: 'select', label: 'wave',    options: ['sine', 'triangle', 'sawtooth', 'square'], optionLabels: ['Sine', 'Triangle', 'Saw', 'Square'] },
+  oscSynthAttack:          { type: 'number', label: 'attack',  step: 0.01, min: 0.001, max: 20 },
+  oscSynthRelease:         { type: 'number', label: 'release', step: 0.1,  min: 0.01,  max: 30 },
+  oscSynthFilterCutoff:    { type: 'number', label: 'cutoff',  step: 50,   min: 80,    max: 12000 },
+  oscSynthFilterResonance: { type: 'number', label: 'Q',       step: 0.05, min: 0.01,  max: 15 },
+  oscSynthLevel:           { type: 'number', label: 'level',   step: 0.05, min: 0,     max: 1 },
+  oscSynthLfoTarget:       { type: 'select', label: 'lfo →',   options: ['off', 'pitch', 'filter', 'amplitude'], optionLabels: ['Off', 'Pitch', 'Filter', 'Amp'] },
+  oscSynthLfoRate:         { type: 'number', label: 'lfo rate', step: 0.01, min: 0.01, max: 20 },
+  oscSynthLfoDepth:        { type: 'number', label: 'lfo depth', step: 0.01, min: 0,   max: 1 },
+  oscSynthLfoWaveform:     { type: 'select', label: 'lfo wave',  options: ['sine', 'triangle', 'sawtooth', 'square'], optionLabels: ['Sine', 'Triangle', 'Saw', 'Square'] },
+  // Ambient Oscillator params
+  ambientOscType:            { type: 'select', label: 'type',    options: ['off', 'ambient-osc'], optionLabels: ['— off', 'Ambient Osc'] },
+  ambientOscWaveform:        { type: 'select', label: 'wave',    options: ['sine', 'triangle', 'sawtooth', 'square'], optionLabels: ['Sine', 'Triangle', 'Saw', 'Square'] },
+  ambientOscAttack:          { type: 'number', label: 'attack',  step: 0.1, min: 0.01, max: 20 },
+  ambientOscRelease:         { type: 'number', label: 'release', step: 0.1, min: 0.01, max: 30 },
+  ambientOscFilterCutoff:    { type: 'number', label: 'cutoff',  step: 50,  min: 80,   max: 12000 },
+  ambientOscFilterResonance: { type: 'number', label: 'Q',       step: 0.05, min: 0.01, max: 15 },
+  ambientOscLevel:           { type: 'number', label: 'level',   step: 0.05, min: 0,   max: 1 },
+  ambientOscNote:            { type: 'number', label: 'note',    step: 1,   min: 0,    max: 127 },
   // Oneshot-stretch params
   sampleStretchMode:    { type: 'select',  label: 'stretch', options: ['off', 'rate', 'time'], optionLabels: ['Off', 'Rate', 'Time'] },
   sampleOrbitSource:    { type: 'select',  label: 'orbit src', options: ['current', 'predicted'], optionLabels: ['Current ω', 'Predicted'] },
@@ -163,6 +186,35 @@ const SAMPLER_2COL_ORDER = [
   'samplerReverse',     'samplerDetune',
   'samplerAttack',      'samplerRelease',
   'samplerReverbMix',   '',
+]
+
+// ── OscSynth 2-column layout ──────────────────────────────────────────────────
+
+const OSC_SYNTH_2COL_KEYS = new Set([
+  'oscSynthWaveform', 'oscSynthLevel',
+  'oscSynthAttack', 'oscSynthRelease',
+  'oscSynthFilterCutoff', 'oscSynthFilterResonance',
+  'oscSynthLfoTarget', 'oscSynthLfoWaveform',
+  'oscSynthLfoRate', 'oscSynthLfoDepth',
+])
+const OSC_SYNTH_2COL_LABELS: Record<string, string> = {
+  oscSynthWaveform:        'wave',
+  oscSynthLevel:           'level',
+  oscSynthAttack:          'atk',
+  oscSynthRelease:         'rel',
+  oscSynthFilterCutoff:    'cutoff',
+  oscSynthFilterResonance: 'Q',
+  oscSynthLfoTarget:       'lfo→',
+  oscSynthLfoWaveform:     'lfoW',
+  oscSynthLfoRate:         'rate',
+  oscSynthLfoDepth:        'depth',
+}
+const OSC_SYNTH_2COL_ORDER = [
+  'oscSynthWaveform',        'oscSynthLevel',
+  'oscSynthAttack',          'oscSynthRelease',
+  'oscSynthFilterCutoff',    'oscSynthFilterResonance',
+  'oscSynthLfoTarget',       'oscSynthLfoWaveform',
+  'oscSynthLfoRate',         'oscSynthLfoDepth',
 ]
 
 // ── Rack orbit input column helpers ──────────────────────────────────────────
@@ -852,6 +904,182 @@ const ORBIT_DRIVEN_PARAM_KEYS = new Set<string>([
 
 const EMPTY_PARAM_OVERRIDES: Partial<PlanetSimParams> = {}
 
+// ── Inline Ambient Osc content (rendered inside SlotCard) ───────────────────
+
+/**
+ * Minimal test-note button rendered inside the Ambient Osc instrument SlotCard.
+ * Calls noteOn(60) on click and auto-releases after 2 s (or on second click).
+ */
+function InlineAmbientOscContent({
+  bodyId, simple, accent,
+}: { bodyId: string | null; simple: boolean; accent: string }) {
+  const [testing, setTesting] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dimText = simple ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.35)'
+
+  function handleTestNote() {
+    if (!bodyId) return
+    const eng = getBodyAmbientOscEngine(bodyId)
+    if (!eng) return
+    if (testing) {
+      eng.noteOff(60)
+      if (timerRef.current) clearTimeout(timerRef.current)
+      setTesting(false)
+      return
+    }
+    eng.noteOn(60, 0.8)
+    setTesting(true)
+    timerRef.current = setTimeout(() => {
+      eng.noteOff(60)
+      setTesting(false)
+    }, 2000)
+  }
+
+  // Clean up timer on unmount
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
+
+  return (
+    <div style={{ padding: '4px 0 2px', display: 'flex', alignItems: 'center', gap: 6 }}>
+      <button
+        onClick={handleTestNote}
+        style={{
+          fontSize: 9, fontWeight: 700, padding: '3px 10px',
+          borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+          border: `0.5px solid ${accent}55`,
+          background: testing ? `${accent}22` : 'transparent',
+          color: testing ? accent : dimText,
+          transition: 'background 0.15s, color 0.15s',
+        }}
+      >
+        {testing ? '♪ playing…' : '▶ Test  C4'}
+      </button>
+    </div>
+  )
+}
+
+// ── Inline Osc Synth content (rendered inside instrument SlotCard) ───────────
+
+/**
+ * Test-note button for instrument-osc-synth.
+ * Sends C4 noteOn → noteOff after 1.5 s (or cancel on second click).
+ */
+function InlineOscSynthContent({
+  bodyId, simple, accent,
+}: { bodyId: string | null; simple: boolean; accent: string }) {
+  const [testing, setTesting] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dimText  = simple ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.35)'
+
+  function handleTest() {
+    if (!bodyId) return
+    const eng = getBodyOscSynthEngine(bodyId)
+    if (!eng) return
+    if (testing) {
+      eng.noteOff(60)
+      if (timerRef.current) clearTimeout(timerRef.current)
+      setTesting(false)
+      return
+    }
+    eng.noteOn(60, 0.8)
+    setTesting(true)
+    timerRef.current = setTimeout(() => {
+      eng.noteOff(60)
+      setTesting(false)
+    }, 1500)
+  }
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
+
+  return (
+    <div style={{ padding: '4px 0 2px', display: 'flex', alignItems: 'center', gap: 6 }}>
+      <button
+        onClick={handleTest}
+        style={{
+          fontSize: 9, fontWeight: 700, padding: '3px 10px',
+          borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+          border: `0.5px solid ${accent}55`,
+          background: testing ? `${accent}22` : 'transparent',
+          color: testing ? accent : dimText,
+          transition: 'background 0.15s, color 0.15s',
+        }}
+      >
+        {testing ? '♪ playing…' : '▶ Test  C4'}
+      </button>
+    </div>
+  )
+}
+
+// ── Inline Chord-Test trigger (rendered inside trigger SlotCard) ─────────────
+
+const CHORD_TEST_NOTES: { label: string; midi: number }[] = [
+  { label: 'C3', midi: 48 },
+  { label: 'E3', midi: 52 },
+  { label: 'G3', midi: 55 },
+]
+
+function InlineChordTestContent({
+  bodyId, simple, accent,
+}: { bodyId: string | null; simple: boolean; accent: string }) {
+  const [active, setActive] = useState<number | null>(null)
+  const timers = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
+  const dimText = simple ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.35)'
+
+  function fire(midi: number) {
+    // Resolve target body
+    const state = usePlanetStore.getState()
+    const targetId = bodyId || state.selectedBodyId
+    if (!targetId) return
+
+    // 1. Flash trigger indicator
+    markBodyTriggered(targetId)
+
+    // 2. MIDI note out
+    const body = state.bodies.find(b => b.id === targetId)
+    sendMidiNote(body?.midiChannel ?? 1, midi, body?.midiVelocity ?? 100, 500)
+
+    // 3. Try instrument engines that accept specific pitches
+    const ambientEng  = getBodyAmbientOscEngine(targetId)
+    const oscSynthEng = getBodyOscSynthEngine(targetId)
+    const pitchEng    = ambientEng ?? oscSynthEng
+    if (pitchEng) {
+      pitchEng.noteOn(midi, 0.85)
+      clearTimeout(timers.current[midi])
+      timers.current[midi] = setTimeout(() => pitchEng.noteOff(midi), 800)
+    } else {
+      // One-shot or other instrument — fire generically
+      fireBodyInstrumentTrigger(targetId)
+    }
+
+    // Button flash
+    setActive(midi)
+    clearTimeout(timers.current[-1])
+    timers.current[-1] = setTimeout(() => setActive(null), 180)
+  }
+
+  useEffect(() => () => { Object.values(timers.current).forEach(clearTimeout) }, [])
+
+  return (
+    <div style={{ padding: '4px 0 2px', display: 'flex', gap: 5 }}>
+      {CHORD_TEST_NOTES.map(({ label, midi }) => (
+        <button
+          key={midi}
+          onClick={() => fire(midi)}
+          style={{
+            flex: 1, fontSize: 9, fontWeight: 700, padding: '4px 0',
+            borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+            border: `0.5px solid ${active === midi ? accent : accent + '55'}`,
+            background: active === midi ? `${accent}30` : `${accent}10`,
+            color: active === midi ? accent : dimText,
+            transition: 'background 0.08s, color 0.08s',
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ── Inline One-Shot content (rendered inside SlotCard) ───────────────────────
 
 /**
@@ -1430,11 +1658,26 @@ function SlotCard({
   // ── One-shot active detection ──────────────────────────────────────────────
   const isOneShot = cs.id === 'instrument-oneshot' || cs.id === 'instrument-oneshot-stretch'
 
+  // ── Ambient Oscillator active detection ────────────────────────────────────
+  const isAmbientOsc = cs.id === 'instrument-ambient-osc'
+  const effectiveAmbientOscType = isAmbientOsc
+    ? String((overrides as Record<string, unknown>)['ambientOscType'] ?? cs.params.ambientOscType ?? 'off')
+    : 'off'
+  const isAmbientOscOn = isAmbientOsc && effectiveAmbientOscType === 'ambient-osc'
+
+  // ── Osc Synth active detection ─────────────────────────────────────────────
+  const isOscSynth = cs.id === 'instrument-osc-synth'
+  const effectiveOscSynthType = isOscSynth
+    ? String((overrides as Record<string, unknown>)['oscSynthType'] ?? cs.params.oscSynthType ?? 'off')
+    : 'off'
+  const isOscSynthOn = isOscSynth && effectiveOscSynthType === 'osc-synth'
+
   // ── Orbit trigger detection ────────────────────────────────────────────────
   const isOrbitTrigger = cs.id === 'orbit'
 
   // ── Manual trigger detection ───────────────────────────────────────────────
-  const isManualTrigger = cs.id === 'trigger-manual'
+  const isManualTrigger   = cs.id === 'trigger-manual'
+  const isChordTestTrigger = cs.id === 'trigger-chord-test'
 
   // ── Loaded samples (for sample dropdown) ──────────────────────────────────
   const loadedSamples = useProjectStore(s => s.project.samples)
@@ -1498,6 +1741,16 @@ function SlotCard({
         <InlineOneShotContent bodyId={bodyId} slotKey={slotKey} simple={simple} accent={accent} isStretch={cs.id === 'instrument-oneshot-stretch'} />
       )}
 
+      {/* Ambient Osc test-note button */}
+      {isAmbientOscOn && (
+        <InlineAmbientOscContent bodyId={bodyId} simple={simple} accent={accent} />
+      )}
+
+      {/* Osc Synth test-note button */}
+      {isOscSynthOn && (
+        <InlineOscSynthContent bodyId={bodyId} simple={simple} accent={accent} />
+      )}
+
       {/* Editable params */}
       {!isOneShot && Object.entries(cs.params).map(([key, baseVal]) => {
         const cfg = PARAM_CFG[key]
@@ -1520,6 +1773,15 @@ function SlotCard({
         if (['fmDroneRootNote','fmDroneRatio','fmDroneIndex','fmDroneVolume','fmDroneAttack','fmDroneRelease','fmDroneReverbMix'].includes(key) && !isFMOn) return null
         // Noise sub-params: only when noisePadType is 'noise'
         if (['noisePadVolume','noisePadFreq','noisePadQ','noisePadAttack','noisePadRelease','noisePadReverbMix'].includes(key) && !isNoiseOn) return null
+        // Ambient Osc sub-params: only when ambientOscType is 'ambient-osc'
+        if (['ambientOscWaveform','ambientOscAttack','ambientOscRelease','ambientOscFilterCutoff',
+             'ambientOscFilterResonance','ambientOscLevel','ambientOscNote'].includes(key) && !isAmbientOscOn) return null
+        // Osc Synth sub-params: only when oscSynthType is 'osc-synth'
+        if (['oscSynthWaveform','oscSynthAttack','oscSynthRelease','oscSynthFilterCutoff',
+             'oscSynthFilterResonance','oscSynthLevel',
+             'oscSynthLfoTarget','oscSynthLfoRate','oscSynthLfoDepth','oscSynthLfoWaveform'].includes(key) && !isOscSynthOn) return null
+        // When OscSynth is on, 2-col sub-params render in the dedicated block below
+        if (isOscSynthOn && OSC_SYNTH_2COL_KEYS.has(key)) return null
         const isOv    = key in overrides
         const val     = isOv ? (overrides as Record<string, unknown>)[key] : baseVal
         const labelCol = isOv ? accent : dimText
@@ -1653,6 +1915,61 @@ function SlotCard({
         </div>
       )}
 
+      {/* OscSynth 2-column param grid */}
+      {isOscSynthOn && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 5px' }}>
+          {OSC_SYNTH_2COL_ORDER.map((key, idx) => {
+            const cfg = PARAM_CFG[key]
+            if (!cfg) return <div key={`_e${idx}`} />
+            const isOv    = key in overrides
+            const baseVal = (cs.params as Record<string, unknown>)[key]
+            const val     = isOv ? (overrides as Record<string, unknown>)[key] : baseVal
+            const labelCol = isOv ? accent : dimText
+            const bdr      = isOv ? `0.5px solid ${accent}55` : `0.5px solid ${simple ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)'}`
+            const bg       = isOv ? `${accent}14` : inputBg
+            const label2   = OSC_SYNTH_2COL_LABELS[key] ?? cfg.label
+            return (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 2, minHeight: 17, minWidth: 0 }}>
+                <span style={{
+                  fontSize: 7, color: labelCol, fontWeight: isOv ? 700 : 400,
+                  width: 26, flexShrink: 0, textAlign: 'right',
+                  letterSpacing: '0.02em', lineHeight: 1,
+                  overflow: 'hidden', whiteSpace: 'nowrap',
+                }}>
+                  {label2}
+                </span>
+                {cfg.type === 'number' && (
+                  <input type="number" value={val as number}
+                    min={(cfg as ParamCfgNum).min} max={(cfg as ParamCfgNum).max} step={(cfg as ParamCfgNum).step}
+                    onChange={e => {
+                      const n = Number(e.target.value)
+                      if (n === baseVal) resetSlotParam(slotKey, key)
+                      else setSlotOverride(slotKey, { [key]: n } as Partial<PlanetSimParams>)
+                    }}
+                    style={{ flex: 1, minWidth: 0, fontSize: 8, fontFamily: 'monospace', textAlign: 'right', border: bdr, borderRadius: 3, padding: '1px 3px', background: bg, color: inputCol }}
+                  />
+                )}
+                {cfg.type === 'select' && (
+                  <select value={String(val)}
+                    onChange={e => {
+                      const raw = e.target.value
+                      const v = (cfg as ParamCfgSel).numeric ? Number(raw) : raw
+                      if (v === baseVal || raw === String(baseVal)) resetSlotParam(slotKey, key)
+                      else setSlotOverride(slotKey, { [key]: v } as Partial<PlanetSimParams>)
+                    }}
+                    style={{ flex: 1, minWidth: 0, fontSize: 7.5, border: bdr, borderRadius: 3, padding: '1px 2px', background: bg, color: inputCol, fontFamily: 'inherit' }}
+                  >
+                    {(cfg as ParamCfgSel).options.map((opt, i) => (
+                      <option key={opt} value={opt}>{(cfg as ParamCfgSel).optionLabels?.[i] ?? opt}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Manual trigger button — always visible when trigger-manual is assigned */}
       {isManualTrigger && (
         <button
@@ -1689,6 +2006,11 @@ function SlotCard({
         >
           ▶ TRIGGER
         </button>
+      )}
+
+      {/* Chord test trigger — C3 / E3 / G3 buttons */}
+      {isChordTestTrigger && (
+        <InlineChordTestContent bodyId={bodyId} simple={simple} accent={accent} />
       )}
 
       {/* Orbit trigger: live orbit data flowing into this trigger */}
@@ -2062,7 +2384,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
           <div style={{ display: 'flex', alignItems: 'stretch', gap: 0 }}>
             <SectionLabel label="Instrument" simple={simple} highlighted={rackDragCat === 'instrument'} />
             <div style={{ width: 1, background: divCol, margin: '6px 0' }} />
-            <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 4, minWidth: (instrumentCs?.id === 'instrument-oneshot' || instrumentCs?.id === 'instrument-oneshot-stretch') ? 220 : 160 }}>
+            <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 4, minWidth: (instrumentCs?.id === 'instrument-oneshot' || instrumentCs?.id === 'instrument-oneshot-stretch') ? 220 : instrumentCs?.id === 'instrument-ambient-osc' ? 185 : instrumentCs?.id === 'instrument-osc-synth' ? 210 : 160 }}>
               {instrumentCs ? (
                 <SlotCard cs={instrumentCs}
                   slotKey={isBodyMode && !hasInstrumentOv ? 'g:instrument' : instrumentKey()}

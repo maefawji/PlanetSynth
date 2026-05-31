@@ -1,10 +1,11 @@
-import { RotateCcw, Square, Save, FolderOpen } from 'lucide-react'
+import { RotateCcw, Save, FolderOpen } from 'lucide-react'
 import { useState } from 'react'
 import * as Tone from 'tone'
 import { getAudioLatencyHint, setAudioLatencyHint, LATENCY_OPTIONS, type AudioLatencyHint } from '../../audio/audioLatencySettings'
 import { useProjectStore } from '../../store/projectStore'
 import { useAudioStore } from '../../store/audioStore'
 import { useTheme } from '../../lib/theme'
+import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { forgetSamplePlayers, prepareIntersectionSamples, stopIntersectionSamples, triggerBodySound } from '../../audio/intersectionSynth'
 import { saveProjectJson, loadProjectFromFile, restoreProjectSamples } from '../../persistence/projectSchema'
 import { hydrateSamplesFromFolder, loadDefaultFolderSamples } from '../../persistence/sampleLibrary'
@@ -38,7 +39,7 @@ function resolveBodySamplerSample(bodyId: string, explicitSampleId: string | nul
   return samples[stableIndexFromId(bodyId, samples.length)] ?? null
 }
 
-type AppMode = 'planet' | 'chord-lab' | 'dev'
+type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev'
 
 interface TopBarProps {
   appMode?: AppMode
@@ -54,8 +55,10 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
   const isRunning = useAudioStore(s => s.isRunning)
   const setRunning = useAudioStore(s => s.setRunning)
   const setStatus  = useAudioStore(s => s.setStatus)
-  const standpointMaxDist  = usePlanetStore(s => s.simParams.standpointMaxDist)
+  const simParams          = usePlanetStore(s => s.simParams)
+  const standpointMaxDist  = simParams.standpointMaxDist
   const updateSimParams    = usePlanetStore(s => s.updateSimParams)
+  const showModeBar        = useCanvasSettingsStore(s => s.showModeBar)
 
   // ── Audio buffer setting ────────────────────────────────────────────────────
   const [latencyHint, setLatencyHintState] = useState<AudioLatencyHint>(getAudioLatencyHint)
@@ -155,21 +158,20 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
       borderBottom: `0.5px solid ${t.panelBorder}`,
       flexShrink: 0,
     }}>
-      {/* Global stop — kills all audio immediately (AudioContext suspend) */}
+      {/* Pause / Resume — same as mixer PAUSE */}
       <button
-        onClick={stopAll}
-        title="Stop all audio (all layers)"
+        onClick={() => updateSimParams({ paused: !simParams.paused })}
+        title={simParams.paused ? 'Resume simulation' : 'Pause simulation'}
         style={{
           display: 'flex', alignItems: 'center', gap: 4,
           padding: '3px 10px', borderRadius: 5, fontFamily: 'inherit',
           fontSize: 11, fontWeight: 700, cursor: 'pointer',
-          background: 'rgba(239,68,68,0.15)',
-          border: '0.5px solid rgba(239,68,68,0.35)',
-          color: '#f87171',
+          background: simParams.paused ? 'rgba(251,191,36,0.15)' : t.inputBg,
+          border: simParams.paused ? '0.5px solid rgba(251,191,36,0.45)' : `0.5px solid ${t.btnBorder}`,
+          color: simParams.paused ? '#fbbf24' : t.textMid,
         }}
       >
-        <Square size={11} strokeWidth={3} fill="#f87171" />
-        <span>STOP</span>
+        <span>{simParams.paused ? '▶ Play' : '⏸ Pause'}</span>
       </button>
 
       <div style={{ width: 1, height: 16, background: t.divider }} />
@@ -257,12 +259,13 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
 
       <div style={{ flex: 1 }} />
 
-      {/* Mode switcher */}
-      {onSetAppMode && (
+      {/* Mode switcher — hidden by default, shown when showModeBar is on */}
+      {onSetAppMode && showModeBar && (
         <div style={{ display: 'flex', gap: 2, background: t.sectionBg, borderRadius: 6, padding: 2, border: `0.5px solid ${t.panelBorder}` }}>
           {([
             ['planet',    '⬤ Planet'],
             ['chord-lab', '⬡ Chord Lab'],
+            ['osc',       '∿ Osc'],
             ['dev',       '⬡ Dev'],
           ] as [AppMode, string][]).map(([mode, label]) => (
             <button
@@ -280,13 +283,8 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
         </div>
       )}
 
-      <div style={{ width: 1, height: 16, background: t.divider }} />
-
-      {/* Project name + dirty */}
+      {/* Dirty indicator */}
       {isDirty && <span style={{ color: '#f59e0b', fontSize: 14, lineHeight: 1 }}>●</span>}
-      <span style={{ fontSize: 11, color: t.textMid, fontWeight: 500 }}>
-        {project.meta.name}
-      </span>
 
     </div>
   )

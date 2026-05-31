@@ -212,6 +212,40 @@ export interface PlanetSimParams {
   effectorAutoFilterBaseFreq:  number   // base filter Hz (80–2000)
   effectorBitDepth:            number   // bits (2–16)
   effectorFreezeDecay:         number   // reverb tail seconds (15–60)
+
+  // ── Ambient Oscillator instrument ─────────────────────────────────────────
+  ambientOscType:            'off' | 'ambient-osc'
+  ambientOscWaveform:        OscillatorType   // 'sine' | 'triangle' | 'sawtooth' | 'square'
+  ambientOscAttack:          number           // seconds (0.01–20)
+  ambientOscRelease:         number           // seconds (0.01–30)
+  ambientOscFilterCutoff:    number           // Hz (80–12000)
+  ambientOscFilterResonance: number           // Q factor (0.01–20)
+  ambientOscLevel:           number           // master level 0–1
+  ambientOscNote:            number           // MIDI note 0–127
+
+  // ── Osc Synth instrument (triggered, same engine as ambient-osc + LFO) ──
+  oscSynthType:            'off' | 'osc-synth'
+  oscSynthWaveform:        OscillatorType
+  oscSynthAttack:          number           // seconds (0.01–20)
+  oscSynthRelease:         number           // seconds (0.01–30)
+  oscSynthFilterCutoff:    number           // Hz (80–12000)
+  oscSynthFilterResonance: number           // Q (0.01–15)
+  oscSynthLevel:           number           // 0–1
+  oscSynthLfoTarget:       'off' | 'pitch' | 'filter' | 'amplitude'
+  oscSynthLfoRate:         number           // Hz (0.01–20)
+  oscSynthLfoDepth:        number           // 0–1
+  oscSynthLfoWaveform:     OscillatorType
+  // Orbit-driven source selectors for OscSynth params
+  oscSynthAttackSource:    OscOrbitSource
+  oscSynthAttackRate:      number
+  oscSynthReleaseSource:   OscOrbitSource
+  oscSynthReleaseRate:     number
+  oscSynthCutoffSource:    OscOrbitSource
+  oscSynthCutoffRate:      number
+  oscSynthLfoRateSource:   OscOrbitSource
+  oscSynthLfoRateRate:     number
+  oscSynthLfoDepthSource:  OscOrbitSource
+  oscSynthLfoDepthRate:    number
 }
 
 // ── Next-body placement defaults ──────────────────────────────────────────────
@@ -234,6 +268,9 @@ export const DEFAULT_NEXT_PLANET: NextBodyDefaults = {
 // ── Defaults ──────────────────────────────────────────────────────────────────
 
 export type DroneMode = 'manual' | 'orbit'
+
+/** Which orbit metric drives an OscSynth param when not 'manual'. */
+export type OscOrbitSource = 'manual' | 'period' | 'eccentricity' | 'distance' | 'velocity'
 
 export const BODY_DRONE_DEFAULTS = {
   droneType: 'none' as DroneType,
@@ -335,13 +372,13 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   standpointMaxDist: 1000,
   standpointMinVol: 0,
   showStandpointVisual: false,
-  standpointDirectional: true,
+  standpointDirectional: false,
   standpointFacing: 'velocity',
   standpointFacingAngle: 0,
   standpointConeWidth: 270,
   standpointOuterVol: 0.25,
-  standpointStereo: true,
-  standpointFrontBack: true,
+  standpointStereo: false,
+  standpointFrontBack: false,
   standpointRearVol: 0.45,
   effectorType: 'none',
   effectorDistance: 200,
@@ -413,6 +450,39 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   effectorAutoFilterBaseFreq: 200,
   effectorBitDepth:           8,
   effectorFreezeDecay:        30,
+
+  ambientOscType:            'off',
+  ambientOscWaveform:        'sine',
+  ambientOscAttack:          1.5,
+  ambientOscRelease:         3.0,
+  ambientOscFilterCutoff:    1200,
+  ambientOscFilterResonance: 0.3,
+  ambientOscLevel:           0.5,
+  ambientOscNote:            60,
+
+  oscSynthType:            'off',
+  oscSynthWaveform:        'sine',
+  oscSynthAttack:          0.05,
+  oscSynthRelease:         1.5,
+  oscSynthFilterCutoff:    2000,
+  oscSynthFilterResonance: 0.5,
+  oscSynthLevel:           0.7,
+  oscSynthLfoTarget:       'off',
+  oscSynthLfoRate:         1.0,
+  oscSynthLfoDepth:        0.3,
+  oscSynthLfoWaveform:     'sine',
+  oscSynthAttackSource:    'manual',
+  oscSynthAttackRate:      0.05,
+  oscSynthReleaseSource:   'manual',
+  oscSynthReleaseRate:     0.1,
+  oscSynthCutoffSource:    'manual',
+  oscSynthCutoffRate:      5.0,
+  oscSynthLfoRateSource:   'manual',
+  oscSynthLfoRateRate:     0.1,
+  oscSynthLfoDepthSource:  'manual',
+  oscSynthLfoDepthRate:    1.0,
+
+  oneShotType: 'off',
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────

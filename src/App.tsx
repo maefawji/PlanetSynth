@@ -10,10 +10,13 @@ import { FMDroneLayer } from './components/planet/FMDroneLayer'
 import { NoisePadLayer } from './components/planet/NoisePadLayer'
 import { SamplerLayer } from './components/planet/SamplerLayer'
 import { OneShotLayer } from './components/planet/OneShotLayer'
+import { AmbientOscillatorLayer } from './components/planet/AmbientOscillatorLayer'
+import { OscSynthLayer } from './components/planet/OscSynthLayer'
 import { SamplerInstrumentPanel } from './components/sampler/SamplerInstrumentPanel'
 import { OneShotSamplerPanel } from './components/sampler/OneShotSamplerPanel'
 import { ChordGeometryLab } from './components/chord/ChordGeometryLab'
 import { DevRouteView } from './components/dev/DevRouteView'
+import { OscView } from './components/osc/OscView'
 import type { PlanetTool } from './components/planet/PlanetCanvas'
 import { usePlanetStore } from './store/planetStore'
 import { useCanvasSettingsStore } from './store/canvasSettingsStore'
@@ -24,7 +27,7 @@ import { initToneContext } from './audio/audioLatencySettings'
 // Apply saved audio latency setting before any Tone.start() call
 initToneContext()
 
-type AppMode = 'planet' | 'chord-lab' | 'dev'
+type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev'
 
 const RACK_MIN = 120
 const RACK_MAX = 340
@@ -87,10 +90,15 @@ export default function App() {
       <NoisePadLayer />
       <SamplerLayer />
       <OneShotLayer />
+      <AmbientOscillatorLayer />
+      <OscSynthLayer />
 
       {appMode === 'chord-lab' ? (
         /* ── Chord Geometry Lab ─────────────────────────────────────────── */
         <ChordGeometryLab />
+      ) : appMode === 'osc' ? (
+        /* ── Osc Mode: Ambient Oscillator dev view ──────────────────────── */
+        <OscView />
       ) : appMode === 'dev' ? (
         /* ── Dev Mode: Audio Routing ────────────────────────────────────── */
         <DevRouteView />
