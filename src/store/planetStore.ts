@@ -253,6 +253,10 @@ export interface PlanetSimParams {
   oscSynthLfoDepthSource:  OscOrbitSource
   oscSynthLfoDepthRate:    number
 
+  // ── OSC Next Orbit instrument ─────────────────────────────────────────────
+  /** Whether the osc-next-orbit instrument is active for this body */
+  oscNextOrbitType: 'off' | 'osc-next-orbit'
+
   // ── Arpeggiator trigger ───────────────────────────────────────────────────
   arpMode:   boolean   // true = this trigger cycles through arp notes
   arpLength: number    // active step count 1–4
@@ -503,6 +507,8 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   oscSynthLfoDepthRate:    1.0,
 
   oneShotType: 'off',
+
+  oscNextOrbitType: 'off',
 
   arpMode:   false,
   arpLength: 4,

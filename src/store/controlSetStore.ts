@@ -393,6 +393,48 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
     },
   },
   {
+    id: 'instrument-osc-next-orbit',
+    name: 'Osc Next Orbit',
+    icon: '◎',
+    color: '#34d399',
+    category: 'instrument',
+    description:
+      '次の軌道軌跡をリアルタイムにサンプリングし、DFTでカスタム波形を生成するOscSynth。\n' +
+      '円軌道 → サイン波 / 楕円 → 倍音豊富 / 高離心率 → ノコギリ波的\n' +
+      'noteOnのたびに波形が更新されるので、軌道が変わるたびに音色が変化する。',
+    params: {
+      oscNextOrbitType:        'osc-next-orbit',
+      oscSynthType:            'off',      // OscSynthLayer には拾わせない
+      // ADSR / filter / LFO は oscSynth params を共有
+      oscSynthAttack:          0.05,
+      oscSynthDecay:           0.3,
+      oscSynthSustain:         0.7,
+      oscSynthRelease:         0.8,   // 短めにしてアルペ時のボイス重複を減らす
+      oscSynthFilterCutoff:    2000,
+      oscSynthFilterResonance: 0.4,
+      oscSynthLevel:           0.45,  // 複数ボイス加算でも余裕を持たせる
+      oscSynthLfoTarget:       'off' as const,
+      oscSynthLfoRate:         1.0,
+      oscSynthLfoDepth:        0.3,
+      oscSynthLfoWaveform:     'sine' as const,
+      // Orbit sources (same defaults as osc-synth-orbit)
+      oscSynthAttackSource:    'period',
+      oscSynthAttackRate:      0.06,
+      oscSynthDecaySource:     'eccentricity',
+      oscSynthDecayRate:       8.0,
+      oscSynthSustainSource:   'distance',
+      oscSynthSustainRate:     0.003,
+      oscSynthReleaseSource:   'period',
+      oscSynthReleaseRate:     0.2,
+      oscSynthCutoffSource:    'velocity',
+      oscSynthCutoffRate:      600,
+      oscSynthLfoRateSource:   'eccentricity',
+      oscSynthLfoRateRate:     5.0,
+      oscSynthLfoDepthSource:  'eccentricity',
+      oscSynthLfoDepthRate:    0.8,
+    },
+  },
+  {
     id: 'instrument-ambient-osc',
     name: 'Ambient Osc',
     icon: '∿',

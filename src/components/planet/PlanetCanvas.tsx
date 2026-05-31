@@ -31,6 +31,7 @@ import { setBusStandpointSpatial } from '../../audio/rackBusMixer'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
 import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
+import { getBodyOscNextOrbitEngine } from './OscNextOrbitLayer'
 import { sendMidiNote } from '../../audio/midiManager'
 
 export type PlanetTool = 'select' | 'add-sun' | 'add-planet' | 'probe'
@@ -277,7 +278,7 @@ function computePredictedOrbit(
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetTool; onSelectTool?: () => void }) {
+export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false }: { tool?: PlanetTool; onSelectTool?: () => void; mobileMode?: boolean }) {
   // Keep onSelectTool in a ref so the keydown closure doesn't need it in deps
   const onSelectToolRef = useRef(onSelectTool)
   useEffect(() => { onSelectToolRef.current = onSelectTool }, [onSelectTool])
@@ -963,6 +964,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
                     const prevNote = arpPrevNoteRef.current.get(timerKey)
                     if (prevNote !== undefined) {
                       getBodyOscSynthEngine(b.id)?.noteOff(prevNote)
+                      getBodyOscNextOrbitEngine(b.id)?.noteOff(prevNote)
                     }
                     const step = arpStepRef.current.get(timerKey) ?? 0
                     fireNote = arpNotes[step % arpLen]
@@ -1327,6 +1329,192 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
     // (we don't reset mousePosWorldRef to avoid cursor disappearing on slight exit)
   }
 
+  // ── commitDragPlace: shared by mouse and touch handlers ──────────────────────
+
+  function commitDragPlace(dp: DragPlaceState) {
+    const vx = (dp.bodyX - dp.dragX) * VELOCITY_SCALE
+    const vy = (dp.bodyY - dp.dragY) * VELOCITY_SCALE
+    const storeState  = usePlanetStore.getState()
+    const starCount   = storeState.bodies.filter(b => b.type === 'sun').length
+    const planetCount = storeState.bodies.filter(b => b.type === 'planet').length
+    const defs = dp.tool === 'add-sun'
+      ? storeState.nextSunDefaults
+      : storeState.nextPlanetDefaults
+    const resolvedColor = defs.randomColor
+      ? (dp.tool === 'add-sun'
+          ? `hsl(${35 + Math.floor(Math.random() * 25)},90%,55%)`
+          : `hsl(${Math.floor(Math.random() * 360)},70%,62%)`)
+      : defs.color
+    const allSamples = projectSamplesRef.current
+    const resolvedSampleId = defs.randomSample && allSamples.length > 0
+      ? allSamples[Math.floor(Math.random() * allSamples.length)].id
+      : null
+    const newBody: PlanetBody = {
+      id: `body_${Date.now().toString(36)}`,
+      name: dp.tool === 'add-sun' ? `Sun ${starCount + 1}` : `Planet ${planetCount + 1}`,
+      type: dp.tool === 'add-sun' ? 'sun' : 'planet',
+      mass: defs.mass,
+      x: dp.bodyX, y: dp.bodyY, vx, vy,
+      fixed: defs.fixed,
+      color: resolvedColor,
+      sampleId: resolvedSampleId,
+      orbitLoopNumer: 1, orbitLoopDenom: 1,
+      effectorType: 'none',
+      effectorDistance: 200, effectorMaxWet: 0.7, effectorDecay: 2.5,
+      effectorDelayDivision: 0.25, effectorFeedback: 0.4, effectorDistortion: 0.4,
+      effectorChorusFreq: 1.5, effectorChorusDepth: 0.5,
+      ...BODY_DRONE_DEFAULTS,
+      ...BODY_MIDI_DEFAULTS,
+      muted: false,
+      volume: 1,
+    }
+    storeState.addBody(newBody)
+    storeBodiesRef.current = [...storeBodiesRef.current, newBody]
+    storeBodiesMapRef.current.set(newBody.id, newBody)
+    liveBodiesRef.current.push({
+      id: newBody.id, mass: newBody.mass, x: dp.bodyX, y: dp.bodyY,
+      vx, vy, ax: 0, ay: 0, fixed: newBody.fixed,
+    })
+    trailsRef.current.set(newBody.id, makeTrail(simParamsRef.current.trailLength))
+    computeAccels(liveBodiesRef.current, simParamsRef.current.G, simParamsRef.current.epsilon)
+    setSelectedBodyId(newBody.id)
+
+    const _launchId = newBody.id
+    window.setTimeout(() => {
+      const sbi = storeBodiesRef.current.find(b => b.id === _launchId)
+      if (sbi?.muted) return
+      sendMidiNote(sbi?.midiChannel ?? 1, sbi?.midiNote ?? 60, sbi?.midiVelocity ?? 100, 200)
+      if (fireBodyInstrumentTrigger(_launchId)) {
+        markBodyTriggered(_launchId)
+        return
+      }
+      const sample = resolveBodySamplerSample(_launchId, sbi?.sampleId ?? null, projectSamplesRef.current)
+      if (sample) {
+        const sp      = simParamsRef.current
+        const bodyOv  = useControlSetStore.getState().getBodyEffectiveParams(_launchId)
+        const spatial = computeBodyRackOutputSpatial(_launchId, liveBodiesRef.current, sp, bodyOv)
+        const finalVol = 0.85 * Math.max(0, Math.min(1, (sbi?.volume ?? 1) * spatial.volume))
+        triggerBodySound(sample, { playbackRate: 1, volume: finalVol, overlap: false, pan: spatial.pan, detuneCents: 0 })
+        setBodyOutputLevel(_launchId, 'sampler', finalVol, 900)
+      }
+      markBodyTriggered(_launchId)
+    }, 150)
+  }
+
+  // ── Mobile touch handlers (non-passive, attached in useEffect) ────────────────
+
+  useEffect(() => {
+    if (!mobileMode) return
+    const svg = svgRef.current
+    if (!svg) return
+
+    let launchId: number | null = null
+    let pinchIds: [number, number] | null = null
+    let pinchDist = 0
+
+    function getTouchById(list: TouchList, id: number): Touch | null {
+      for (let i = 0; i < list.length; i++) if (list[i].identifier === id) return list[i]
+      return null
+    }
+    function svgPos(t: Touch) {
+      const r = svg.getBoundingClientRect()
+      return { sx: t.clientX - r.left, sy: t.clientY - r.top }
+    }
+    function tw(sx: number, sy: number) {
+      const cx = sizeRef.current.w / 2, cy = sizeRef.current.h / 2
+      return {
+        wx: (sx - cx) / zoomRef.current + viewOffsetRef.current.x,
+        wy: (sy - cy) / zoomRef.current + viewOffsetRef.current.y,
+      }
+    }
+
+    function onStart(e: TouchEvent) {
+      e.preventDefault()
+      if (e.touches.length === 1 && launchId === null && pinchIds === null) {
+        const t = e.touches[0]
+        launchId = t.identifier
+        const { sx, sy } = svgPos(t)
+        const { wx, wy } = tw(sx, sy)
+        const dp: DragPlaceState = { bodyX: wx, bodyY: wy, dragX: wx, dragY: wy, tool: 'add-planet' }
+        dragPlaceRef.current = dp
+        setDragPlace({ ...dp })
+      } else if (e.touches.length >= 2) {
+        // Cancel any ongoing launch and switch to pinch
+        launchId = null
+        dragPlaceRef.current = null
+        setDragPlace(null)
+        const t0 = e.touches[0], t1 = e.touches[1]
+        pinchIds = [t0.identifier, t1.identifier]
+        const dx = t1.clientX - t0.clientX, dy = t1.clientY - t0.clientY
+        pinchDist = Math.sqrt(dx * dx + dy * dy)
+      }
+    }
+
+    function onMove(e: TouchEvent) {
+      e.preventDefault()
+      if (pinchIds !== null && e.touches.length >= 2) {
+        // Pinch zoom: scale around midpoint
+        const t0 = getTouchById(e.touches, pinchIds[0])
+        const t1 = getTouchById(e.touches, pinchIds[1])
+        if (!t0 || !t1) return
+        const dx = t1.clientX - t0.clientX, dy = t1.clientY - t0.clientY
+        const newDist = Math.sqrt(dx * dx + dy * dy)
+        if (pinchDist > 0) {
+          const r    = svg.getBoundingClientRect()
+          const midSx = (t0.clientX + t1.clientX) / 2 - r.left
+          const midSy = (t0.clientY + t1.clientY) / 2 - r.top
+          const cx = sizeRef.current.w / 2, cy = sizeRef.current.h / 2
+          const curZ = zoomRef.current, curO = viewOffsetRef.current
+          const wx = (midSx - cx) / curZ + curO.x
+          const wy = (midSy - cy) / curZ + curO.y
+          const nz = Math.max(0.02, Math.min(50, curZ * (newDist / pinchDist)))
+          setZoomSync(nz)
+          setViewOffsetSync({ x: wx - (midSx - cx) / nz, y: wy - (midSy - cy) / nz })
+        }
+        pinchDist = newDist
+      } else if (launchId !== null && dragPlaceRef.current) {
+        // Single finger: update velocity vector
+        const t = getTouchById(e.touches, launchId)
+        if (!t) return
+        const { sx, sy } = svgPos(t)
+        const { wx, wy } = tw(sx, sy)
+        const updated = { ...dragPlaceRef.current, dragX: wx, dragY: wy }
+        dragPlaceRef.current = updated
+        setDragPlace({ ...updated })
+      }
+    }
+
+    function onEnd(e: TouchEvent) {
+      e.preventDefault()
+      // Check if the launch finger was lifted
+      if (launchId !== null) {
+        let stillDown = false
+        for (let i = 0; i < e.touches.length; i++) {
+          if (e.touches[i].identifier === launchId) { stillDown = true; break }
+        }
+        if (!stillDown && dragPlaceRef.current) {
+          const dp = dragPlaceRef.current
+          dragPlaceRef.current = null
+          setDragPlace(null)
+          commitDragPlace(dp)
+          launchId = null
+        }
+      }
+      if (e.touches.length < 2) { pinchIds = null; pinchDist = 0 }
+    }
+
+    svg.addEventListener('touchstart',  onStart, { passive: false })
+    svg.addEventListener('touchmove',   onMove,  { passive: false })
+    svg.addEventListener('touchend',    onEnd,   { passive: false })
+    svg.addEventListener('touchcancel', onEnd,   { passive: false })
+    return () => {
+      svg.removeEventListener('touchstart',  onStart)
+      svg.removeEventListener('touchmove',   onMove)
+      svg.removeEventListener('touchend',    onEnd)
+      svg.removeEventListener('touchcancel', onEnd)
+    }
+  }, [mobileMode])  // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleMouseUp(e: React.MouseEvent) {
     if (e.button === 1 || e.button === 2) { panStartRef.current = null; setIsPanning(false); return }
     pendingBodySelectRef.current = null
@@ -1358,84 +1546,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
       const dp = dragPlaceRef.current
       dragPlaceRef.current = null
       setDragPlace(null)
-      const vx = (dp.bodyX - dp.dragX) * VELOCITY_SCALE
-      const vy = (dp.bodyY - dp.dragY) * VELOCITY_SCALE
-      const storeState  = usePlanetStore.getState()
-      const starCount   = storeState.bodies.filter(b => b.type === 'sun').length
-      const planetCount = storeState.bodies.filter(b => b.type === 'planet').length
-      const defs = dp.tool === 'add-sun'
-        ? storeState.nextSunDefaults
-        : storeState.nextPlanetDefaults
-      const resolvedColor = defs.randomColor
-        ? (dp.tool === 'add-sun'
-            ? `hsl(${35 + Math.floor(Math.random() * 25)},90%,55%)`
-            : `hsl(${Math.floor(Math.random() * 360)},70%,62%)`)
-        : defs.color
-      const allSamples = projectSamplesRef.current
-      const resolvedSampleId = defs.randomSample && allSamples.length > 0
-        ? allSamples[Math.floor(Math.random() * allSamples.length)].id
-        : null
-      const newBody: PlanetBody = {
-        id: `body_${Date.now().toString(36)}`,
-        name: dp.tool === 'add-sun' ? `Sun ${starCount + 1}` : `Planet ${planetCount + 1}`,
-        type: dp.tool === 'add-sun' ? 'sun' : 'planet',
-        mass: defs.mass,
-        x: dp.bodyX, y: dp.bodyY, vx, vy,
-        fixed: defs.fixed,
-        color: resolvedColor,
-        sampleId: resolvedSampleId,
-        orbitLoopNumer: 1,
-        orbitLoopDenom: 1,
-        effectorType: 'none',
-        effectorDistance: 200,
-        effectorMaxWet: 0.7,
-        effectorDecay: 2.5,
-        effectorDelayDivision: 0.25,
-        effectorFeedback: 0.4,
-        effectorDistortion: 0.4,
-        effectorChorusFreq: 1.5,
-        effectorChorusDepth: 0.5,
-        ...BODY_DRONE_DEFAULTS,
-        ...BODY_MIDI_DEFAULTS,
-        muted: false,
-        volume: 1,
-      }
-      storeState.addBody(newBody)
-      storeBodiesRef.current = [...storeBodiesRef.current, newBody]
-      storeBodiesMapRef.current.set(newBody.id, newBody)
-      liveBodiesRef.current.push({
-        id: newBody.id, mass: newBody.mass, x: dp.bodyX, y: dp.bodyY,
-        vx, vy, ax: 0, ay: 0, fixed: newBody.fixed,
-      })
-      trailsRef.current.set(newBody.id, makeTrail(simParamsRef.current.trailLength))
-      computeAccels(liveBodiesRef.current, simParamsRef.current.G, simParamsRef.current.epsilon)
-      setSelectedBodyId(newBody.id)
-
-      // ── Initial launch trigger ─────────────────────────────────────────────
-      // Fire once after a short delay to give instrument engines time to init.
-      // Tries the instrument-rack path first; falls back to legacy sampler.
-      const _launchId = newBody.id
-      window.setTimeout(() => {
-        const sbi = storeBodiesRef.current.find(b => b.id === _launchId)
-        if (sbi?.muted) return
-        sendMidiNote(sbi?.midiChannel ?? 1, sbi?.midiNote ?? 60, sbi?.midiVelocity ?? 100, 200)
-        if (fireBodyInstrumentTrigger(_launchId)) {
-          markBodyTriggered(_launchId)
-          return
-        }
-        // Legacy sample path fallback
-        const sample = resolveBodySamplerSample(_launchId, sbi?.sampleId ?? null, projectSamplesRef.current)
-        if (sample) {
-          const sp      = simParamsRef.current
-          const bodyOv  = useControlSetStore.getState().getBodyEffectiveParams(_launchId)
-          const spatial = computeBodyRackOutputSpatial(_launchId, liveBodiesRef.current, sp, bodyOv)
-          const finalVol = 0.85 * Math.max(0, Math.min(1, (sbi?.volume ?? 1) * spatial.volume))
-          triggerBodySound(sample, { playbackRate: 1, volume: finalVol, overlap: false, pan: spatial.pan, detuneCents: 0 })
-          setBodyOutputLevel(_launchId, 'sampler', finalVol, 900)
-        }
-        markBodyTriggered(_launchId)
-      }, 150)
-
+      commitDragPlace(dp)
       return
     }
 

@@ -70,6 +70,13 @@ export class AmbientOscillatorEngine {
   // Oscilloscope analyser (parallel tap from panner output)
   private _analyser:    AnalyserNode      | null = null
 
+  // Hard limiter — DynamicsCompressor in limiter config (20:1, -3 dB threshold)
+  // Sits between panner and bodyOut; prevents multi-voice summing from clipping.
+  private _limiter:     DynamicsCompressorNode | null = null
+
+  // Optional orbit-derived PeriodicWave (set via setOrbitWaveform)
+  private _periodicWave: PeriodicWave     | null = null
+
   private _outputScale = 1
   private _outputPan   = 0
 
@@ -98,9 +105,20 @@ export class AmbientOscillatorEngine {
     this.bodyOut = this.ctx.createGain()
     this.panner.pan.value   = this._outputPan
     this.bodyOut.gain.value = this._outputScale
-    this.panner.connect(this.bodyOut)
 
-    // Oscilloscope: parallel tap from panner (no output — analysis only)
+    // Hard limiter between panner and bodyOut (20:1 ratio, -3 dB threshold).
+    // Prevents multi-voice accumulation from clipping — especially important
+    // for arpeggio + OscNextOrbit where 2–4 voices can briefly overlap.
+    this._limiter = this.ctx.createDynamicsCompressor()
+    this._limiter.threshold.value = -3    // dB: start compressing at -3 dB
+    this._limiter.knee.value      =  0    // hard knee
+    this._limiter.ratio.value     = 20    // 20:1 ≈ limiter
+    this._limiter.attack.value    = 0.001 // 1 ms
+    this._limiter.release.value   = 0.15  // 150 ms
+    this.panner.connect(this._limiter)
+    this._limiter.connect(this.bodyOut)
+
+    // Oscilloscope: parallel tap from panner (before limiter — analysis only)
     this._analyser = this.ctx.createAnalyser()
     this._analyser.fftSize = 256
     this._analyser.smoothingTimeConstant = 0
@@ -177,7 +195,11 @@ export class AmbientOscillatorEngine {
     const amp    = ctx.createGain()
     const filter = ctx.createBiquadFilter()
 
-    osc.type            = p.waveform
+    if (this._periodicWave) {
+      osc.setPeriodicWave(this._periodicWave)
+    } else {
+      osc.type = p.waveform
+    }
     osc.frequency.value = freq
 
     // ── ADSR envelope ────────────────────────────────────────────────────────
@@ -246,6 +268,63 @@ export class AmbientOscillatorEngine {
       setTimeout(() => {
         try { osc.disconnect(); amp.disconnect(); filter.disconnect() } catch (_) {}
       }, 50)
+    }
+  }
+
+  // ── Orbit waveform (PeriodicWave from trajectory DFT) ────────────────────────
+
+  /**
+   * Compute a PeriodicWave from orbit trajectory points and apply it to all
+   * current and future voices. Call this from OscNextOrbitLayer on each sync.
+   *
+   * The Y-coordinate of each point is used as the waveform signal; it is
+   * centered (DC removed) and normalized to [-1, 1] before the DFT.
+   */
+  setOrbitWaveform(pts: ReadonlyArray<{ x: number; y: number }>): void {
+    if (!this.ctx) return
+    const N = pts.length
+    if (N < 4) return
+
+    // Center and find peak
+    let sumY = 0
+    for (const p of pts) sumY += p.y
+    const meanY = sumY / N
+    let peak = 1e-9
+    for (const p of pts) peak = Math.max(peak, Math.abs(p.y - meanY))
+
+    // DFT → PeriodicWave coefficients
+    // x(θ) = Σ_k [ real[k]·cos(kθ) + imag[k]·sin(kθ) ]
+    const half = Math.min(Math.floor(N / 2) + 1, 257)
+    const realCoef = new Float32Array(half)
+    const imagCoef = new Float32Array(half)
+    for (let k = 1; k < half; k++) {
+      let re = 0, im = 0
+      const twopiK = (2 * Math.PI * k) / N
+      for (let n = 0; n < N; n++) {
+        const sig = (pts[n].y - meanY) / peak
+        const angle = twopiK * n
+        re += sig * Math.cos(angle)
+        im += sig * Math.sin(angle)
+      }
+      realCoef[k] = (2 * re) / N
+      imagCoef[k] = (2 * im) / N
+    }
+    realCoef[0] = 0
+
+    // disableNormalization: false → browser normalizes peak to ±1 (safe headroom)
+    this._periodicWave = this.ctx.createPeriodicWave(realCoef, imagCoef, { disableNormalization: false })
+
+    // Apply to all currently running voices
+    for (const voice of this.voices.values()) {
+      voice.osc.setPeriodicWave(this._periodicWave)
+    }
+  }
+
+  /** Clear any orbit-derived waveform and revert to params.waveform. */
+  clearOrbitWaveform(): void {
+    this._periodicWave = null
+    for (const voice of this.voices.values()) {
+      voice.osc.type = this.params.waveform
     }
   }
 
@@ -333,8 +412,8 @@ export class AmbientOscillatorEngine {
     this._analyser = null
     const release = this.params.release
     setTimeout(() => {
-      try { this.panner?.disconnect(); this.bodyOut?.disconnect() } catch (_) {}
-      this.ctx = null; this.panner = null; this.bodyOut = null
+      try { this.panner?.disconnect(); this._limiter?.disconnect(); this.bodyOut?.disconnect() } catch (_) {}
+      this.ctx = null; this.panner = null; this._limiter = null; this.bodyOut = null
     }, (release + 1) * 1000)
   }
 }

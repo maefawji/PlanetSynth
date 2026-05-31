@@ -1896,17 +1896,21 @@ function SlotCard({
   const isAmbientOscOn = isAmbientOsc && effectiveAmbientOscType === 'ambient-osc'
 
   // ── Osc Synth active detection ─────────────────────────────────────────────
-  const isOscSynth      = cs.id === 'instrument-osc-synth'
-  const isOscSynthOrbit = cs.id === 'instrument-osc-synth-orbit'
+  const isOscSynth        = cs.id === 'instrument-osc-synth'
+  const isOscSynthOrbit   = cs.id === 'instrument-osc-synth-orbit'
+  const isOscNextOrbit    = cs.id === 'instrument-osc-next-orbit'
   const effectiveOscSynthType = (isOscSynth || isOscSynthOrbit)
     ? String((overrides as Record<string, unknown>)['oscSynthType'] ?? cs.params.oscSynthType ?? 'off')
     : 'off'
   const isOscSynthOn = (isOscSynth || isOscSynthOrbit) && effectiveOscSynthType === 'osc-synth'
+  // OscNextOrbit is always "on" when the slot is assigned (no oscSynthType guard)
+  const isOscNextOrbitOn  = isOscNextOrbit &&
+    String((overrides as Record<string, unknown>)['oscNextOrbitType'] ?? cs.params.oscNextOrbitType ?? 'off') === 'osc-next-orbit'
 
-  // ── Osc Synth Orbit: live orbit stats for source/rate display ──────────────
+  // ── Osc Synth Orbit / OscNextOrbit: live orbit stats ──────────────────────
   const [oscOrbitStats, setOscOrbitStats] = useState<ReturnType<typeof computeOrbitStats>>(null)
   useEffect(() => {
-    if (!isOscSynthOrbit || !bodyId) { setOscOrbitStats(null); return }
+    if ((!isOscSynthOrbit && !isOscNextOrbit) || !bodyId) { setOscOrbitStats(null); return }
     const poll = () => {
       const { bodies: bs, simParams: sp } = usePlanetStore.getState()
       const liveBodies = getPlanetLiveBodySnapshot()
@@ -1918,7 +1922,7 @@ function SlotCard({
     poll()
     const id = window.setInterval(poll, 100)
     return () => window.clearInterval(id)
-  }, [isOscSynthOrbit, bodyId])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOscSynthOrbit, isOscNextOrbit, bodyId])  // eslint-disable-line react-hooks/exhaustive-deps
 
   function oscEp(key: string, dflt: unknown): unknown {
     const ov = overrides as Record<string, unknown>
@@ -2050,9 +2054,13 @@ function SlotCard({
         // Osc Synth sub-params: only when oscSynthType is 'osc-synth'
         if (['oscSynthWaveform','oscSynthAttack','oscSynthDecay','oscSynthSustain','oscSynthRelease',
              'oscSynthFilterCutoff','oscSynthFilterResonance','oscSynthLevel',
-             'oscSynthLfoTarget','oscSynthLfoRate','oscSynthLfoDepth','oscSynthLfoWaveform'].includes(key) && !isOscSynthOn) return null
-        // When OscSynth is on, 2-col sub-params render in the dedicated block below
-        if (isOscSynthOn && (isOscSynthOrbit ? OSC_SYNTH_ORBIT_2COL_KEYS : OSC_SYNTH_2COL_KEYS).has(key)) return null
+             'oscSynthLfoTarget','oscSynthLfoRate','oscSynthLfoDepth','oscSynthLfoWaveform'].includes(key) && !isOscSynthOn && !isOscNextOrbitOn) return null
+        // OscNextOrbit: waveform is orbit-derived — hide waveform selector entirely
+        if (isOscNextOrbitOn && key === 'oscSynthWaveform') return null
+        // Hide oscNextOrbitType raw param from generic loop
+        if (key === 'oscNextOrbitType') return null
+        // When OscSynth/OscNextOrbit is on, 2-col sub-params render in the dedicated block below
+        if ((isOscSynthOn || isOscNextOrbitOn) && OSC_SYNTH_ORBIT_2COL_KEYS.has(key)) return null
         const isOv    = key in overrides
         const val     = isOv ? (overrides as Record<string, unknown>)[key] : baseVal
         const labelCol = isOv ? accent : dimText
@@ -2186,10 +2194,10 @@ function SlotCard({
         </div>
       )}
 
-      {/* OscSynth 2-column param grid */}
-      {isOscSynthOn && (
+      {/* OscSynth / OscNextOrbit 2-column param grid */}
+      {(isOscSynthOn || isOscNextOrbitOn) && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 5px' }}>
-          {(isOscSynthOrbit ? OSC_SYNTH_ORBIT_2COL_ORDER : OSC_SYNTH_2COL_ORDER).map((key, idx) => {
+          {OSC_SYNTH_ORBIT_2COL_ORDER.map((key, idx) => {
             const cfg = PARAM_CFG[key]
             if (!cfg) return <div key={`_e${idx}`} />
             const isOv    = key in overrides
@@ -2241,8 +2249,8 @@ function SlotCard({
         </div>
       )}
 
-      {/* OscSynth Orbit: oscilloscope + source/rate controls + live computed values */}
-      {isOscSynthOrbit && (
+      {/* OscSynth Orbit / OscNextOrbit: oscilloscope + source/rate controls + live computed values */}
+      {(isOscSynthOrbit || isOscNextOrbit) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {/* Oscilloscope */}
           <OscScope bodyId={bodyId ?? null} accent={accent} />

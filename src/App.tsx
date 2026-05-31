@@ -12,16 +12,29 @@ import { SamplerLayer } from './components/planet/SamplerLayer'
 import { OneShotLayer } from './components/planet/OneShotLayer'
 import { AmbientOscillatorLayer } from './components/planet/AmbientOscillatorLayer'
 import { OscSynthLayer } from './components/planet/OscSynthLayer'
+import { OscNextOrbitLayer } from './components/planet/OscNextOrbitLayer'
 import { SamplerInstrumentPanel } from './components/sampler/SamplerInstrumentPanel'
 import { OneShotSamplerPanel } from './components/sampler/OneShotSamplerPanel'
 import { ChordGeometryLab } from './components/chord/ChordGeometryLab'
 import { DevRouteView } from './components/dev/DevRouteView'
 import { OscView } from './components/osc/OscView'
 import type { PlanetTool } from './components/planet/PlanetCanvas'
+import { MobileHud } from './components/layout/MobileHud'
 import { usePlanetStore } from './store/planetStore'
 import { useCanvasSettingsStore } from './store/canvasSettingsStore'
 import { loadBuiltinSamples } from './lib/loadBuiltinSamples'
 import { initMidi } from './audio/midiManager'
+
+// Detect iPhone / touch-primary device at startup (stable — never changes)
+const IS_MOBILE = (() => {
+  if (typeof navigator === 'undefined') return false
+  // Explicit override via URL: ?mobile or ?desktop
+  const sp = new URLSearchParams(window.location.search)
+  if (sp.has('mobile'))  return true
+  if (sp.has('desktop')) return false
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 1 && window.innerWidth <= 820)
+})()
 import { initToneContext } from './audio/audioLatencySettings'
 
 // Apply saved audio latency setting before any Tone.start() call
@@ -78,6 +91,29 @@ export default function App() {
     window.addEventListener('mouseup',   onUp)
   }, [rackH])
 
+  // ── Mobile layout ─────────────────────────────────────────────────────────
+  if (IS_MOBILE) {
+    return (
+      <div style={{
+        width: '100vw', height: '100dvh', position: 'relative', overflow: 'hidden',
+        background: '#0a0a0f',
+        filter: monochromeMode ? 'grayscale(1)' : undefined,
+      }}>
+        {/* Headless audio layers */}
+        <DroneLayer /><GranularLayer /><FMDroneLayer /><NoisePadLayer />
+        <SamplerLayer /><OneShotLayer /><AmbientOscillatorLayer />
+        <OscSynthLayer /><OscNextOrbitLayer />
+        {/* Full-screen canvas */}
+        <div style={{ position: 'absolute', inset: 0 }}>
+          <PlanetCanvas tool="add-planet" onSelectTool={() => {}} mobileMode />
+        </div>
+        {/* Minimal HUD */}
+        <MobileHud />
+      </div>
+    )
+  }
+
+  // ── Desktop layout ─────────────────────────────────────────────────────────
   return (
     <div style={{
       width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -92,6 +128,7 @@ export default function App() {
       <OneShotLayer />
       <AmbientOscillatorLayer />
       <OscSynthLayer />
+      <OscNextOrbitLayer />
 
       {appMode === 'chord-lab' ? (
         /* ── Chord Geometry Lab ─────────────────────────────────────────── */
