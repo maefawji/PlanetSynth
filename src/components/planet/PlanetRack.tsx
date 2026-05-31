@@ -224,12 +224,17 @@ const OSC_SYNTH_2COL_ORDER = [
   'oscSynthLfoRate',         'oscSynthLfoDepth',
 ]
 
-// ── OscSynth Orbit: 2-col grid for non-orbit params only ─────────────────────
+// ── OscSynth Orbit: 2-col grid (includes type selector — no single-col rows) ──
+
+const OSC_SYNTH_ORBIT_2COL_KEYS = new Set([
+  ...OSC_SYNTH_2COL_KEYS,
+  'oscSynthType',   // moved from generic loop into 2-col grid
+])
 
 const OSC_SYNTH_ORBIT_2COL_ORDER = [
-  'oscSynthWaveform',        'oscSynthLevel',
-  'oscSynthLfoTarget',       'oscSynthLfoWaveform',
-  'oscSynthFilterResonance', '',
+  'oscSynthType',            'oscSynthLevel',
+  'oscSynthWaveform',        'oscSynthLfoTarget',
+  'oscSynthLfoWaveform',     'oscSynthFilterResonance',
 ]
 
 // ── OscSynth orbit-map entries ────────────────────────────────────────────────
@@ -1137,6 +1142,103 @@ function InlineOscSynthContent({
   )
 }
 
+// ── MIDI note number → name (e.g. 48 → "C3") ─────────────────────────────────
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
+function midiToNoteName(n: number): string {
+  const nn = Math.max(0, Math.min(127, Math.round(n)))
+  return `${NOTE_NAMES[nn % 12]}${Math.floor(nn / 12) - 1}`
+}
+
+// ── Inline Arpeggio trigger (rendered inside trigger SlotCard) ────────────────
+
+const ARP_STEP_KEYS = ['arpNote0', 'arpNote1', 'arpNote2', 'arpNote3'] as const
+
+function InlineArpContent({
+  bodyId, slotKey, simple, accent,
+}: { bodyId: string | null; slotKey: string; simple: boolean; accent: string }) {
+  const overrides       = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
+  const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
+  const resetSlotParam  = useControlSetStore(s => s.resetSlotParam)
+  const dimText = simple ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.35)'
+
+  // defaults C3 E3 G3 B3
+  const DEFAULT_NOTES = [48, 52, 55, 59]
+
+  function noteValue(i: number): number {
+    const k = ARP_STEP_KEYS[i]
+    const v = (overrides as Record<string, unknown>)[k]
+    return v !== undefined ? Number(v) : DEFAULT_NOTES[i]
+  }
+
+  function handleWheel(e: React.WheelEvent<HTMLDivElement>, i: number) {
+    e.preventDefault()
+    const delta = e.deltaY < 0 ? 1 : -1
+    const next  = Math.max(0, Math.min(127, noteValue(i) + delta))
+    setSlotOverride(slotKey, { [ARP_STEP_KEYS[i]]: next } as Partial<PlanetSimParams>)
+  }
+
+  function handleClick(i: number) {
+    // fire note preview via OscSynth or AmbientOsc
+    const tgt = bodyId || usePlanetStore.getState().selectedBodyId
+    if (!tgt) return
+    const midi = noteValue(i)
+    const body = usePlanetStore.getState().bodies.find(b => b.id === tgt)
+    sendMidiNote(body?.midiChannel ?? 1, midi, body?.midiVelocity ?? 100, 300)
+    const eng = getBodyOscSynthEngine(tgt) ?? getBodyAmbientOscEngine(tgt)
+    if (eng) {
+      eng.noteOn(midi, 0.8)
+      setTimeout(() => eng.noteOff(midi), 500)
+      markBodyTriggered(tgt)
+    }
+  }
+
+  function handleReset(e: React.MouseEvent, i: number) {
+    e.stopPropagation()
+    resetSlotParam(slotKey, ARP_STEP_KEYS[i])
+  }
+
+  return (
+    <div style={{ paddingTop: 4 }}>
+      {/* Step grid: 4 note cells */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 3 }}>
+        {[0, 1, 2, 3].map(i => {
+          const midi = noteValue(i)
+          const isOverridden = ARP_STEP_KEYS[i] in (overrides as Record<string, unknown>)
+          return (
+            <div
+              key={i}
+              title={`Step ${i + 1}: ${midiToNoteName(midi)} (MIDI ${midi})\nScroll to change, click to preview`}
+              onClick={() => handleClick(i)}
+              onWheel={e => handleWheel(e, i)}
+              onContextMenu={e => { e.preventDefault(); handleReset(e, i) }}
+              style={{
+                position: 'relative',
+                borderRadius: 4,
+                border: `0.5px solid ${isOverridden ? accent : accent + '44'}`,
+                background: isOverridden ? `${accent}22` : `${accent}0e`,
+                padding: '3px 2px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: 7.5, color: dimText, lineHeight: 1, marginBottom: 1 }}>
+                {i + 1}
+              </div>
+              <div style={{ fontSize: 9, fontWeight: 700, color: isOverridden ? accent : dimText, lineHeight: 1 }}>
+                {midiToNoteName(midi)}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div style={{ fontSize: 7, color: dimText, marginTop: 3, lineHeight: 1.3 }}>
+        scroll: ±1st · click: preview · right-click: reset
+      </div>
+    </div>
+  )
+}
+
 // ── Inline Chord-Test trigger (rendered inside trigger SlotCard) ─────────────
 
 const CHORD_TEST_NOTES: { label: string; midi: number }[] = [
@@ -1844,8 +1946,9 @@ function SlotCard({
   const isOrbitTrigger = cs.id === 'orbit'
 
   // ── Manual trigger detection ───────────────────────────────────────────────
-  const isManualTrigger   = cs.id === 'trigger-manual'
+  const isManualTrigger    = cs.id === 'trigger-manual'
   const isChordTestTrigger = cs.id === 'trigger-chord-test'
+  const isArpTrigger       = cs.id === 'trigger-arpeggio'
 
   // ── Loaded samples (for sample dropdown) ──────────────────────────────────
   const loadedSamples = useProjectStore(s => s.project.samples)
@@ -1949,7 +2052,7 @@ function SlotCard({
              'oscSynthFilterCutoff','oscSynthFilterResonance','oscSynthLevel',
              'oscSynthLfoTarget','oscSynthLfoRate','oscSynthLfoDepth','oscSynthLfoWaveform'].includes(key) && !isOscSynthOn) return null
         // When OscSynth is on, 2-col sub-params render in the dedicated block below
-        if (isOscSynthOn && OSC_SYNTH_2COL_KEYS.has(key)) return null
+        if (isOscSynthOn && (isOscSynthOrbit ? OSC_SYNTH_ORBIT_2COL_KEYS : OSC_SYNTH_2COL_KEYS).has(key)) return null
         const isOv    = key in overrides
         const val     = isOv ? (overrides as Record<string, unknown>)[key] : baseVal
         const labelCol = isOv ? accent : dimText
@@ -2256,6 +2359,11 @@ function SlotCard({
       {/* Chord test trigger — C3 / E3 / G3 buttons */}
       {isChordTestTrigger && (
         <InlineChordTestContent bodyId={bodyId} simple={simple} accent={accent} />
+      )}
+
+      {/* Arpeggio trigger — 4-step note sequencer */}
+      {isArpTrigger && (
+        <InlineArpContent bodyId={bodyId} slotKey={slotKey} simple={simple} accent={accent} />
       )}
 
       {/* Orbit trigger: live orbit data flowing into this trigger */}

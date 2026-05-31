@@ -35,7 +35,7 @@ const RACK_DEFAULT = 220
 
 export default function App() {
   const [appMode, setAppMode] = useState<AppMode>('planet')
-  const [planetTool, setPlanetTool] = useState<PlanetTool>('select')
+  const [planetTool, setPlanetTool] = useState<PlanetTool>('add-planet')
   const simpleTheme  = usePlanetStore(s => s.simParams.simpleTheme)
   const probeMass    = usePlanetStore(s => s.simParams.probeMass)
   const updateSimParams = usePlanetStore(s => s.updateSimParams)
@@ -44,8 +44,8 @@ export default function App() {
   const updateNextPlanetDefaults = usePlanetStore(s => s.updateNextPlanetDefaults)
   const updateNextSunDefaults    = usePlanetStore(s => s.updateNextSunDefaults)
   const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
-  const [leftCollapsed, setLeftCollapsed] = useState(false)
-  const [rightCollapsed, setRightCollapsed] = useState(false)
+  const [leftCollapsed, setLeftCollapsed] = useState(true)
+  const [rightCollapsed, setRightCollapsed] = useState(true)
   const [rackCollapsed, setRackCollapsed] = useState(false)
   const [rackH, setRackH] = useState(RACK_DEFAULT)
   const [samplerPanel, setSamplerPanel]   = useState<{ bodyId: string; slotKey: string } | null>(null)

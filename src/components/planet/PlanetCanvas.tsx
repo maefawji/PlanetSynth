@@ -30,6 +30,7 @@ import { computeBodyRackOutputSpatial } from '../../audio/bodyRackOutput'
 import { setBusStandpointSpatial } from '../../audio/rackBusMixer'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
 import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
+import { getBodyOscSynthEngine } from './OscSynthLayer'
 import { sendMidiNote } from '../../audio/midiManager'
 
 export type PlanetTool = 'select' | 'add-sun' | 'add-planet' | 'probe'
@@ -310,6 +311,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
   const measuredRealTMsRef      = useRef<Map<string, number>>(new Map())  // measured wall-clock duration of last orbit
   // toggle mode: tracks whether each body's sample is currently looping (true = on)
   const toggleStateRef  = useRef<Map<string, boolean>>(new Map())
+  // Arpeggiator: current step index per timerKey
+  const arpStepRef      = useRef<Map<string, number>>(new Map())
+  // Arpeggiator: last note fired per timerKey (for monophonic noteOff on next step)
+  const arpPrevNoteRef  = useRef<Map<string, number>>(new Map())
 
   // Sync storeBodiesRef + purge deleted bodies from live simulation
   useEffect(() => {
@@ -335,6 +340,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
         measuredRealTMsRef.current.delete(lb.id)
         planetBodyStatsCache.delete(lb.id)
         toggleStateRef.current.delete(lb.id)
+        arpStepRef.current.delete(lb.id)
+        arpPrevNoteRef.current.delete(lb.id)
       }
       prevInRef.current.clear()
       if (liveBodiesRef.current.length > 0)
@@ -411,6 +418,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
     lastOrbitCrossWallMsRef.current.clear()
     measuredRealTMsRef.current.clear()
     toggleStateRef.current.clear()
+    arpStepRef.current.clear()
+    arpPrevNoteRef.current.clear()
     planetBodyStatsCache.clear()
   }, [])
 
@@ -612,6 +621,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
               tperiodIntervalMsRef.current.delete(id)
               planetBodyStatsCache.delete(id)
               toggleStateRef.current.delete(id)
+              arpStepRef.current.delete(id)
+              arpPrevNoteRef.current.delete(id)
               storeBodiesMapRef.current.delete(id)
             }
             computeAccels(liveBodiesRef.current, params.G, params.epsilon)
@@ -936,7 +947,30 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
 
                 if (lastWall === undefined || (nowMs - lastWall) >= intervalMs) {
                   lastTriggerWallMsRef.current.set(timerKey, nowMs)
-                  sendMidiNote(sbi.midiChannel ?? 1, sbi.midiNote ?? 60, sbi.midiVelocity ?? 100, 200)
+
+                  // ── Arpeggiator: pick note from sequence ─────────────────────
+                  const arpMode  = Boolean((tp as Record<string, unknown>).arpMode)
+                  const arpLen   = Math.max(1, Math.min(4, Number((tp as Record<string, unknown>).arpLength ?? 4)))
+                  const arpNotes = [
+                    Number((tp as Record<string, unknown>).arpNote0 ?? 48),
+                    Number((tp as Record<string, unknown>).arpNote1 ?? 52),
+                    Number((tp as Record<string, unknown>).arpNote2 ?? 55),
+                    Number((tp as Record<string, unknown>).arpNote3 ?? 59),
+                  ]
+                  let fireNote = sbi.midiNote ?? 60
+                  if (arpMode) {
+                    // Release previous step's note before firing next (monophonic arp)
+                    const prevNote = arpPrevNoteRef.current.get(timerKey)
+                    if (prevNote !== undefined) {
+                      getBodyOscSynthEngine(b.id)?.noteOff(prevNote)
+                    }
+                    const step = arpStepRef.current.get(timerKey) ?? 0
+                    fireNote = arpNotes[step % arpLen]
+                    arpStepRef.current.set(timerKey, (step + 1) % arpLen)
+                    arpPrevNoteRef.current.set(timerKey, fireNote)
+                  }
+
+                  sendMidiNote(sbi.midiChannel ?? 1, fireNote, sbi.midiVelocity ?? 100, 200)
                   if (ti === 0) {
                     const tpNumer = Number((bodyParams as Record<string, unknown>).orbitLoopNumer ?? 1)
                     const tpDenom = Number((bodyParams as Record<string, unknown>).orbitLoopDenom ?? 1)
@@ -951,7 +985,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool }: { tool?: PlanetT
                           orbitSource: (bodyParams as Record<string, unknown>).sampleOrbitSource as string ?? 'current',
                         }) ?? 1)
                       : 1
-                    if (fireBodyInstrumentTrigger(b.id, tpRate)) {
+                    if (fireBodyInstrumentTrigger(b.id, tpRate, arpMode ? fireNote : undefined)) {
                       markBodyTriggered(b.id)
                     } else {
                       const sample = resolveBodySamplerSample(b.id, sbi.sampleId, smpArr)

@@ -98,6 +98,29 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       rendezvousDistance: 0,
     },
   },
+  {
+    id: 'trigger-arpeggio',
+    name: 'Arpeggio',
+    icon: '♜',
+    color: '#f59e0b',
+    category: 'trigger',
+    description:
+      'T周期を1小節として C3・E3・G3・B3 を4分音符で巡回。\n' +
+      'Osc Synth と組み合わせて使うシンプルなアルペジエーター。\n' +
+      'ノートは各ステップで個別に変更可能。',
+    params: {
+      orbitTriggerMode:     'orbit-complete',
+      orbitTriggerType:     'tperiod',
+      orbitTriggerDivision: 0.25,   // 4 triggers per orbit = quarter notes
+      rendezvousDistance:   0,
+      arpMode:   true,
+      arpLength: 4,
+      arpNote0:  48,  // C3
+      arpNote1:  52,  // E3
+      arpNote2:  55,  // G3
+      arpNote3:  59,  // B3
+    },
+  },
   // ── Effect ─────────────────────────────────────────────────────────────────
   {
     id: 'effect-empty',
@@ -463,9 +486,9 @@ function emptyRack(): BodyRack {
   return { triggers: [], instrument: 'instrument-oneshot', effects: [] }
 }
 
-/** Initial global rack — orbit trigger pre-assigned so app starts with timing. */
+/** Initial global rack — arpeggio trigger + osc synth orbit (saw) as defaults. */
 function defaultGlobalRack(): BodyRack {
-  return { triggers: ['orbit'], instrument: 'instrument-oneshot-stretch', effects: [] }
+  return { triggers: ['trigger-arpeggio'], instrument: 'instrument-osc-synth-orbit', effects: [] }
 }
 
 function defaultBodyRacks(): Record<string, BodyRackOverride> {
@@ -559,7 +582,10 @@ function mergeWithOverride(
 export const useControlSetStore = create<ControlSetState>((set, get) => ({
   globalRack: defaultGlobalRack(),
   bodyRacks: defaultBodyRacks(),
-  rackParamOverrides: {},
+  rackParamOverrides: {
+    // Global instrument defaults: osc synth orbit with sawtooth waveform
+    'g:instrument': { oscSynthWaveform: 'sawtooth' },
+  },
 
   // ── Global rack mutations ────────────────────────────────────────────────
 

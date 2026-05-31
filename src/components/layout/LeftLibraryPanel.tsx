@@ -214,6 +214,13 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         background: t.headerBg,
       }}>
         <RailButton
+          active={false}
+          title={collapsed ? 'Show Panel' : 'Hide Panel'}
+          onClick={onToggleCollapsed}
+        >
+          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </RailButton>
+        <RailButton
           active={activePanel === 'planet-samples' && !collapsed}
           title="Samples"
           onClick={() => { setActivePanel('planet-samples'); if (collapsed) onToggleCollapsed() }}
@@ -296,13 +303,6 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
           <Settings size={14} />
         </RailButton>
         <div style={{ flex: 1 }} />
-        <RailButton
-          active={false}
-          title={collapsed ? 'Show Panel' : 'Hide Panel'}
-          onClick={onToggleCollapsed}
-        >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </RailButton>
       </div>
 
       {!collapsed && activePanel === 'planet-samples' && (

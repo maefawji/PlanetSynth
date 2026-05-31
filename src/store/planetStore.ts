@@ -252,6 +252,14 @@ export interface PlanetSimParams {
   oscSynthLfoRateRate:     number
   oscSynthLfoDepthSource:  OscOrbitSource
   oscSynthLfoDepthRate:    number
+
+  // ── Arpeggiator trigger ───────────────────────────────────────────────────
+  arpMode:   boolean   // true = this trigger cycles through arp notes
+  arpLength: number    // active step count 1–4
+  arpNote0:  number    // step 0 (default 48 = C3)
+  arpNote1:  number    // step 1 (default 52 = E3)
+  arpNote2:  number    // step 2 (default 55 = G3)
+  arpNote3:  number    // step 3 (default 59 = B3)
 }
 
 // ── Next-body placement defaults ──────────────────────────────────────────────
@@ -495,6 +503,13 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   oscSynthLfoDepthRate:    1.0,
 
   oneShotType: 'off',
+
+  arpMode:   false,
+  arpLength: 4,
+  arpNote0:  48,  // C3
+  arpNote1:  52,  // E3
+  arpNote2:  55,  // G3
+  arpNote3:  59,  // B3
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────

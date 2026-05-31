@@ -181,13 +181,17 @@ export class AmbientOscillatorEngine {
     osc.frequency.value = freq
 
     // ── ADSR envelope ────────────────────────────────────────────────────────
-    const attack       = Math.max(0.001, p.attack)
+    // Minimum 5 ms attack to avoid click transients at note-on.
+    const attack       = Math.max(0.005, p.attack)
     const decay        = Math.max(0.001, p.decay)
     const sustainLevel = Math.max(0.0001, targetLevel * Math.max(0, Math.min(1, p.sustain)))
 
+    // Exponential ramp (vs linear) gives a smoother perceptual onset and
+    // eliminates the zipper click that occurs when the gain step at t=now
+    // is audible through a very fast ramp.
     amp.gain.setValueAtTime(0.0001, now)
-    amp.gain.linearRampToValueAtTime(targetLevel, now + attack)         // Attack
-    amp.gain.setTargetAtTime(sustainLevel, now + attack, decay / 3)    // Decay → Sustain
+    amp.gain.exponentialRampToValueAtTime(Math.max(0.0001, targetLevel), now + attack)  // Attack
+    amp.gain.setTargetAtTime(sustainLevel, now + attack, decay / 3)                     // Decay → Sustain
 
     filter.type            = 'lowpass'
     filter.frequency.value = p.filterCutoff

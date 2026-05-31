@@ -61,6 +61,16 @@ export function RightInspector({ mode, planetTool, collapsed, onToggleCollapsed 
         >
           <ChevronLeft size={13} />
         </button>
+        <div style={{
+          marginTop: 12,
+          writingMode: 'vertical-rl',
+          transform: 'rotate(180deg)',
+          fontSize: 8.5, fontWeight: 800, letterSpacing: '0.12em',
+          textTransform: 'uppercase', color: t.textDim,
+          userSelect: 'none', opacity: 0.6,
+        }}>
+          Mixer
+        </div>
       </div>
     )
   }
