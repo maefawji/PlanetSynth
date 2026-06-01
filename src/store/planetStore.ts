@@ -105,6 +105,7 @@ export interface PlanetSimParams {
   standpointConeWidth: number             // full cone width (degrees, 0-360)
   standpointOuterVol: number              // volume at 180° from facing (0 = silent behind)
   standpointStereo: boolean               // pan sources left/right relative to standpoint facing
+  standpointStereoWidth: number           // stereo pan strength 0–1 (1 = full ±1, 0 = center)
   standpointFrontBack: boolean            // attenuate sources behind the standpoint
   standpointRearVol: number               // volume at directly behind when front/back is enabled
   /** Effector params — used by the rack system when a body has an effector control set assigned */
@@ -257,10 +258,6 @@ export interface PlanetSimParams {
   oscSynthLfoDepthSource:  OscOrbitSource
   oscSynthLfoDepthRate:    number
 
-  // ── OSC Next Orbit instrument ─────────────────────────────────────────────
-  /** Whether the osc-next-orbit instrument is active for this body */
-  oscNextOrbitType: 'off' | 'osc-next-orbit'
-
   // ── Arpeggiator trigger ───────────────────────────────────────────────────
   arpMode:   boolean   // true = this trigger cycles through arp notes
   arpLength: number    // active step count 1–4
@@ -400,6 +397,7 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   standpointConeWidth: 270,
   standpointOuterVol: 0.25,
   standpointStereo: false,
+  standpointStereoWidth: 1.0,
   standpointFrontBack: false,
   standpointRearVol: 0.45,
   effectorType: 'none',
@@ -511,8 +509,6 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   oscSynthLfoDepthRate:    1.0,
 
   oneShotType: 'off',
-
-  oscNextOrbitType: 'off',
 
   arpMode:   false,
   arpLength: 4,

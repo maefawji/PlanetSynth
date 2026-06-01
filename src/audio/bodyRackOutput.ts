@@ -77,7 +77,8 @@ export function computeBodyRackOutputSpatial(
     }
 
     if (simParams.standpointStereo) {
-      pan = Math.max(-1, Math.min(1, Math.sin(angleDelta(sourceAngle, facing))))
+      const width = Math.max(0, Math.min(1, simParams.standpointStereoWidth ?? 1))
+      pan = Math.max(-1, Math.min(1, Math.sin(angleDelta(sourceAngle, facing)) * width))
     }
   }
 

@@ -275,7 +275,7 @@ export class AmbientOscillatorEngine {
 
   /**
    * Compute a PeriodicWave from orbit trajectory points and apply it to all
-   * current and future voices. Call this from OscNextOrbitLayer on each sync.
+   * current and future voices.
    *
    * The Y-coordinate of each point is used as the waveform signal; it is
    * centered (DC removed) and normalized to [-1, 1] before the DFT.

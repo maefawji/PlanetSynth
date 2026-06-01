@@ -31,7 +31,6 @@ import { setBusStandpointSpatial } from '../../audio/rackBusMixer'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
 import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
-import { getBodyOscNextOrbitEngine } from './OscNextOrbitLayer'
 import { sendMidiNote } from '../../audio/midiManager'
 import { generateStarIdentity, collectExistingIdentities } from '../../lib/starNaming'
 
@@ -44,6 +43,7 @@ export type PlanetTool = 'select' | 'add-sun' | 'add-planet' | 'probe'
 interface LiveBodySnap { id: string; mass: number; x: number; y: number; vx: number; vy: number; ax: number; ay: number; fixed: boolean }
 let _liveBodiesSnap: LiveBodySnap[] = []
 let _simParamsSnap: Pick<PlanetSimParams, 'G' | 'epsilon' | 'dt'> = { G: 1, epsilon: 5, dt: 0.2 }
+const _trailsSnap = new Map<string, TrailRing>()
 
 export function getPlanetLiveBodySnapshot(): LiveBodySnap[] {
   return _liveBodiesSnap.map(b => ({ ...b }))
@@ -62,6 +62,19 @@ let _prevAyBuf = new Float64Array(0)
 /** Returns the smoothed (EMA) orbital period for a body, in sim-time units. */
 export function getSmoothedPeriod(bodyId: string): number | null {
   return _smoothedPeriods.get(bodyId) ?? null
+}
+
+/** Returns the recorded trail points for `bodyId` as an ordered array (oldest → newest). */
+export function getBodyTrailPoints(bodyId: string): Array<{x: number; y: number}> | null {
+  const ring = _trailsSnap.get(bodyId)
+  if (!ring || ring.count < 2) return null
+  const pts = new Array<{x: number; y: number}>(ring.count)
+  const start = ring.count < ring.capacity ? 0 : ring.head
+  for (let i = 0; i < ring.count; i++) {
+    const idx = (start + i) % ring.capacity
+    pts[i] = { x: ring.xs[idx], y: ring.ys[idx] }
+  }
+  return pts
 }
 
 /** Returns the predicted positions for `bodyId` over the next `steps` simulation steps. */
@@ -582,7 +595,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
             for (const b of bodies) {
               if (b.id === '__probe__') continue
               const ring = trails.get(b.id)
-              if (ring) pushTrail(ring, b.x, b.y)
+              if (ring) { pushTrail(ring, b.x, b.y); _trailsSnap.set(b.id, ring) }
             }
           }
           if (probeMode && params.probeMass > 0 && mp) bodies.pop()
@@ -965,7 +978,6 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                     const prevNote = arpPrevNoteRef.current.get(timerKey)
                     if (prevNote !== undefined) {
                       getBodyOscSynthEngine(b.id)?.noteOff(prevNote)
-                      getBodyOscNextOrbitEngine(b.id)?.noteOff(prevNote)
                     }
                     const step = arpStepRef.current.get(timerKey) ?? 0
                     fireNote = arpNotes[step % arpLen]
@@ -1803,9 +1815,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                         stroke="#06b6d4" strokeWidth={1.5 / zoom} strokeOpacity={0.75} />
                       {/* Range: cone sector if directional, full circle otherwise */}
                       {dirOn ? (
+                        // Directional: arc only (no center lines, no fill)
                         <path
-                          d={`M ${b.x} ${b.y} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`}
-                          fill="#06b6d422" stroke="#06b6d4" strokeWidth={0.5 / zoom} strokeOpacity={0.55}
+                          d={`M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`}
+                          fill="none" stroke="#06b6d4" strokeWidth={1 / zoom} strokeOpacity={0.6}
                           strokeDasharray={`${7 / zoom} ${5 / zoom}`} />
                       ) : (
                         <circle cx={b.x} cy={b.y} r={r} fill="none"

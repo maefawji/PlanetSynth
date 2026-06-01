@@ -11,7 +11,7 @@ import {
   type ControlSetCategory,
 } from '../../store/controlSetStore'
 import { computeOrbitDroneParams, computeOrbitStats } from './DroneLayer'
-import { getPlanetLiveBodySnapshot, planetBodyStatsCache, computeOrbitPreviewForBody, type PlanetBodyStats, type PlanetTool } from './PlanetCanvas'
+import { getPlanetLiveBodySnapshot, planetBodyStatsCache, getBodyTrailPoints, type PlanetBodyStats, type PlanetTool } from './PlanetCanvas'
 import { PlanetBodyInspector, NextBodyInspector } from '../layout/RightInspector'
 import { draggingControlSetId, setDraggingControlSetId } from '../../lib/dragControlSet'
 import { getBodyOutputLevel } from '../../audio/bodyOutputMeter'
@@ -544,13 +544,11 @@ function OrbitTriggerMonitor({ bodyId, simple }: { bodyId: string; simple: boole
 
 function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | null; simple: boolean }) {
   const [liveStats, setLiveStats] = useState<PlanetBodyStats | null>(null)
-  const [orbitPts, setOrbitPts]   = useState<Array<{x: number; y: number}> | null>(null)
-  const [showNextOrbit, setShowNextOrbit] = useState(true)
-  const [showLiveData, setShowLiveData]   = useState(false)
+  const [trailPts,  setTrailPts]  = useState<Array<{x: number; y: number}> | null>(null)
+  const [showLiveData, setShowLiveData] = useState(false)
 
-  const bodies    = usePlanetStore(s => s.bodies)
-  const G         = usePlanetStore(s => s.simParams.G)
-  const simParams = usePlanetStore(s => s.simParams)
+  const bodies = usePlanetStore(s => s.bodies)
+  const G      = usePlanetStore(s => s.simParams.G)
 
   useEffect(() => {
     if (!selectedBodyId) { setLiveStats(null); return }
@@ -561,19 +559,12 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
   }, [selectedBodyId])
 
   useEffect(() => {
-    if (!selectedBodyId || !showNextOrbit) { setOrbitPts(null); return }
-    const recompute = () => {
-      const st = planetBodyStatsCache.get(selectedBodyId)
-      const period   = st?.period
-      const stepsRaw = (period && isFinite(period) && period > 0)
-        ? Math.ceil(period / simParams.dt) : 1200
-      const steps = Math.max(200, Math.min(3000, stepsRaw))
-      setOrbitPts(computeOrbitPreviewForBody(selectedBodyId, steps))
-    }
-    recompute()
-    const id = window.setInterval(recompute, 800)
+    if (!selectedBodyId) { setTrailPts(null); return }
+    const refresh = () => setTrailPts(getBodyTrailPoints(selectedBodyId))
+    refresh()
+    const id = window.setInterval(refresh, 200)
     return () => window.clearInterval(id)
-  }, [selectedBodyId, showNextOrbit, simParams.dt])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedBodyId])
 
   const dimText   = simple ? 'rgba(0,0,0,0.32)'  : 'rgba(255,255,255,0.28)'
   const accentCol = simple ? '#2563eb'             : '#7c3aed'
@@ -592,23 +583,6 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
   const body       = selectedBodyId ? (effectiveBodies.find(b => b.id === selectedBodyId) ?? null) : null
   const orbitStats = body ? computeOrbitStats(body, effectiveBodies, G) : null
 
-  const svgData = (() => {
-    if (!orbitPts || orbitPts.length < 2) return null
-    let minX = orbitPts[0].x, maxX = orbitPts[0].x, minY = orbitPts[0].y, maxY = orbitPts[0].y
-    for (const p of orbitPts) {
-      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
-      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
-    }
-    const pad = 8, bw = maxX - minX || 1, bh = maxY - minY || 1
-    const scale = Math.min(148 / (bw + pad * 2), 90 / (bh + pad * 2))
-    const ox = -(minX - pad) * scale, oy = -(minY - pad) * scale
-    const svgW = (bw + pad * 2) * scale, svgH = (bh + pad * 2) * scale
-    const polyPts = orbitPts.map(p => `${(p.x * scale + ox).toFixed(1)},${(p.y * scale + oy).toFixed(1)}`).join(' ')
-    const sx = orbitPts[0].x * scale + ox, sy = orbitPts[0].y * scale + oy
-    const ep = orbitPts[orbitPts.length - 1]
-    return { polyPts, sx, sy, svgW, svgH, ex: ep.x * scale + ox, ey: ep.y * scale + oy }
-  })()
-
   const CollapseBtn = ({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) => (
     <button onClick={onToggle} style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -620,9 +594,13 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
     </button>
   )
 
+  const border = simple ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.06)'
+
   return (
+    <div style={{ width: 172, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'row' }}>
+    {/* ── main scrollable content ── */}
     <div style={{
-      width: 172, flexShrink: 0, minHeight: 0,
+      flex: 1, minWidth: 0, minHeight: 0,
       display: 'flex', flexDirection: 'column',
       padding: '6px 7px 6px 8px', gap: 3,
       overflowY: 'auto', overflowX: 'hidden',
@@ -634,22 +612,60 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
           ◎ orbit
         </div>
         {selectedBodyId && <OrbitTriggerMonitor bodyId={selectedBodyId} simple={simple} />}
+        {/* Copy orbit+trail to clipboard */}
+        {body && (
+          <button
+            onClick={() => {
+              const trail = getBodyTrailPoints(body.id) ?? []
+              const json = JSON.stringify({
+                body: body.name,
+                orbit: liveStats ? {
+                  T:          liveStats.period,
+                  ecc:        orbitStats?.ecc ?? 0,
+                  r:          liveStats.r,
+                  speed:      liveStats.speed,
+                  accel:      liveStats.accel,
+                  omega:      liveStats.omega,
+                  angleDeg:   liveStats.angleDeg,
+                  lfoPhase:   liveStats.lfoPhase,
+                  bound:      orbitStats?.bound ?? false,
+                  centerName: orbitStats?.centerName ?? '',
+                } : null,
+                trail,
+              })
+              const ta = document.createElement('textarea')
+              ta.value = json; ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0.01'
+              document.body.appendChild(ta); ta.focus(); ta.select()
+              document.execCommand('copy'); document.body.removeChild(ta)
+              navigator.clipboard?.writeText(json).catch(() => {})
+            }}
+            title="Copy orbit data + trail to clipboard (paste in Wave Lab)"
+            style={{
+              marginLeft: 'auto', fontSize: 7, fontWeight: 700,
+              padding: '1px 5px', border: 'none', borderRadius: 3, cursor: 'pointer',
+              background: simple ? 'rgba(37,99,235,0.10)' : 'rgba(124,58,237,0.14)',
+              color: accentCol, fontFamily: 'inherit',
+            }}
+          >copy</button>
+        )}
       </div>
 
       {!body ? (
         <div style={{ fontSize: 7, color: dimText, fontStyle: 'italic', lineHeight: 1.55 }}>no body selected</div>
       ) : (<>
-        {([
-          { key: 'T',   value: orbitStats ? `${orbitStats.T_real.toFixed(1)}s` : '—', title: 'orbital period' },
-          { key: 'ecc', value: orbitStats ? orbitStats.ecc.toFixed(2)           : '—', title: 'eccentricity'   },
-          { key: 'r',   value: orbitStats ? `${Math.round(orbitStats.r)}`       : '—', title: 'distance'       },
-          { key: 'v',   value: orbitStats ? orbitStats.speed.toFixed(1)         : '—', title: 'speed'          },
-        ] as const).map(row => (
-          <div key={row.key} title={row.title} style={{ display: 'flex', alignItems: 'center', gap: 3, minHeight: 13 }}>
-            <span style={{ fontSize: 7, color: dimText, width: 22, flexShrink: 0, textAlign: 'right', lineHeight: 1 }}>{row.key}</span>
-            <span style={{ fontSize: 8, fontFamily: 'monospace', color: accentCol, flex: 1, textAlign: 'right', lineHeight: 1 }}>{row.value}</span>
-          </div>
-        ))}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+          {([
+            { key: 'T',   value: orbitStats ? `${orbitStats.T_real.toFixed(1)}s` : '—', title: 'orbital period' },
+            { key: 'ecc', value: orbitStats ? orbitStats.ecc.toFixed(2)           : '—', title: 'eccentricity'   },
+            { key: 'r',   value: orbitStats ? `${Math.round(orbitStats.r)}`       : '—', title: 'distance'       },
+            { key: 'v',   value: orbitStats ? orbitStats.speed.toFixed(1)         : '—', title: 'speed'          },
+          ] as const).map(row => (
+            <div key={row.key} title={row.title} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+              <span style={{ fontSize: 6, color: dimText, lineHeight: 1 }}>{row.key}</span>
+              <span style={{ fontSize: 8, fontFamily: 'monospace', color: accentCol, lineHeight: 1 }}>{row.value}</span>
+            </div>
+          ))}
+        </div>
 
         <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginTop: 1 }}>
           {orbitStats && (
@@ -695,36 +711,53 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
           </svg>
         </div>
 
-        <div style={{ height: 0.5, background: divLine, margin: '1px 0' }} />
-        <CollapseBtn label="Next Orbit" open={showNextOrbit} onToggle={() => setShowNextOrbit(v => !v)} />
-        {showNextOrbit && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-            {svgData ? (
-              <svg
-                width={Math.min(156, svgData.svgW)}
-                height={Math.min(95, svgData.svgH)}
-                viewBox={`0 0 ${svgData.svgW.toFixed(1)} ${svgData.svgH.toFixed(1)}`}
-                style={{ display: 'block', borderRadius: 3, background: orbitBg }}
-              >
-                <polyline points={svgData.polyPts} fill="none" stroke={`${accentCol}99`} strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round" />
-                <circle cx={svgData.sx.toFixed(1)} cy={svgData.sy.toFixed(1)} r={3} fill={accentCol} opacity={0.9} />
-                <circle cx={svgData.ex.toFixed(1)} cy={svgData.ey.toFixed(1)} r={2.5} fill="#f472b6" opacity={0.75} />
-              </svg>
-            ) : (
-              <span style={{ fontSize: 8, color: dimText }}>
-                {liveStats?.period && !isFinite(liveStats.period) ? 'Unbound orbit' : 'Computing…'}
-              </span>
-            )}
-            {liveStats && isFinite(liveStats.period) && liveStats.period > 0 && (
-              <div style={{ fontSize: 7.5, color: dimText, fontFamily: 'monospace' }}>
-                T={liveStats.period.toFixed(1)} · ω={liveStats.omega.toFixed(4)}
-              </div>
-            )}
-          </div>
-        )}
 
-        <div style={{ height: 0.5, background: divLine, margin: '1px 0' }} />
-        <CollapseBtn label="Live Data" open={showLiveData} onToggle={() => setShowLiveData(v => !v)} />
+        {/* ── Orbit preview — trail data already computed by canvas ── */}
+        {(() => {
+          if (!trailPts || trailPts.length < 2) return null
+          let minX = trailPts[0].x, maxX = trailPts[0].x, minY = trailPts[0].y, maxY = trailPts[0].y
+          for (const p of trailPts) {
+            if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
+            if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
+          }
+          const pad = 6, bw = maxX - minX || 1, bh = maxY - minY || 1
+          const scale = Math.min(152 / (bw + pad * 2), 80 / (bh + pad * 2))
+          const ox = -(minX - pad) * scale, oy = -(minY - pad) * scale
+          const svgW = (bw + pad * 2) * scale, svgH = (bh + pad * 2) * scale
+          const pts = trailPts.map(p => `${(p.x * scale + ox).toFixed(1)},${(p.y * scale + oy).toFixed(1)}`).join(' ')
+          const cur = trailPts[trailPts.length - 1]
+          const cx = cur.x * scale + ox, cy = cur.y * scale + oy
+
+          function copyTrail() {
+            const json = JSON.stringify({ body: body.name, n: trailPts.length, points: trailPts })
+            const ta = document.createElement('textarea')
+            ta.value = json
+            ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0.01;pointer-events:none'
+            document.body.appendChild(ta)
+            ta.focus()
+            ta.select()
+            document.execCommand('copy')
+            document.body.removeChild(ta)
+            navigator.clipboard?.writeText(json).catch(() => {})
+          }
+
+          return (
+            <div style={{ margin: '2px 0', position: 'relative' }}>
+              <svg width={Math.min(156, svgW)} height={Math.min(84, svgH)}
+                viewBox={`0 0 ${svgW.toFixed(1)} ${svgH.toFixed(1)}`}
+                onClick={copyTrail}
+                style={{ display: 'block', borderRadius: 3, background: simple ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', cursor: 'copy' }}
+              >
+                <polyline points={pts} fill="none" stroke={body.color} strokeOpacity={0.7} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+                <circle cx={cx.toFixed(1)} cy={cy.toFixed(1)} r={2.5} fill={body.color} opacity={0.9} />
+              </svg>
+              <div style={{ fontSize: 6, color: dimText, opacity: 0.5, textAlign: 'right', marginTop: 1 }}>
+                click to copy · {trailPts.length} pts
+              </div>
+            </div>
+          )
+        })()}
+
         {showLiveData && liveStats && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 2 }}>
             {[
@@ -773,11 +806,40 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
 
       <div style={{ minHeight: 6 }} />
       <div style={{ fontSize: 6, color: dimText, opacity: 0.40, textTransform: 'uppercase', letterSpacing: '0.10em', lineHeight: 1 }}>input →</div>
+    </div>{/* end scrollable content */}
+
+    {/* ── thin Live Data strip on right ── */}
+    <button
+      onClick={() => setShowLiveData(v => !v)}
+      title={showLiveData ? 'Hide live data' : 'Show live data'}
+      style={{
+        width: 14, flexShrink: 0,
+        border: 'none', borderLeft: `0.5px solid ${border}`,
+        cursor: 'pointer',
+        background: showLiveData
+          ? (simple ? 'rgba(37,99,235,0.10)' : 'rgba(124,58,237,0.12)')
+          : 'transparent',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 0,
+      }}
+    >
+      <span style={{
+        writingMode: 'vertical-rl',
+        transform: 'rotate(180deg)',
+        fontSize: 6.5, fontWeight: 800, letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        color: showLiveData ? accentCol : dimText,
+        userSelect: 'none',
+      }}>
+        {showLiveData ? '◀ data' : '▶ data'}
+      </span>
+    </button>
+
     </div>
   )
 }
 
-// ── Orbit trigger input block ─────────────────────────────────────────────────
+// ── Orbit trigger input block ──────────────────────────────────────────────────
 
 /**
  * Shown inside the orbit trigger SlotCard.
@@ -1898,19 +1960,15 @@ function SlotCard({
   // ── Osc Synth active detection ─────────────────────────────────────────────
   const isOscSynth        = cs.id === 'instrument-osc-synth'
   const isOscSynthOrbit   = cs.id === 'instrument-osc-synth-orbit'
-  const isOscNextOrbit    = cs.id === 'instrument-osc-next-orbit'
   const effectiveOscSynthType = (isOscSynth || isOscSynthOrbit)
     ? String((overrides as Record<string, unknown>)['oscSynthType'] ?? cs.params.oscSynthType ?? 'off')
     : 'off'
   const isOscSynthOn = (isOscSynth || isOscSynthOrbit) && effectiveOscSynthType === 'osc-synth'
-  // OscNextOrbit is always "on" when the slot is assigned (no oscSynthType guard)
-  const isOscNextOrbitOn  = isOscNextOrbit &&
-    String((overrides as Record<string, unknown>)['oscNextOrbitType'] ?? cs.params.oscNextOrbitType ?? 'off') === 'osc-next-orbit'
 
-  // ── Osc Synth Orbit / OscNextOrbit: live orbit stats ──────────────────────
+  // ── Osc Synth Orbit: live orbit stats ─────────────────────────────────────
   const [oscOrbitStats, setOscOrbitStats] = useState<ReturnType<typeof computeOrbitStats>>(null)
   useEffect(() => {
-    if ((!isOscSynthOrbit && !isOscNextOrbit) || !bodyId) { setOscOrbitStats(null); return }
+    if (!isOscSynthOrbit || !bodyId) { setOscOrbitStats(null); return }
     const poll = () => {
       const { bodies: bs, simParams: sp } = usePlanetStore.getState()
       const liveBodies = getPlanetLiveBodySnapshot()
@@ -1922,7 +1980,7 @@ function SlotCard({
     poll()
     const id = window.setInterval(poll, 100)
     return () => window.clearInterval(id)
-  }, [isOscSynthOrbit, isOscNextOrbit, bodyId])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOscSynthOrbit, bodyId])  // eslint-disable-line react-hooks/exhaustive-deps
 
   function oscEp(key: string, dflt: unknown): unknown {
     const ov = overrides as Record<string, unknown>
@@ -2054,13 +2112,9 @@ function SlotCard({
         // Osc Synth sub-params: only when oscSynthType is 'osc-synth'
         if (['oscSynthWaveform','oscSynthAttack','oscSynthDecay','oscSynthSustain','oscSynthRelease',
              'oscSynthFilterCutoff','oscSynthFilterResonance','oscSynthLevel',
-             'oscSynthLfoTarget','oscSynthLfoRate','oscSynthLfoDepth','oscSynthLfoWaveform'].includes(key) && !isOscSynthOn && !isOscNextOrbitOn) return null
-        // OscNextOrbit: waveform is orbit-derived — hide waveform selector entirely
-        if (isOscNextOrbitOn && key === 'oscSynthWaveform') return null
-        // Hide oscNextOrbitType raw param from generic loop
-        if (key === 'oscNextOrbitType') return null
-        // When OscSynth/OscNextOrbit is on, 2-col sub-params render in the dedicated block below
-        if ((isOscSynthOn || isOscNextOrbitOn) && OSC_SYNTH_ORBIT_2COL_KEYS.has(key)) return null
+             'oscSynthLfoTarget','oscSynthLfoRate','oscSynthLfoDepth','oscSynthLfoWaveform'].includes(key) && !isOscSynthOn) return null
+        // When OscSynth is on, 2-col sub-params render in the dedicated block below
+        if (isOscSynthOn && OSC_SYNTH_ORBIT_2COL_KEYS.has(key)) return null
         const isOv    = key in overrides
         const val     = isOv ? (overrides as Record<string, unknown>)[key] : baseVal
         const labelCol = isOv ? accent : dimText
@@ -2194,8 +2248,8 @@ function SlotCard({
         </div>
       )}
 
-      {/* OscSynth / OscNextOrbit 2-column param grid */}
-      {(isOscSynthOn || isOscNextOrbitOn) && (
+      {/* OscSynth 2-column param grid */}
+      {isOscSynthOn && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 5px' }}>
           {OSC_SYNTH_ORBIT_2COL_ORDER.map((key, idx) => {
             const cfg = PARAM_CFG[key]
@@ -2249,8 +2303,8 @@ function SlotCard({
         </div>
       )}
 
-      {/* OscSynth Orbit / OscNextOrbit: oscilloscope + source/rate controls + live computed values */}
-      {(isOscSynthOrbit || isOscNextOrbit) && (
+      {/* OscSynth Orbit: oscilloscope + source/rate controls + live computed values */}
+      {isOscSynthOrbit && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {/* Oscilloscope */}
           <OscScope bodyId={bodyId ?? null} accent={accent} />
@@ -2445,12 +2499,211 @@ function SectionLabel({ label, simple, highlighted = false }: { label: string; s
 
 // ── Rack Inspector Column (left edge) ────────────────────────────────────────
 
-function RackInspectorColumn({ planetTool, simple }: { planetTool: PlanetTool | undefined; simple: boolean }) {
+function UniverseRackIndicator({ simple }: { simple: boolean }) {
+  const bodies = usePlanetStore(s => s.bodies)
+  const dimText = simple ? 'rgba(0,0,0,0.38)' : 'rgba(255,255,255,0.28)'
+  const accent  = simple ? '#6366f1' : '#818cf8'
+
+  return (
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      padding: '20px 16px', gap: 10, userSelect: 'none',
+    }}>
+      {/* Glyph */}
+      <div style={{
+        fontSize: 32, lineHeight: 1, opacity: 0.55,
+        color: accent, filter: `drop-shadow(0 0 8px ${accent}88)`,
+      }}>
+        ⊙
+      </div>
+      {/* Title */}
+      <div style={{
+        fontSize: 10, fontWeight: 800, letterSpacing: '0.14em',
+        textTransform: 'uppercase', color: accent, opacity: 0.75,
+      }}>
+        Universe Rack
+      </div>
+      {/* Divider */}
+      <div style={{ width: 40, height: '0.5px', background: accent, opacity: 0.25 }} />
+      {/* Description */}
+      <div style={{ fontSize: 8.5, color: dimText, textAlign: 'center', lineHeight: 1.6 }}>
+        すべての天体が共有する<br />グローバルラック設定
+      </div>
+      {/* Stats */}
+      <div style={{
+        fontSize: 8, color: dimText, opacity: 0.65,
+        fontFamily: 'monospace', letterSpacing: '0.04em',
+      }}>
+        {bodies.length} {bodies.length === 1 ? 'body' : 'bodies'}
+      </div>
+    </div>
+  )
+}
+
+function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }: { simple: boolean; inspectorExpanded: boolean; onToggleInspector: () => void }) {
+  const { bodies, simParams, selectedBodyId, updateSimParams, cameraFollowBodyId, setCameraFollowBodyId } = usePlanetStore()
+  const body = selectedBodyId ? bodies.find(b => b.id === selectedBodyId) : null
+  const border   = simple ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.06)'
+  const accentCol = simple ? '#2563eb' : '#7c3aed'
+  const textCol   = simple ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.88)'
+  const dimCol    = simple ? 'rgba(0,0,0,0.4)'  : 'rgba(255,255,255,0.35)'
+  const btnBg     = simple ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.07)'
+
+  const [level, setLevel] = useState(0)
+  const rafRef = useRef<number>(0)
+  useEffect(() => {
+    if (!body) { setLevel(0); return }
+    const poll = () => { setLevel(getBodyOutputLevel(body.id)); rafRef.current = requestAnimationFrame(poll) }
+    rafRef.current = requestAnimationFrame(poll)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [body?.id])
+
+  const isSP        = body ? simParams.standpointBodyId === body.id : false
+  const isFollowing = body ? cameraFollowBodyId === body.id : false
+  const dB          = level > 0.0001 ? 20 * Math.log10(level) : -100
+  const meterPct    = Math.max(0, Math.min(100, (Math.max(-60, dB) + 60) / 60 * 100))
+  const meterColor  = level > 0.7 ? '#fbbf24' : level > 0.01 ? '#22c55e' : 'rgba(34,197,94,0.25)'
+
+  return (
+    <div style={{
+      width: 110, flexShrink: 0, minHeight: 0,
+      display: 'flex', flexDirection: 'column',
+      borderRight: `0.5px solid ${border}`,
+    }}>
+      {/* Column header */}
+      <div style={{
+        padding: '4px 8px 3px', flexShrink: 0,
+        fontSize: 6.5, fontWeight: 800, letterSpacing: '0.12em',
+        textTransform: 'uppercase', color: accentCol, lineHeight: 1,
+        borderBottom: `0.5px solid ${border}`,
+      }}>
+        ● body
+      </div>
+
+      {/* Body content row: centroid area + thin edit strip on right */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0 }}>
+
+        {body ? (
+          <div style={{
+            flex: 1, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            padding: '12px 6px', gap: 8, minWidth: 0,
+          }}>
+            {/* Large color dot */}
+            <div style={{
+              width: 36, height: 36, borderRadius: '50%',
+              background: body.color,
+              boxShadow: `0 0 16px ${body.color}66`,
+              flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 18, lineHeight: 1,
+            }}>
+              {body.type === 'sun' ? '☀' : ''}
+            </div>
+
+            {/* Name */}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: textCol, lineHeight: 1.2 }}>
+                {body.name}
+              </div>
+              {body.designation && (
+                <div style={{ fontSize: 8, color: dimCol, marginTop: 3, fontStyle: 'italic' }}>
+                  {body.designation}
+                </div>
+              )}
+              {body.catalogId && (
+                <div style={{ fontSize: 7, color: dimCol, marginTop: 2, fontFamily: 'monospace', opacity: 0.7, letterSpacing: '0.04em' }}>
+                  {body.catalogId}
+                </div>
+              )}
+            </div>
+
+            {/* Type badge */}
+            <div style={{
+              fontSize: 8, fontWeight: 600, color: dimCol,
+              background: btnBg, borderRadius: 3,
+              padding: '2px 6px', textTransform: 'capitalize',
+            }}>
+              {body.type}
+            </div>
+
+            {/* Level meter */}
+            <div style={{ width: '80%', height: 3, background: simple ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ width: `${meterPct}%`, height: '100%', background: meterColor, borderRadius: 2, transition: 'width 55ms linear' }} />
+            </div>
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button
+                onClick={() => updateSimParams({ standpointBodyId: isSP ? null : body.id })}
+                title={isSP ? 'Clear standpoint' : 'Set as standpoint listener'}
+                style={{
+                  fontSize: 11, padding: '4px 8px', border: 'none', borderRadius: 4, cursor: 'pointer',
+                  background: isSP ? 'rgba(6,182,212,0.18)' : btnBg,
+                  color: isSP ? '#0891b2' : dimCol,
+                  fontFamily: 'inherit', fontWeight: 600,
+                }}
+              >⊕</button>
+              <button
+                onClick={() => setCameraFollowBodyId(isFollowing ? null : body.id)}
+                title={isFollowing ? 'Stop following' : 'Follow camera'}
+                style={{
+                  fontSize: 11, padding: '4px 8px', border: 'none', borderRadius: 4, cursor: 'pointer',
+                  background: isFollowing ? 'rgba(139,92,246,0.18)' : btnBg,
+                  color: isFollowing ? '#7c3aed' : dimCol,
+                  fontFamily: 'inherit', fontWeight: 600,
+                }}
+              >📷</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ fontSize: 9, color: dimCol, textAlign: 'center', padding: '0 8px' }}>
+              no body<br />selected
+            </div>
+          </div>
+        )}
+
+        {/* Thin vertical Edit strip on the right */}
+        <button
+          onClick={onToggleInspector}
+          title={inspectorExpanded ? 'Collapse inspector' : 'Edit body properties'}
+          style={{
+            width: 14, flexShrink: 0,
+            border: 'none', borderLeft: `0.5px solid ${border}`,
+            cursor: 'pointer',
+            background: inspectorExpanded
+              ? (simple ? 'rgba(37,99,235,0.10)' : 'rgba(124,58,237,0.12)')
+              : 'transparent',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 0,
+          }}
+        >
+          <span style={{
+            writingMode: 'vertical-rl',
+            transform: 'rotate(180deg)',
+            fontSize: 6.5, fontWeight: 800, letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            color: inspectorExpanded ? accentCol : dimCol,
+            userSelect: 'none',
+          }}>
+            {inspectorExpanded ? '◀ edit' : '▶ edit'}
+          </span>
+        </button>
+
+      </div>{/* end body content row */}
+    </div>
+  )
+}
+
+function RackInspectorColumn({ planetTool, simple, expanded }: { planetTool: PlanetTool | undefined; simple: boolean; expanded: boolean }) {
   const selectedBodyId = usePlanetStore(s => s.selectedBodyId)
-  const showNext = !selectedBodyId && (planetTool === 'add-sun' || planetTool === 'add-planet')
   const scrollColor = simple ? 'rgba(0,0,0,0.12) transparent' : 'rgba(255,255,255,0.08) transparent'
   const border = simple ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.06)'
   const accentCol = simple ? '#2563eb' : '#7c3aed'
+
+  if (!expanded) return null
 
   return (
     <div style={{
@@ -2469,10 +2722,10 @@ function RackInspectorColumn({ planetTool, simple }: { planetTool: PlanetTool | 
       }}>
         ◈ inspector
       </div>
-      {showNext ? (
-        <NextBodyInspector tool={planetTool!} />
+      {selectedBodyId ? (
+        <PlanetBodyInspector hideHeader />
       ) : (
-        <PlanetBodyInspector />
+        <UniverseRackIndicator simple={simple} />
       )}
     </div>
   )
@@ -2492,6 +2745,7 @@ interface PlanetRackProps {
 export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampler, onExtendOneShot, planetTool }: PlanetRackProps) {
   const simple         = usePlanetStore(s => s.simParams.simpleTheme)
   const selectedBodyId = usePlanetStore(s => s.selectedBodyId)
+  const [inspectorExpanded, setInspectorExpanded] = useState(false)
   const bodies         = usePlanetStore(s => s.bodies)
 
   const { globalRack, bodyRacks,
@@ -2636,9 +2890,79 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
   const instrumentCs  = effectiveRack.instrument ? BUILTIN_CONTROL_SETS.find(c => c.id === effectiveRack.instrument) : null
   const effectCsList  = effectiveRack.effects.map(id => BUILTIN_CONTROL_SETS.find(c => c.id === id) ?? null)
 
+  // ── Collapsed bar ──────────────────────────────────────────────────────────
+  if (collapsed) {
+    const slots = [
+      ...(triggerCsList.length > 0
+        ? [{ icon: triggerCsList[0]?.icon ?? '…', name: triggerCsList[0]?.name ?? '…', col: triggerCsList[0]?.color ?? hdrCol }]
+        : []),
+      ...(instrumentCs
+        ? [{ icon: instrumentCs.icon, name: instrumentCs.name, col: instrumentCs.color }]
+        : []),
+      ...(effectCsList.length > 0 && effectCsList[0]
+        ? [{ icon: effectCsList[0].icon, name: effectCsList[0].name, col: effectCsList[0].color }]
+        : []),
+    ]
+    return (
+      <div style={{
+        height: 30, flexShrink: 0, background: bg,
+        borderTop: `0.5px solid ${border}`,
+        display: 'flex', alignItems: 'stretch',
+        overflow: 'hidden', cursor: 'pointer',
+      }}
+        onClick={onToggleCollapsed}
+        title="Expand rack"
+      >
+        {/* ▲ label */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          padding: '0 10px',
+          borderRight: `0.5px solid ${divCol}`,
+          flexShrink: 0,
+        }}>
+          <span style={{ fontSize: 7, color: hdrCol, lineHeight: 1 }}>▲</span>
+          <span style={{
+            fontSize: 7, fontWeight: 800, letterSpacing: '0.12em',
+            textTransform: 'uppercase', color: hdrCol,
+          }}>RACK</span>
+        </div>
+        {/* Active slot pills */}
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', overflow: 'hidden' }}>
+          {slots.map((s, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', gap: 3,
+              padding: '2px 6px', borderRadius: 3,
+              border: `0.5px solid ${s.col}44`,
+              background: `${s.col}12`,
+              flexShrink: 0,
+            }}>
+              <span style={{ fontSize: 9, lineHeight: 1 }}>{s.icon}</span>
+              <span style={{ fontSize: 7.5, fontWeight: 600, color: s.col, lineHeight: 1 }}>{s.name}</span>
+            </div>
+          ))}
+          {slots.length === 0 && (
+            <span style={{ fontSize: 8, color: hdrCol, opacity: 0.4, fontStyle: 'italic' }}>empty</span>
+          )}
+        </div>
+        {/* Body indicator */}
+        {isBodyMode && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '0 10px', borderLeft: `0.5px solid ${divCol}`, flexShrink: 0,
+          }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: selectedBody.color, boxShadow: `0 0 4px ${selectedBody.color}88` }} />
+            <span style={{ fontSize: 7.5, color: selectedBody.color, fontWeight: 700, maxWidth: 60, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {selectedBody.name}
+            </span>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div style={{
-      height: collapsed ? 18 : height,
+      height,
       flexShrink: 0, background: bg,
       borderTop: `0.5px solid ${border}`,
       display: 'flex', flexDirection: 'row',
@@ -2664,9 +2988,9 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
           onMouseEnter={e => (e.currentTarget.style.color = simple ? '#000' : '#fff')}
           onMouseLeave={e => (e.currentTarget.style.color = hdrCol)}
         >
-          {collapsed ? '▲' : '▼'}
+          {'▼'}
         </button>
-        {!collapsed && isBodyMode && (
+        {isBodyMode && (
           <div style={{
             width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
             background: selectedBody.color,
@@ -2691,8 +3015,11 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
           }}
         >
 
+          {/* ── BODY CENTROID (pinned — leftmost identity panel) ── */}
+          <RackBodyCentroidColumn simple={simple} inspectorExpanded={inspectorExpanded} onToggleInspector={() => setInspectorExpanded(v => !v)} />
+
           {/* ── INSPECTOR (pinned — not inside horizontal scroll area) ── */}
-          <RackInspectorColumn planetTool={planetTool} simple={simple} />
+          <RackInspectorColumn planetTool={planetTool} simple={simple} expanded={inspectorExpanded} />
           <div style={{ width: 1, background: divCol, margin: '6px 0', flexShrink: 0 }} />
 
           {/* ── ORBIT (pinned) ── */}

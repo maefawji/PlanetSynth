@@ -1952,6 +1952,10 @@ function LocalizationPanel() {
               Enable L/R pan
             </span>
           </label>
+          {simParams.standpointStereo && (
+            <NumberSetting label="Width" value={simParams.standpointStereoWidth ?? 1} min={0} max={1} step={0.05}
+              onChange={standpointStereoWidth => updateSimParams({ standpointStereoWidth })} />
+          )}
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 4 }}>
             <input type="checkbox" checked={simParams.standpointFrontBack}
               onChange={e => updateSimParams({ standpointFrontBack: e.target.checked })} />

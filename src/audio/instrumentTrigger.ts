@@ -9,7 +9,6 @@ import { useControlSetStore } from '../store/controlSetStore'
 import { usePlanetStore } from '../store/planetStore'
 import { getBodyOneShotEngine } from './OneShotSamplerEngine'
 import { getBodyOscSynthEngine } from '../components/planet/OscSynthLayer'
-import { getBodyOscNextOrbitEngine } from '../components/planet/OscNextOrbitLayer'
 
 /**
  * Fire a trigger event on the body's active instrument engine.
@@ -52,19 +51,6 @@ export function fireBodyInstrumentTrigger(bodyId: string, playbackRate = 1, note
       return true
     }
     return false
-  }
-
-  if (rack.instrument === 'instrument-osc-next-orbit') {
-    const eng = getBodyOscNextOrbitEngine(bodyId)
-    if (!eng) return false
-    const ep      = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
-    const bodies  = usePlanetStore.getState().bodies
-    const body    = bodies.find(b => b.id === bodyId)
-    const note    = noteOverride ?? (body?.midiNote ?? 60)
-    const release = Number(ep.oscSynthRelease ?? 2.0)
-    eng.noteOn(note, (body?.midiVelocity ?? 100) / 127)
-    setTimeout(() => eng.noteOff(note), Math.max(300, release * 2000))
-    return true
   }
 
   if (rack.instrument === 'instrument-osc-synth' || rack.instrument === 'instrument-osc-synth-orbit') {

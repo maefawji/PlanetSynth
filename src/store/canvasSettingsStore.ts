@@ -25,7 +25,7 @@ export const useCanvasSettingsStore = create<CanvasSettingsState>(set => ({
   wayLength: 300,
   zoom: 1,
   monochromeMode: false,
-  showModeBar: false,
+  showModeBar: true,
   updateCanvasSettings(settings) {
     set(settings)
   },

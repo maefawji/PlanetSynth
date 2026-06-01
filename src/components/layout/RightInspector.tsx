@@ -637,7 +637,7 @@ function BodyOrbitSection({ bodyId }: { bodyId: string }) {
 
 // ── Planet body inspector ─────────────────────────────────────────────────────
 
-export function PlanetBodyInspector() {
+export function PlanetBodyInspector({ hideHeader }: { hideHeader?: boolean } = {}) {
   const t = useTheme()
   const { bodies, simParams, selectedBodyId, updateBody, cameraFollowBodyId, setCameraFollowBodyId, updateSimParams, restartSim } = usePlanetStore()
   const loadedSamples  = useProjectStore(s => s.project.samples)
@@ -681,7 +681,8 @@ export function PlanetBodyInspector() {
 
   return (
     <div>
-      {/* Header */}
+      {/* Header — hidden when a dedicated centroid column is shown */}
+      {!hideHeader && (
       <div style={{ padding: '10px 12px 6px', borderBottom: `0.5px solid ${t.divider}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <span style={{ fontSize: 15, color: body.color, lineHeight: 1 }}>
@@ -689,7 +690,16 @@ export function PlanetBodyInspector() {
           </span>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{body.name}</div>
-            <div style={{ fontSize: 9, color: t.textDim, marginTop: 1, fontFamily: 'monospace' }}>{body.id}</div>
+            {body.designation && (
+              <div style={{ fontSize: 8.5, color: t.textDim, marginTop: 1, fontStyle: 'italic', opacity: 0.8 }}>
+                {body.designation}
+              </div>
+            )}
+            {body.catalogId && (
+              <div style={{ fontSize: 7.5, color: t.textDim, marginTop: 1, fontFamily: 'monospace', opacity: 0.55, letterSpacing: '0.04em' }}>
+                {body.catalogId}
+              </div>
+            )}
           </div>
           {/* Standpoint toggle */}
           {(() => {
@@ -722,6 +732,7 @@ export function PlanetBodyInspector() {
           </button>
         </div>
       </div>
+      )}
 
       {/* Fields */}
       <div style={{ padding: '6px 0' }}>

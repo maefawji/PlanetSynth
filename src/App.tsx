@@ -12,12 +12,12 @@ import { SamplerLayer } from './components/planet/SamplerLayer'
 import { OneShotLayer } from './components/planet/OneShotLayer'
 import { AmbientOscillatorLayer } from './components/planet/AmbientOscillatorLayer'
 import { OscSynthLayer } from './components/planet/OscSynthLayer'
-import { OscNextOrbitLayer } from './components/planet/OscNextOrbitLayer'
 import { SamplerInstrumentPanel } from './components/sampler/SamplerInstrumentPanel'
 import { OneShotSamplerPanel } from './components/sampler/OneShotSamplerPanel'
 import { ChordGeometryLab } from './components/chord/ChordGeometryLab'
 import { DevRouteView } from './components/dev/DevRouteView'
 import { OscView } from './components/osc/OscView'
+import { WaveLabView } from './components/wave/WaveLabView'
 import type { PlanetTool } from './components/planet/PlanetCanvas'
 import { MobileHud } from './components/layout/MobileHud'
 import { usePlanetStore } from './store/planetStore'
@@ -40,7 +40,7 @@ import { initToneContext } from './audio/audioLatencySettings'
 // Apply saved audio latency setting before any Tone.start() call
 initToneContext()
 
-type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev'
+type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev' | 'wave-lab'
 
 const RACK_MIN = 120
 const RACK_MAX = 340
@@ -73,6 +73,18 @@ export default function App() {
     initMidi()
   }, [])
 
+  useEffect(() => {
+    if (appMode !== 'planet') return
+    function onKey(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return
+      if (e.key === 's' || e.key === 'S') { setPlanetTool('add-sun') }
+      else if (e.key === 'p' || e.key === 'P') { setPlanetTool('add-planet') }
+      else if (e.key === 'Escape') { setSelectedBodyId(null); setPlanetTool('select') }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [appMode, setSelectedBodyId])
+
   const onRackDividerMouseDown = useCallback((e: React.MouseEvent) => {
     rackDragging.current = true
     rackStartY.current   = e.clientY
@@ -103,7 +115,7 @@ export default function App() {
         {/* Headless audio layers */}
         <DroneLayer /><GranularLayer /><FMDroneLayer /><NoisePadLayer />
         <SamplerLayer /><OneShotLayer /><AmbientOscillatorLayer />
-        <OscSynthLayer /><OscNextOrbitLayer />
+        <OscSynthLayer />
         {/* Full-screen canvas */}
         <div style={{ position: 'absolute', inset: 0 }}>
           <PlanetCanvas tool="add-planet" onSelectTool={() => {}} mobileMode />
@@ -129,7 +141,6 @@ export default function App() {
       <OneShotLayer />
       <AmbientOscillatorLayer />
       <OscSynthLayer />
-      <OscNextOrbitLayer />
 
       {appMode === 'chord-lab' ? (
         /* ── Chord Geometry Lab ─────────────────────────────────────────── */
@@ -140,6 +151,9 @@ export default function App() {
       ) : appMode === 'dev' ? (
         /* ── Dev Mode: Audio Routing ────────────────────────────────────── */
         <DevRouteView />
+      ) : appMode === 'wave-lab' ? (
+        /* ── Wave Lab ────────────────────────────────────────────────────── */
+        <WaveLabView />
       ) : (
         /* ── Planet mode ────────────────────────────────────────────────── */
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
@@ -166,7 +180,7 @@ export default function App() {
               }}>
                 {/* Universe button — deselects body → global rack editing */}
                 <button
-                  onClick={() => setSelectedBodyId(null)}
+                  onClick={() => { setSelectedBodyId(null); setPlanetTool('select') }}
                   style={{
                     fontSize: 10, fontWeight: 600, padding: '3px 9px',
                     borderRadius: 5,

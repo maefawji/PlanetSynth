@@ -39,7 +39,7 @@ function resolveBodySamplerSample(bodyId: string, explicitSampleId: string | nul
   return samples[stableIndexFromId(bodyId, samples.length)] ?? null
 }
 
-type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev'
+type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev' | 'wave-lab'
 
 interface TopBarProps {
   appMode?: AppMode
@@ -265,8 +265,8 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
           {([
             ['planet',    '⬤ Planet'],
             ['chord-lab', '⬡ Chord Lab'],
-            ['osc',       '∿ Osc'],
             ['dev',       '⬡ Dev'],
+            ['wave-lab',  '∿ Wave Lab'],
           ] as [AppMode, string][]).map(([mode, label]) => (
             <button
               key={mode}
