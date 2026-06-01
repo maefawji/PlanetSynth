@@ -33,6 +33,7 @@ import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
 import { getBodyOscNextOrbitEngine } from './OscNextOrbitLayer'
 import { sendMidiNote } from '../../audio/midiManager'
+import { generateStarIdentity, collectExistingIdentities } from '../../lib/starNaming'
 
 export type PlanetTool = 'select' | 'add-sun' | 'add-planet' | 'probe'
 
@@ -1331,9 +1332,19 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
 
   // ── commitDragPlace: shared by mouse and touch handlers ──────────────────────
 
+  /** For add-sun drag: map screen-pixel drag distance to mass (0→minMass, 300px→maxMass). */
+  function sunMassFromDrag(dp: DragPlaceState): number {
+    const maxMass  = usePlanetStore.getState().nextSunDefaults.mass
+    const minMass  = Math.max(10, Math.round(maxMass * 0.05))
+    const screenDist = Math.hypot(dp.dragX - dp.bodyX, dp.dragY - dp.bodyY) * zoomRef.current
+    const t = Math.min(1, screenDist / 300)
+    return Math.max(minMass, Math.round(minMass + t * (maxMass - minMass)))
+  }
+
   function commitDragPlace(dp: DragPlaceState) {
-    const vx = (dp.bodyX - dp.dragX) * VELOCITY_SCALE
-    const vy = (dp.bodyY - dp.dragY) * VELOCITY_SCALE
+    const isSun = dp.tool === 'add-sun'
+    const vx = isSun ? 0 : (dp.bodyX - dp.dragX) * VELOCITY_SCALE
+    const vy = isSun ? 0 : (dp.bodyY - dp.dragY) * VELOCITY_SCALE
     const storeState  = usePlanetStore.getState()
     const starCount   = storeState.bodies.filter(b => b.type === 'sun').length
     const planetCount = storeState.bodies.filter(b => b.type === 'planet').length
@@ -1349,11 +1360,18 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     const resolvedSampleId = defs.randomSample && allSamples.length > 0
       ? allSamples[Math.floor(Math.random() * allSamples.length)].id
       : null
+
+    // Generate star identity (properName / designation / catalogId)
+    const { ids, properNames, designations } = collectExistingIdentities(storeState.bodies)
+    const starId = generateStarIdentity(ids, properNames, designations)
+
     const newBody: PlanetBody = {
       id: `body_${Date.now().toString(36)}`,
-      name: dp.tool === 'add-sun' ? `Sun ${starCount + 1}` : `Planet ${planetCount + 1}`,
+      name:        starId.properName,
+      designation: starId.designation,
+      catalogId:   starId.id,
       type: dp.tool === 'add-sun' ? 'sun' : 'planet',
-      mass: defs.mass,
+      mass: isSun ? sunMassFromDrag(dp) : defs.mass,
       x: dp.bodyX, y: dp.bodyY, vx, vy,
       fixed: defs.fixed,
       color: resolvedColor,
@@ -1378,6 +1396,15 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     trailsRef.current.set(newBody.id, makeTrail(simParamsRef.current.trailLength))
     computeAccels(liveBodiesRef.current, simParamsRef.current.G, simParamsRef.current.epsilon)
     setSelectedBodyId(newBody.id)
+
+    // Sun gets all-empty rack (override global rack defaults)
+    if (isSun) {
+      const cs = useControlSetStore.getState()
+      cs.clearBodyRack(newBody.id)
+      cs.addBodyTrigger(newBody.id, 'trigger-empty')
+      cs.setBodySlot(newBody.id, 'instrument', 'instrument-empty')
+      cs.addBodyEffect(newBody.id, 'effect-empty')
+    }
 
     const _launchId = newBody.id
     window.setTimeout(() => {
@@ -1546,6 +1573,9 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       const dp = dragPlaceRef.current
       dragPlaceRef.current = null
       setDragPlace(null)
+      // Single click (no meaningful drag) → ignore, don't place
+      const dragDist = Math.hypot(dp.dragX - dp.bodyX, dp.dragY - dp.bodyY)
+      if (dragDist < 8 / zoomRef.current) return
       commitDragPlace(dp)
       return
     }
@@ -1560,11 +1590,11 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   // Predicted orbit preview (computed every frame while dragging)
   const predictOrbitPoints: string | null = (() => {
     if (!dragPlace || !storeParams.showPredictedOrbit) return null
+    if (dragPlace.tool === 'add-sun') return null  // sun is fixed — no orbit preview
     const vx = (dragPlace.bodyX - dragPlace.dragX) * VELOCITY_SCALE
     const vy = (dragPlace.bodyY - dragPlace.dragY) * VELOCITY_SCALE
     const previewBody: LiveBody = {
-      id: '__preview__',
-      mass: dragPlace.tool === 'add-sun' ? 500 : 1,
+      id: '__preview__', mass: 1,
       x: dragPlace.bodyX, y: dragPlace.bodyY,
       vx, vy, ax: 0, ay: 0, fixed: false,
     }
@@ -1586,15 +1616,19 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const probeCol = '#a78bfa'
 
   // Drag-place overlay data
-  const dpOverlay = dragPlace ? {
-    col:     dragPlace.tool === 'add-sun' ? '#f59e0b' : '#60a5fa',
-    wr:      bodyScreenR(dragPlace.tool === 'add-sun' ? 500 : 1,
-               dragPlace.tool === 'add-sun' ? 'sun' : 'planet',
-               storeParams.bodyRadiusFromMass) / zoom,
-    arrowX:  dragPlace.bodyX + (dragPlace.bodyX - dragPlace.dragX) * 0.5,
-    arrowY:  dragPlace.bodyY + (dragPlace.bodyY - dragPlace.dragY) * 0.5,
-    hasDrag: dragPlace.dragX !== dragPlace.bodyX || dragPlace.dragY !== dragPlace.bodyY,
-  } : null
+  const dpOverlay = dragPlace ? (() => {
+    const isSunDrag = dragPlace.tool === 'add-sun'
+    const previewMass = isSunDrag ? sunMassFromDrag(dragPlace) : 1
+    return {
+      col:      isSunDrag ? '#f59e0b' : '#60a5fa',
+      wr:       bodyScreenR(previewMass, isSunDrag ? 'sun' : 'planet', storeParams.bodyRadiusFromMass) / zoom,
+      arrowX:   dragPlace.bodyX + (dragPlace.bodyX - dragPlace.dragX) * 0.5,
+      arrowY:   dragPlace.bodyY + (dragPlace.bodyY - dragPlace.dragY) * 0.5,
+      hasDrag:  !isSunDrag && (dragPlace.dragX !== dragPlace.bodyX || dragPlace.dragY !== dragPlace.bodyY),
+      isSun:    isSunDrag,
+      sunMass:  previewMass,
+    }
+  })() : null
 
   const cursorStyle = tool !== 'select'
     ? 'crosshair'
@@ -1891,10 +1925,13 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           {/* ── Drag-place bow-and-arrow overlay ───────────────────────── */}
           {dragPlace && dpOverlay && (
             <g>
-              <line x1={dragPlace.bodyX} y1={dragPlace.bodyY}
-                x2={dragPlace.dragX} y2={dragPlace.dragY}
-                stroke={simple ? 'rgba(0,0,0,0.38)' : 'rgba(255,255,255,0.38)'}
-                strokeWidth={1.5 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} />
+              {/* Drag line (planet only — sun uses drag for mass) */}
+              {!dpOverlay.isSun && (
+                <line x1={dragPlace.bodyX} y1={dragPlace.bodyY}
+                  x2={dragPlace.dragX} y2={dragPlace.dragY}
+                  stroke={simple ? 'rgba(0,0,0,0.38)' : 'rgba(255,255,255,0.38)'}
+                  strokeWidth={1.5 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} />
+              )}
               {dpOverlay.hasDrag && (
                 <line x1={dragPlace.bodyX} y1={dragPlace.bodyY}
                   x2={dpOverlay.arrowX} y2={dpOverlay.arrowY}
@@ -1902,6 +1939,14 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
               )}
               <circle cx={dragPlace.bodyX} cy={dragPlace.bodyY} r={dpOverlay.wr}
                 fill={dpOverlay.col} opacity={0.72} />
+              {/* Sun: show mass label that grows with drag */}
+              {dpOverlay.isSun && dpOverlay.sunMass !== undefined && (
+                <text x={dragPlace.bodyX} y={dragPlace.bodyY - dpOverlay.wr - 6 / zoom}
+                  textAnchor="middle" fontSize={11 / zoom}
+                  fill={dpOverlay.col} fontFamily="monospace" opacity={0.9}>
+                  m={dpOverlay.sunMass}
+                </text>
+              )}
             </g>
           )}
         </g>

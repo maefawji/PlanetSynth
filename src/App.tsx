@@ -49,7 +49,8 @@ const RACK_DEFAULT = 220
 export default function App() {
   const [appMode, setAppMode] = useState<AppMode>('planet')
   const [planetTool, setPlanetTool] = useState<PlanetTool>('add-planet')
-  const simpleTheme  = usePlanetStore(s => s.simParams.simpleTheme)
+  const simpleTheme        = usePlanetStore(s => s.simParams.simpleTheme)
+  const setSelectedBodyId  = usePlanetStore(s => s.setSelectedBodyId)
   const probeMass    = usePlanetStore(s => s.simParams.probeMass)
   const updateSimParams = usePlanetStore(s => s.updateSimParams)
   const nextPlanetDefaults = usePlanetStore(s => s.nextPlanetDefaults)
@@ -163,8 +164,22 @@ export default function App() {
                 boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
                 backdropFilter: 'blur(4px)',
               }}>
+                {/* Universe button — deselects body → global rack editing */}
+                <button
+                  onClick={() => setSelectedBodyId(null)}
+                  style={{
+                    fontSize: 10, fontWeight: 600, padding: '3px 9px',
+                    borderRadius: 5,
+                    border: simpleTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
+                    background: 'transparent',
+                    color: simpleTheme ? '#444' : 'rgba(255,255,255,0.55)',
+                    cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  ⊙ Universe
+                </button>
+
                 {([
-                  ['select',     'Select'],
                   ['add-sun',    '☀ Sun'],
                   ['add-planet', '● Planet'],
                   ['probe',      '⊕ Probe'],

@@ -12,6 +12,10 @@ export interface PlanetBody {
   id: string
   name: string
   type: PlanetBodyType
+  /** Bayer-style designation: "Beta Umbrae". Stored for future detail view. */
+  designation?: string
+  /** Internal catalog ID: "PLSYN-0187". Always unique within the session. */
+  catalogId?: string
   mass: number
   x: number
   y: number
