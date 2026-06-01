@@ -218,17 +218,7 @@ export interface PlanetSimParams {
   effectorBitDepth:            number   // bits (2–16)
   effectorFreezeDecay:         number   // reverb tail seconds (15–60)
 
-  // ── Ambient Oscillator instrument ─────────────────────────────────────────
-  ambientOscType:            'off' | 'ambient-osc'
-  ambientOscWaveform:        OscillatorType   // 'sine' | 'triangle' | 'sawtooth' | 'square'
-  ambientOscAttack:          number           // seconds (0.01–20)
-  ambientOscRelease:         number           // seconds (0.01–30)
-  ambientOscFilterCutoff:    number           // Hz (80–12000)
-  ambientOscFilterResonance: number           // Q factor (0.01–20)
-  ambientOscLevel:           number           // master level 0–1
-  ambientOscNote:            number           // MIDI note 0–127
-
-  // ── Osc Synth instrument (triggered, same engine as ambient-osc + LFO) ──
+  // ── Osc Synth instrument ─────────────────────────────────────────────────
   oscSynthType:            'off' | 'osc-synth'
   oscSynthWaveform:        OscillatorType
   oscSynthAttack:          number           // A: seconds (0.001–20)
@@ -470,15 +460,6 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   effectorAutoFilterBaseFreq: 200,
   effectorBitDepth:           8,
   effectorFreezeDecay:        30,
-
-  ambientOscType:            'off',
-  ambientOscWaveform:        'sine',
-  ambientOscAttack:          1.5,
-  ambientOscRelease:         3.0,
-  ambientOscFilterCutoff:    1200,
-  ambientOscFilterResonance: 0.3,
-  ambientOscLevel:           0.5,
-  ambientOscNote:            60,
 
   oscSynthType:            'off',
   oscSynthWaveform:        'sine',

@@ -27,9 +27,6 @@ import {
   clearBodyOutputLevel,
 } from '../../audio/bodyOutputMeter'
 import {
-  fireBodyInstrumentTrigger,
-} from '../../audio/instrumentTrigger'
-import {
   registerRealtimeSync,
   unregisterRealtimeSync,
 } from '../../audio/realtimeSyncManager'
@@ -99,11 +96,44 @@ function orbitVal(
 
 // ── Module-level engine registry ──────────────────────────────────────────────
 
-const _engines       = new Map<string, AmbientOscillatorEngine>()
-const _waveLastMs    = new Map<string, number>()
+const _engines = new Map<string, AmbientOscillatorEngine>()
+const _waveformRefreshListeners = new Set<(bodyId: string) => void>()
 
 export function getBodyWaveLabEngine(bodyId: string): AmbientOscillatorEngine | undefined {
   return _engines.get(bodyId)
+}
+
+export function subscribeWaveLabWaveformRefresh(listener: (bodyId: string) => void): () => void {
+  _waveformRefreshListeners.add(listener)
+  return () => _waveformRefreshListeners.delete(listener)
+}
+
+function notifyWaveLabWaveformRefresh(bodyId: string): void {
+  for (const listener of _waveformRefreshListeners) listener(bodyId)
+}
+
+export function refreshBodyWaveLabWaveform(
+  bodyId: string,
+  opts: { applyToActive?: boolean } = { applyToActive: false },
+): boolean {
+  const eng = _engines.get(bodyId)
+  if (!eng) return false
+
+  const ep = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
+  const sigsStr = String(ep.wavLabSig ?? 'x')
+  const sigs = sigsStr.split(',').filter(s =>
+    ['x','y','r','angle','speed'].includes(s)
+  ) as WavSig[]
+
+  const trailPts = getBodyTrailPoints(bodyId)
+  if (!trailPts || trailPts.length < 4) return false
+
+  const wfPts = buildTrailWaveform(trailPts, sigs.length > 0 ? sigs : ['x'])
+  if (wfPts.length < 4) return false
+
+  eng.setOrbitWaveform(wfPts, opts)
+  notifyWaveLabWaveformRefresh(bodyId)
+  return true
 }
 
 // ── Sync ──────────────────────────────────────────────────────────────────────
@@ -135,24 +165,18 @@ async function syncEngines(engines: EngineMap): Promise<void> {
     const liveBody   = effectiveBodies.find(b => b.id === body.id) ?? body
     const orbitStats = computeOrbitStats(liveBody, effectiveBodies, G)
 
-    // Parse signal list from params
-    const sigsStr = String(ep.wavLabSig ?? 'x')
-    const sigs    = sigsStr.split(',').filter(s =>
-      ['x','y','r','angle','speed'].includes(s)
-    ) as WavSig[]
-
     const p: AmbientOscillatorParams = {
       waveform: 'sine',
-      attack:  orbitVal(String(ep.oscSynthAttackSource   ?? 'period'),       Number(ep.oscSynthAttack  ?? 0.05), orbitStats, Number(ep.oscSynthAttackRate   ?? 0.06), 0.005, 20),
-      decay:   orbitVal(String(ep.oscSynthDecaySource    ?? 'eccentricity'), Number(ep.oscSynthDecay   ?? 0.4),  orbitStats, Number(ep.oscSynthDecayRate    ?? 8.0),  0.01,  20),
-      sustain: orbitVal(String(ep.oscSynthSustainSource  ?? 'distance'),     Number(ep.oscSynthSustain ?? 0.75), orbitStats, Number(ep.oscSynthSustainRate  ?? 0.003), 0,    1),
-      release: orbitVal(String(ep.oscSynthReleaseSource  ?? 'period'),       Number(ep.oscSynthRelease ?? 2.0),  orbitStats, Number(ep.oscSynthReleaseRate  ?? 0.2),  0.01,  30),
-      filterCutoff:    orbitVal(String(ep.oscSynthCutoffSource ?? 'velocity'), Number(ep.oscSynthFilterCutoff ?? 2000), orbitStats, Number(ep.oscSynthCutoffRate ?? 600), 80, 12000),
-      filterResonance: Number(ep.oscSynthFilterResonance ?? 0.4),
-      level:           Number(ep.oscSynthLevel           ?? 0.6),
-      lfoTarget:       (ep.oscSynthLfoTarget as LfoTarget) ?? 'off',
-      lfoRate:  orbitVal(String(ep.oscSynthLfoRateSource  ?? 'eccentricity'), Number(ep.oscSynthLfoRate  ?? 1.0), orbitStats, Number(ep.oscSynthLfoRateRate  ?? 5.0), 0.01, 20),
-      lfoDepth: orbitVal(String(ep.oscSynthLfoDepthSource ?? 'eccentricity'), Number(ep.oscSynthLfoDepth ?? 0.3), orbitStats, Number(ep.oscSynthLfoDepthRate ?? 0.8), 0,    1),
+      attack:  orbitVal(String(ep.oscSynthAttackSource   ?? 'period'),       Number(ep.oscSynthAttack  ?? 0.5), orbitStats, Number(ep.oscSynthAttackRate   ?? 0.06), 0.005, 20),
+      decay:   orbitVal(String(ep.oscSynthDecaySource    ?? 'eccentricity'), Number(ep.oscSynthDecay   ?? 2.0), orbitStats, Number(ep.oscSynthDecayRate    ?? 8.0),  0.01,  20),
+      sustain: orbitVal(String(ep.oscSynthSustainSource  ?? 'distance'),     Number(ep.oscSynthSustain ?? 0.8), orbitStats, Number(ep.oscSynthSustainRate  ?? 0.003), 0,    1),
+      release: orbitVal(String(ep.oscSynthReleaseSource  ?? 'period'),       Number(ep.oscSynthRelease ?? 3.0), orbitStats, Number(ep.oscSynthReleaseRate  ?? 0.2),  0.01,  30),
+      filterCutoff:    orbitVal(String(ep.oscSynthCutoffSource ?? 'manual'), Number(ep.oscSynthFilterCutoff ?? 1200), orbitStats, Number(ep.oscSynthCutoffRate ?? 600), 80, 12000),
+      filterResonance: Number(ep.oscSynthFilterResonance ?? 0.3),
+      level:           Number(ep.oscSynthLevel           ?? 0.5),
+      lfoTarget:       (ep.oscSynthLfoTarget as LfoTarget) ?? 'filter',
+      lfoRate:  orbitVal(String(ep.oscSynthLfoRateSource  ?? 'eccentricity'), Number(ep.oscSynthLfoRate  ?? 2.0), orbitStats, Number(ep.oscSynthLfoRateRate  ?? 5.0), 0.01, 20),
+      lfoDepth: orbitVal(String(ep.oscSynthLfoDepthSource ?? 'eccentricity'), Number(ep.oscSynthLfoDepth ?? 0.5), orbitStats, Number(ep.oscSynthLfoDepthRate ?? 0.8), 0,    1),
       lfoWaveform: (ep.oscSynthLfoWaveform as OscillatorType) ?? 'sine',
     }
 
@@ -169,18 +193,6 @@ async function syncEngines(engines: EngineMap): Promise<void> {
       eng.setParams(p)
     }
 
-    // ── Update wavetable from trail (throttled 250 ms) ─────────────────────
-    const nowMs  = performance.now()
-    const lastMs = _waveLastMs.get(body.id) ?? 0
-    if (nowMs - lastMs > 250) {
-      _waveLastMs.set(body.id, nowMs)
-      const trailPts = getBodyTrailPoints(body.id)
-      if (trailPts && trailPts.length >= 4) {
-        const wfPts = buildTrailWaveform(trailPts, sigs.length > 0 ? sigs : ['x'])
-        if (wfPts.length >= 4) eng.setOrbitWaveform(wfPts)
-      }
-    }
-
     setBusVolume(body.id, body.muted ? 0 : (body.volume ?? 1))
     setBodyOutputLevel(body.id, 'wave-lab', eng.isActive ? p.level * (body.volume ?? 1) : 0, 300)
   }
@@ -190,7 +202,6 @@ async function syncEngines(engines: EngineMap): Promise<void> {
       eng.noteOffAll()
       engines.delete(id)
       _engines.delete(id)
-      _waveLastMs.delete(id)
       releaseBus(id)
       clearBodyOutputLevel(id, 'wave-lab')
     }
@@ -218,7 +229,6 @@ export function WaveLabInstrumentLayer() {
       for (const [id, eng] of engines) {
         eng.noteOffAll()
         _engines.delete(id)
-        _waveLastMs.delete(id)
         releaseBus(id)
         clearBodyOutputLevel(id, 'wave-lab')
       }

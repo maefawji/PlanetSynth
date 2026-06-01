@@ -14,7 +14,7 @@
 //                                    ──→ bodyOut.gain        (tremolo)
 //
 // bodyOut is intentionally left unconnected.
-// AmbientOscillatorLayer connects it to getBusInputNode(bodyId).
+// Instrument layers connect it to getBusInputNode(bodyId).
 //
 // MIDI / OSC / UI can call noteOn(note, velocity) and noteOff(note) freely.
 
@@ -280,7 +280,10 @@ export class AmbientOscillatorEngine {
    * The Y-coordinate of each point is used as the waveform signal; it is
    * centered (DC removed) and normalized to [-1, 1] before the DFT.
    */
-  setOrbitWaveform(pts: ReadonlyArray<{ x: number; y: number }>): void {
+  setOrbitWaveform(
+    pts: ReadonlyArray<{ x: number; y: number }>,
+    opts: { applyToActive?: boolean } = {},
+  ): void {
     if (!this.ctx) return
     const N = pts.length
     if (N < 4) return
@@ -314,9 +317,12 @@ export class AmbientOscillatorEngine {
     // disableNormalization: false → browser normalizes peak to ±1 (safe headroom)
     this._periodicWave = this.ctx.createPeriodicWave(realCoef, imagCoef, { disableNormalization: false })
 
-    // Apply to all currently running voices
-    for (const voice of this.voices.values()) {
-      voice.osc.setPeriodicWave(this._periodicWave)
+    if (opts.applyToActive !== false) {
+      // Apply to all currently running voices. Live waveform replacement can
+      // click, so callers that update frequently should opt out.
+      for (const voice of this.voices.values()) {
+        voice.osc.setPeriodicWave(this._periodicWave)
+      }
     }
   }
 
@@ -339,7 +345,11 @@ export class AmbientOscillatorEngine {
 
     for (const voice of this.voices.values()) {
       if (patch.waveform !== undefined) {
-        voice.osc.type = p.waveform
+        if (this._periodicWave) {
+          voice.osc.setPeriodicWave(this._periodicWave)
+        } else {
+          voice.osc.type = p.waveform
+        }
       }
       if (patch.filterCutoff !== undefined) {
         voice.filter.frequency.setTargetAtTime(p.filterCutoff, now, 0.05)
@@ -400,6 +410,10 @@ export class AmbientOscillatorEngine {
 
   get isActive(): boolean {
     return this.voices.size > 0
+  }
+
+  get hasOrbitWaveform(): boolean {
+    return this._periodicWave !== null
   }
 
   // ── Dispose ────────────────────────────────────────────────────────────────────

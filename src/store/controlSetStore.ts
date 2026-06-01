@@ -312,34 +312,7 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       'このボディにだけインストゥルメントを無効にしたいときに使う。',
     params: {
       oscSynthType:   'off',
-      ambientOscType: 'off',
       oneShotType:    'off',
-    },
-  },
-  {
-    id: 'instrument-osc-synth',
-    name: 'Osc Synth',
-    icon: '∿',
-    color: '#a78bfa',
-    category: 'instrument',
-    description:
-      'AmbientOscillatorEngine をトリガー駆動で使うシンセ。\n' +
-      'OscView と同じ仕様: 波形・フィルター・LFO (Pitch/Filter/Amp) を装備。\n' +
-      'Manual / Chord Test / Orbit などのトリガーで noteOn/noteOff が発火。',
-    params: {
-      oscSynthType:            'osc-synth',
-      oscSynthWaveform:        'sine',
-      oscSynthAttack:          0.05,
-      oscSynthDecay:           0.3,
-      oscSynthSustain:         0.8,
-      oscSynthRelease:         1.5,
-      oscSynthFilterCutoff:    2000,
-      oscSynthFilterResonance: 0.5,
-      oscSynthLevel:           0.7,
-      oscSynthLfoTarget:       'off',
-      oscSynthLfoRate:         1.0,
-      oscSynthLfoDepth:        0.3,
-      oscSynthLfoWaveform:     'sine',
     },
   },
   {
@@ -393,27 +366,6 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
     },
   },
   {
-    id: 'instrument-ambient-osc',
-    name: 'Ambient Osc',
-    icon: '∿',
-    color: '#818cf8',
-    category: 'instrument',
-    description:
-      'シンプルな持続オシレーター。ゆっくりしたattack/releaseで滑らかなアンビエントサウンドを生む。\n' +
-      'サイン波・三角波・ノコギリ波・矩形波をサポート。ローパスフィルター内蔵。\n' +
-      'noteOn/noteOffをMIDIやトリガーから叩ける設計。',
-    params: {
-      ambientOscType:            'ambient-osc',
-      ambientOscWaveform:        'sine',
-      ambientOscAttack:          1.5,
-      ambientOscRelease:         3.0,
-      ambientOscFilterCutoff:    1200,
-      ambientOscFilterResonance: 0.3,
-      ambientOscLevel:           0.5,
-      ambientOscNote:            60,
-    },
-  },
-  {
     id: 'instrument-oneshot',
     name: 'One-Shot',
     icon: '◆',
@@ -455,20 +407,20 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
     description:
       '軌道のtrailデータをウェーブテーブルに変換するシンセ。\n' +
       'X/Y/r/θ/spdシグナルを複数選択して加算合成。\n' +
-      'ADSR・LFOは軌道パラメータから自動マッピング。',
+      'ADSR・LFOは必要に応じて軌道パラメータからマッピング。',
     params: {
       wavLabType:              'wave-lab',
-      wavLabSig:               'x',           // comma-separated: 'x', 'x,y', 'r', etc.
-      oscSynthAttack:          0.05,
-      oscSynthDecay:           0.3,
-      oscSynthSustain:         0.7,
-      oscSynthRelease:         1.0,
-      oscSynthFilterCutoff:    2000,
-      oscSynthFilterResonance: 0.4,
-      oscSynthLevel:           0.55,
-      oscSynthLfoTarget:       'off' as const,
-      oscSynthLfoRate:         1.0,
-      oscSynthLfoDepth:        0.3,
+      wavLabSig:               'x,y',         // comma-separated: 'x', 'x,y', 'r', etc.
+      oscSynthAttack:          0.5,
+      oscSynthDecay:           2.0,
+      oscSynthSustain:         0.8,
+      oscSynthRelease:         3.0,
+      oscSynthFilterCutoff:    1200,
+      oscSynthFilterResonance: 0.3,
+      oscSynthLevel:           0.5,
+      oscSynthLfoTarget:       'filter' as const,
+      oscSynthLfoRate:         2.0,
+      oscSynthLfoDepth:        0.5,
       oscSynthLfoWaveform:     'sine' as const,
       oscSynthAttackSource:    'period',
       oscSynthAttackRate:      0.06,
@@ -478,7 +430,7 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       oscSynthSustainRate:     0.003,
       oscSynthReleaseSource:   'period',
       oscSynthReleaseRate:     0.2,
-      oscSynthCutoffSource:    'velocity',
+      oscSynthCutoffSource:    'manual',
       oscSynthCutoffRate:      600,
       oscSynthLfoRateSource:   'eccentricity',
       oscSynthLfoRateRate:     5.0,
@@ -526,9 +478,9 @@ function emptyRack(): BodyRack {
   return { triggers: [], instrument: 'instrument-oneshot', effects: [] }
 }
 
-/** Initial global rack — arpeggio trigger + osc synth orbit (saw) as defaults. */
+/** Initial global rack — arpeggio trigger + Wave Lab instrument as defaults. */
 function defaultGlobalRack(): BodyRack {
-  return { triggers: ['trigger-arpeggio'], instrument: 'instrument-osc-synth-orbit', effects: [] }
+  return { triggers: ['trigger-arpeggio'], instrument: 'instrument-wave-lab', effects: [] }
 }
 
 function defaultBodyRacks(): Record<string, BodyRackOverride> {
@@ -622,10 +574,7 @@ function mergeWithOverride(
 export const useControlSetStore = create<ControlSetState>((set, get) => ({
   globalRack: defaultGlobalRack(),
   bodyRacks: defaultBodyRacks(),
-  rackParamOverrides: {
-    // Global instrument defaults: osc synth orbit with sawtooth waveform
-    'g:instrument': { oscSynthWaveform: 'sawtooth' },
-  },
+  rackParamOverrides: {},
 
   // ── Global rack mutations ────────────────────────────────────────────────
 

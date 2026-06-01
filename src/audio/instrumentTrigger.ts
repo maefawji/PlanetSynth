@@ -9,7 +9,22 @@ import { useControlSetStore } from '../store/controlSetStore'
 import { usePlanetStore } from '../store/planetStore'
 import { getBodyOneShotEngine } from './OneShotSamplerEngine'
 import { getBodyOscSynthEngine } from '../components/planet/OscSynthLayer'
-import { getBodyWaveLabEngine } from '../components/planet/WaveLabInstrumentLayer'
+import {
+  getBodyWaveLabEngine,
+  refreshBodyWaveLabWaveform,
+} from '../components/planet/WaveLabInstrumentLayer'
+
+const _scheduledNoteOffs = new Map<string, ReturnType<typeof setTimeout>>()
+
+function scheduleNoteOff(key: string, releaseMs: number, off: () => void): void {
+  const prev = _scheduledNoteOffs.get(key)
+  if (prev) clearTimeout(prev)
+  const timer = setTimeout(() => {
+    _scheduledNoteOffs.delete(key)
+    off()
+  }, releaseMs)
+  _scheduledNoteOffs.set(key, timer)
+}
 
 /**
  * Fire a trigger event on the body's active instrument engine.
@@ -54,7 +69,7 @@ export function fireBodyInstrumentTrigger(bodyId: string, playbackRate = 1, note
     return false
   }
 
-  if (rack.instrument === 'instrument-osc-synth' || rack.instrument === 'instrument-osc-synth-orbit') {
+  if (rack.instrument === 'instrument-osc-synth-orbit') {
     const eng = getBodyOscSynthEngine(bodyId)
     if (!eng) return false
     const ep      = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
@@ -64,7 +79,7 @@ export function fireBodyInstrumentTrigger(bodyId: string, playbackRate = 1, note
     const release = Number(ep.oscSynthRelease ?? 1.5)
     eng.noteOn(note, (body?.midiVelocity ?? 100) / 127)
     // Schedule noteOff after 2× release (the engine's release envelope takes care of the tail)
-    setTimeout(() => eng.noteOff(note), Math.max(300, release * 2000))
+    scheduleNoteOff(`osc:${bodyId}:${note}`, Math.max(300, release * 2000), () => eng.noteOff(note))
     return true
   }
 
@@ -75,8 +90,10 @@ export function fireBodyInstrumentTrigger(bodyId: string, playbackRate = 1, note
     const ep      = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
     const note    = noteOverride ?? (body?.midiNote ?? 60)
     const release = Number(ep.oscSynthRelease ?? 1.5)
+    const hasWave = refreshBodyWaveLabWaveform(bodyId, { applyToActive: false })
+    if (!hasWave && !eng.hasOrbitWaveform) return false
     eng.noteOn(note, (body?.midiVelocity ?? 100) / 127)
-    setTimeout(() => eng.noteOff(note), Math.max(300, release * 2000))
+    scheduleNoteOff(`wave-lab:${bodyId}:${note}`, Math.max(300, release * 2000), () => eng.noteOff(note))
     return true
   }
 

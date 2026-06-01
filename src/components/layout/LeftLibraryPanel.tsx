@@ -1063,70 +1063,11 @@ function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import
         {cs.description}
       </div>
 
-      {/* Param tags */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-        {Object.entries(cs.params).filter(([k]) => !k.endsWith('Type') && !k.endsWith('Source')).map(([k, v]) => (
-          <span key={k} style={{
-            fontSize: 8, fontFamily: 'monospace',
-            background: t.tagBg, borderRadius: 3, padding: '1px 5px',
-            color: t.tagText,
-          }}>
-            {PARAM_LABEL_MAP[k] ?? k}={String(v)}
-          </span>
-        ))}
-      </div>
-
       <div style={{ fontSize: 8, color: t.textDim, marginTop: 5 }}>
         ↖ ドラッグしてラックにアサイン{selectedBodyId ? ' / ダブルクリックで選択bodyへ' : ''}
       </div>
     </div>
   )
-}
-
-const PARAM_LABEL_MAP: Record<string, string> = {
-  rendezvousTriggerMode: 'rdv',
-  rendezvousDistance:    'dist',
-  orbitTriggerMode:      'orbit',
-  orbitStretchMode:      'stretch',
-  standpointMode:        'sp',
-  standpointMaxDist:     'sp.dist',
-  standpointMinVol:      'sp.vol',
-  effectorType:          'fx.type',
-  effectorDistance:      'fx.dist',
-  effectorMaxWet:        'fx.wet',
-  effectorDecay:         'fx.decay',
-  // granular
-  granularType:      'grain',
-  granularVolume:    'vol',
-  granularGrainSize: 'grain s',
-  granularOverlap:   'overlap',
-  granularDetune:    'detune',
-  granularReverbMix: 'reverb',
-  // fm drone
-  fmDroneType:      'fm',
-  fmDroneRootNote:  'note',
-  fmDroneRatio:     'ratio',
-  fmDroneIndex:     'index',
-  fmDroneVolume:    'vol',
-  fmDroneAttack:    'attack',
-  fmDroneRelease:   'release',
-  fmDroneReverbMix: 'reverb',
-  // noise pad
-  noisePadType:      'noise',
-  noisePadVolume:    'vol',
-  noisePadFreq:      'freq',
-  noisePadQ:         'Q',
-  noisePadAttack:    'attack',
-  noisePadRelease:   'release',
-  noisePadReverbMix: 'reverb',
-  // new effects
-  effectorPhaserRate:         'rate',
-  effectorPhaserOctaves:      'oct',
-  effectorAutoFilterFreq:     'rate',
-  effectorAutoFilterDepth:    'depth',
-  effectorAutoFilterBaseFreq: 'base',
-  effectorBitDepth:           'bits',
-  effectorFreezeDecay:        'decay',
 }
 
 function ControlSetsPanel({ category }: { category: ControlSetCategory }) {

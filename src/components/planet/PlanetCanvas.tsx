@@ -31,6 +31,7 @@ import { setBusStandpointSpatial } from '../../audio/rackBusMixer'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
 import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
+import { getBodyWaveLabEngine } from './WaveLabInstrumentLayer'
 import { sendMidiNote } from '../../audio/midiManager'
 import { generateStarIdentity, collectExistingIdentities } from '../../lib/starNaming'
 
@@ -978,6 +979,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                     const prevNote = arpPrevNoteRef.current.get(timerKey)
                     if (prevNote !== undefined) {
                       getBodyOscSynthEngine(b.id)?.noteOff(prevNote)
+                      getBodyWaveLabEngine(b.id)?.noteOff(prevNote)
                     }
                     const step = arpStepRef.current.get(timerKey) ?? 0
                     fireNote = arpNotes[step % arpLen]

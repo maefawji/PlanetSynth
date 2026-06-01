@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { usePlanetStore } from '../../store/planetStore'
 import type { PlanetSimParams } from '../../store/planetStore'
 import { useProjectStore } from '../../store/projectStore'
@@ -12,7 +12,7 @@ import {
 } from '../../store/controlSetStore'
 import { computeOrbitDroneParams, computeOrbitStats } from './DroneLayer'
 import { getPlanetLiveBodySnapshot, planetBodyStatsCache, getBodyTrailPoints, type PlanetBodyStats, type PlanetTool } from './PlanetCanvas'
-import { getBodyWaveLabEngine } from './WaveLabInstrumentLayer'
+import { getBodyWaveLabEngine, subscribeWaveLabWaveformRefresh } from './WaveLabInstrumentLayer'
 import { PlanetBodyInspector, NextBodyInspector } from '../layout/RightInspector'
 import { draggingControlSetId, setDraggingControlSetId } from '../../lib/dragControlSet'
 import { getBodyOutputLevel } from '../../audio/bodyOutputMeter'
@@ -22,7 +22,6 @@ import { sendMidiNote, getMidiSendAge, getMidiReceiveAge, isMidiReady } from '..
 import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import type { OneShotState } from '../../audio/OneShotSamplerEngine'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
-import { getBodyAmbientOscEngine } from './AmbientOscillatorLayer'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
 
 // ── Param editor config ───────────────────────────────────────────────────────
@@ -122,15 +121,6 @@ const PARAM_CFG: Record<string, ParamCfg> = {
   oscSynthLfoRate:         { type: 'number', label: 'lfo rate',  step: 0.01, min: 0.01, max: 20 },
   oscSynthLfoDepth:        { type: 'number', label: 'lfo depth', step: 0.01, min: 0,    max: 1 },
   oscSynthLfoWaveform:     { type: 'select', label: 'lfo wave',  options: ['sine', 'triangle', 'sawtooth', 'square'], optionLabels: ['Sine', 'Triangle', 'Saw', 'Square'] },
-  // Ambient Oscillator params
-  ambientOscType:            { type: 'select', label: 'type',    options: ['off', 'ambient-osc'], optionLabels: ['— off', 'Ambient Osc'] },
-  ambientOscWaveform:        { type: 'select', label: 'wave',    options: ['sine', 'triangle', 'sawtooth', 'square'], optionLabels: ['Sine', 'Triangle', 'Saw', 'Square'] },
-  ambientOscAttack:          { type: 'number', label: 'attack',  step: 0.1, min: 0.01, max: 20 },
-  ambientOscRelease:         { type: 'number', label: 'release', step: 0.1, min: 0.01, max: 30 },
-  ambientOscFilterCutoff:    { type: 'number', label: 'cutoff',  step: 50,  min: 80,   max: 12000 },
-  ambientOscFilterResonance: { type: 'number', label: 'Q',       step: 0.05, min: 0.01, max: 15 },
-  ambientOscLevel:           { type: 'number', label: 'level',   step: 0.05, min: 0,   max: 1 },
-  ambientOscNote:            { type: 'number', label: 'note',    step: 1,   min: 0,    max: 127 },
   // Oneshot-stretch params
   sampleStretchMode:    { type: 'select',  label: 'stretch', options: ['off', 'rate', 'time'], optionLabels: ['Off', 'Rate', 'Time'] },
   sampleOrbitSource:    { type: 'select',  label: 'orbit src', options: ['current', 'predicted'], optionLabels: ['Current ω', 'Predicted'] },
@@ -1100,59 +1090,6 @@ const ORBIT_DRIVEN_PARAM_KEYS = new Set<string>([
 
 const EMPTY_PARAM_OVERRIDES: Partial<PlanetSimParams> = {}
 
-// ── Inline Ambient Osc content (rendered inside SlotCard) ───────────────────
-
-/**
- * Minimal test-note button rendered inside the Ambient Osc instrument SlotCard.
- * Calls noteOn(60) on click and auto-releases after 2 s (or on second click).
- */
-function InlineAmbientOscContent({
-  bodyId, simple, accent,
-}: { bodyId: string | null; simple: boolean; accent: string }) {
-  const [testing, setTesting] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const dimText = simple ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.35)'
-
-  function handleTestNote() {
-    if (!bodyId) return
-    const eng = getBodyAmbientOscEngine(bodyId)
-    if (!eng) return
-    if (testing) {
-      eng.noteOff(60)
-      if (timerRef.current) clearTimeout(timerRef.current)
-      setTesting(false)
-      return
-    }
-    eng.noteOn(60, 0.8)
-    setTesting(true)
-    timerRef.current = setTimeout(() => {
-      eng.noteOff(60)
-      setTesting(false)
-    }, 2000)
-  }
-
-  // Clean up timer on unmount
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
-
-  return (
-    <div style={{ padding: '4px 0 2px', display: 'flex', alignItems: 'center', gap: 6 }}>
-      <button
-        onClick={handleTestNote}
-        style={{
-          fontSize: 9, fontWeight: 700, padding: '3px 10px',
-          borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
-          border: `0.5px solid ${accent}55`,
-          background: testing ? `${accent}22` : 'transparent',
-          color: testing ? accent : dimText,
-          transition: 'background 0.15s, color 0.15s',
-        }}
-      >
-        {testing ? '♪ playing…' : '▶ Test  C4'}
-      </button>
-    </div>
-  )
-}
-
 // ── Inline Osc Synth content (rendered inside instrument SlotCard) ───────────
 
 /**
@@ -1241,13 +1178,13 @@ function InlineArpContent({
   }
 
   function handleClick(i: number) {
-    // fire note preview via OscSynth or AmbientOsc
+    // fire note preview via OscSynth
     const tgt = bodyId || usePlanetStore.getState().selectedBodyId
     if (!tgt) return
     const midi = noteValue(i)
     const body = usePlanetStore.getState().bodies.find(b => b.id === tgt)
     sendMidiNote(body?.midiChannel ?? 1, midi, body?.midiVelocity ?? 100, 300)
-    const eng = getBodyOscSynthEngine(tgt) ?? getBodyAmbientOscEngine(tgt)
+    const eng = getBodyOscSynthEngine(tgt)
     if (eng) {
       eng.noteOn(midi, 0.8)
       setTimeout(() => eng.noteOff(midi), 500)
@@ -1331,9 +1268,7 @@ function InlineChordTestContent({
     sendMidiNote(body?.midiChannel ?? 1, midi, body?.midiVelocity ?? 100, 500)
 
     // 3. Try instrument engines that accept specific pitches
-    const ambientEng  = getBodyAmbientOscEngine(targetId)
-    const oscSynthEng = getBodyOscSynthEngine(targetId)
-    const pitchEng    = ambientEng ?? oscSynthEng
+    const pitchEng = getBodyOscSynthEngine(targetId)
     if (pitchEng) {
       pitchEng.noteOn(midi, 0.85)
       clearTimeout(timers.current[midi])
@@ -1933,27 +1868,52 @@ function WaveLabOscillo({ analyser }: { analyser: AnalyserNode | null }) {
   return <canvas ref={canvasRef} width={360} height={120} style={{width:'100%',height:'100%',display:'block'}} />
 }
 
-const ORBIT_SOURCES = ['off','period','eccentricity','distance','velocity','accel'] as const
-const ORBIT_SRC_LABELS: Record<string,string> = { off:'—', period:'T', eccentricity:'ecc', distance:'r', velocity:'v', accel:'a' }
+const ORBIT_SOURCES = ['manual','period','eccentricity','distance','velocity','bound'] as const
+const ORBIT_SRC_LABELS: Record<string,string> = { manual:'man', period:'T', eccentricity:'ecc', distance:'r', velocity:'v', bound:'B' }
 const LFO_TARGETS = ['off','pitch','filter','amplitude'] as const
 const LFO_TARGET_LABELS: Record<string,string> = { off:'Off', pitch:'Pitch', filter:'Filt', amplitude:'Amp' }
 const LFO_WAVES = ['sine','triangle','sawtooth','square'] as const
 const LFO_WAVE_LABELS: Record<string,string> = { sine:'Sine', triangle:'Tri', sawtooth:'Saw', square:'Sq' }
 
+function waveLabOrbitValue(
+  src: string,
+  manual: number,
+  stats: ReturnType<typeof computeOrbitStats>,
+  rate: number,
+  min: number,
+  max: number,
+): number {
+  if (src === 'manual' || !stats) return manual
+  let raw: number
+  switch (src) {
+    case 'period':       raw = stats.T_real * rate; break
+    case 'eccentricity': raw = stats.ecc    * rate; break
+    case 'distance':     raw = stats.r      * rate; break
+    case 'velocity':     raw = stats.speed  * rate; break
+    case 'bound':        raw = (stats.bound ? 1 : 0) * rate; break
+    default: return manual
+  }
+  if (!isFinite(raw)) return manual
+  return Math.max(min, Math.min(max, raw))
+}
+
 // Standalone slider row — must be module-level to avoid remount on every parent render
 function WLSliderRow({ label, paramKey, min, max, step, fmt, srcKey, rateKey, showSrc,
-  ep, dim, dim2, accent, onSetNum, onSetStr }: {
+  ep, dim, dim2, accent, liveValue, onSetNum, onSetStr }: {
   label: string; paramKey: string; min: number; max: number; step: number
   fmt: (v: number) => string; srcKey?: string; rateKey?: string; showSrc: boolean
   ep: Record<string, unknown>; dim: string; dim2: string; accent: string
+  liveValue?: number | null
   onSetNum: (key: string, val: number) => void
   onSetStr: (key: string, val: string) => void
 }) {
   const storeVal = Number(ep[paramKey] ?? 0)
   const [drag, setDrag] = useState<number | null>(null)
   const val = drag ?? storeVal
-  const src  = srcKey  ? String(ep[srcKey]  ?? 'off') : null
+  const src  = srcKey  ? String(ep[srcKey]  ?? 'manual') : null
   const rate = rateKey ? Number(ep[rateKey] ?? 1)     : null
+  const isMapped = src !== null && src !== 'manual'
+  const displayValue = liveValue ?? val
   return (
     <div style={{ marginBottom: 3 }}>
       <div style={{ display:'flex', alignItems:'center', gap:4 }}>
@@ -1964,13 +1924,13 @@ function WLSliderRow({ label, paramKey, min, max, step, fmt, srcKey, rateKey, sh
           onMouseUp={e => { const v = parseFloat((e.target as HTMLInputElement).value); setDrag(null); onSetNum(paramKey, v) }}
           style={{ flex:1, accentColor:accent, minWidth:0, cursor:'ew-resize' }} />
         <span style={{ fontSize:8.5, fontFamily:'monospace', color:accent, width:46, textAlign:'right', flexShrink:0 }}>
-          {fmt(val)}
+          {fmt(displayValue)}
         </span>
       </div>
       {srcKey && rateKey && showSrc && (
         <div style={{ display:'flex', alignItems:'center', gap:3, marginTop:1, paddingLeft:54 }}>
           <span style={{ fontSize:7.5, color:dim, marginRight:2 }}>src</span>
-          {ORBIT_SOURCES.filter(s => s !== 'off').map(s => (
+          {ORBIT_SOURCES.map(s => (
             <button key={s} onClick={() => onSetStr(srcKey, s)} style={{
               fontSize:7, padding:'1px 5px', borderRadius:3, fontFamily:'inherit', cursor:'pointer',
               border:`0.5px solid ${src===s ? accent+'88' : 'rgba(255,255,255,0.08)'}`,
@@ -1984,6 +1944,11 @@ function WLSliderRow({ label, paramKey, min, max, step, fmt, srcKey, rateKey, sh
             style={{ width:44, fontSize:8, fontFamily:'monospace', padding:'1px 3px', borderRadius:3,
               border:'0.5px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.05)',
               color:dim2, outline:'none' }} />
+          {isMapped && liveValue !== null && liveValue !== undefined && (
+            <span style={{ fontSize:7.5, color:accent, fontFamily:'monospace', opacity:0.75 }}>
+              → {fmt(liveValue)}
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -1992,12 +1957,22 @@ function WLSliderRow({ label, paramKey, min, max, step, fmt, srcKey, rateKey, sh
 
 function WaveLabInstrumentExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; slotKey: string; simple: boolean }) {
   const { getBodyEffectiveParams, setSlotOverride } = useControlSetStore()
+  const bodies = usePlanetStore(s => s.bodies)
+  const G = usePlanetStore(s => s.simParams.G)
   const ep = (bodyId
     ? getBodyEffectiveParams(bodyId)
     : useControlSetStore.getState().rackParamOverrides['g:instrument'] ?? {}
   ) as Record<string, unknown>
 
   const [manualADSR, setManualADSR] = useState(false)
+  const [, setWaveRefreshSeq] = useState(0)
+
+  useEffect(() => {
+    if (!bodyId) return
+    return subscribeWaveLabWaveformRefresh(refreshedBodyId => {
+      if (refreshedBodyId === bodyId) setWaveRefreshSeq(v => v + 1)
+    })
+  }, [bodyId])
 
   const dim    = simple ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'
   const dim2   = simple ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)'
@@ -2017,9 +1992,32 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple }: { bodyId: string
   const setStr = useCallback((key: string, val: string) => setSlotOverride(slotKey, { [key]: val }), [slotKey, setSlotOverride])
 
   const trailPts = bodyId ? getBodyTrailPoints(bodyId) : null
+  const liveStats = (() => {
+    if (!bodyId) return null
+    const liveBodies = getPlanetLiveBodySnapshot()
+    const liveById = new Map(liveBodies.map(b => [b.id, b]))
+    const effective = bodies.map(b => {
+      const live = liveById.get(b.id)
+      return live ? { ...b, x: live.x, y: live.y, vx: live.vx, vy: live.vy } : b
+    })
+    const body = effective.find(b => b.id === bodyId)
+    return body ? computeOrbitStats(body, effective, G) : null
+  })()
   const lfoTarget = String(ep.oscSynthLfoTarget ?? 'off')
   const lfoWave   = String(ep.oscSynthLfoWaveform ?? 'sine')
   const lfoOn     = lfoTarget !== 'off'
+
+  function liveFor(paramKey: string, srcKey?: string, rateKey?: string, min = 0, max = 1): number | null {
+    if (!srcKey || !rateKey) return null
+    return waveLabOrbitValue(
+      String(ep[srcKey] ?? 'manual'),
+      Number(ep[paramKey] ?? 0),
+      liveStats,
+      Number(ep[rateKey] ?? 1),
+      min,
+      max,
+    )
+  }
 
   const sliderProps = { ep, dim, dim2, accent, showSrc: !manualADSR, onSetNum: setNum, onSetStr: setStr }
 
@@ -2084,11 +2082,11 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple }: { bodyId: string
           }}>{manualADSR ? '✎ manual' : '⟳ orbit src'}</button>
         </div>
         <WLSliderRow label="Level"   paramKey="oscSynthLevel"           min={0}     max={1}     step={0.01} fmt={v=>v.toFixed(2)}        {...sliderProps} />
-        <WLSliderRow label="Attack"  paramKey="oscSynthAttack"          min={0.001} max={20}    step={0.05} fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthAttackSource"  rateKey="oscSynthAttackRate"  {...sliderProps} />
-        <WLSliderRow label="Decay"   paramKey="oscSynthDecay"           min={0.01}  max={10}    step={0.05} fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthDecaySource"   rateKey="oscSynthDecayRate"   {...sliderProps} />
-        <WLSliderRow label="Sustain" paramKey="oscSynthSustain"         min={0}     max={1}     step={0.01} fmt={v=>v.toFixed(2)}        srcKey="oscSynthSustainSource" rateKey="oscSynthSustainRate" {...sliderProps} />
-        <WLSliderRow label="Release" paramKey="oscSynthRelease"         min={0.01}  max={30}    step={0.1}  fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthReleaseSource" rateKey="oscSynthReleaseRate" {...sliderProps} />
-        <WLSliderRow label="Cutoff"  paramKey="oscSynthFilterCutoff"    min={80}    max={12000}  step={50}  fmt={v=>`${Math.round(v)}Hz`} srcKey="oscSynthCutoffSource"  rateKey="oscSynthCutoffRate"  {...sliderProps} />
+        <WLSliderRow label="Attack"  paramKey="oscSynthAttack"          min={0.001} max={20}    step={0.05} fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthAttackSource"  rateKey="oscSynthAttackRate"  liveValue={liveFor('oscSynthAttack', 'oscSynthAttackSource', 'oscSynthAttackRate', 0.005, 20)} {...sliderProps} />
+        <WLSliderRow label="Decay"   paramKey="oscSynthDecay"           min={0.01}  max={10}    step={0.05} fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthDecaySource"   rateKey="oscSynthDecayRate"   liveValue={liveFor('oscSynthDecay', 'oscSynthDecaySource', 'oscSynthDecayRate', 0.01, 20)} {...sliderProps} />
+        <WLSliderRow label="Sustain" paramKey="oscSynthSustain"         min={0}     max={1}     step={0.01} fmt={v=>v.toFixed(2)}        srcKey="oscSynthSustainSource" rateKey="oscSynthSustainRate" liveValue={liveFor('oscSynthSustain', 'oscSynthSustainSource', 'oscSynthSustainRate', 0, 1)} {...sliderProps} />
+        <WLSliderRow label="Release" paramKey="oscSynthRelease"         min={0.01}  max={30}    step={0.1}  fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthReleaseSource" rateKey="oscSynthReleaseRate" liveValue={liveFor('oscSynthRelease', 'oscSynthReleaseSource', 'oscSynthReleaseRate', 0.01, 30)} {...sliderProps} />
+        <WLSliderRow label="Cutoff"  paramKey="oscSynthFilterCutoff"    min={80}    max={12000}  step={50}  fmt={v=>`${Math.round(v)}Hz`} srcKey="oscSynthCutoffSource"  rateKey="oscSynthCutoffRate"  liveValue={liveFor('oscSynthFilterCutoff', 'oscSynthCutoffSource', 'oscSynthCutoffRate', 80, 12000)} {...sliderProps} />
         <WLSliderRow label="Q"       paramKey="oscSynthFilterResonance" min={0.01}  max={15}    step={0.05} fmt={v=>v.toFixed(2)}        {...sliderProps} />
       </div>
 
@@ -2116,8 +2114,8 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple }: { bodyId: string
           ))}
         </div>
         <div style={{ opacity: lfoOn ? 1 : 0.4 }}>
-          <WLSliderRow label="Rate"  paramKey="oscSynthLfoRate"  min={0.01} max={20} step={0.01} fmt={v=>`${v.toFixed(2)}Hz`} srcKey="oscSynthLfoRateSource"  rateKey="oscSynthLfoRateRate"  {...sliderProps} />
-          <WLSliderRow label="Depth" paramKey="oscSynthLfoDepth" min={0}    max={1}  step={0.01} fmt={v=>v.toFixed(2)}        srcKey="oscSynthLfoDepthSource" rateKey="oscSynthLfoDepthRate" {...sliderProps} />
+          <WLSliderRow label="Rate"  paramKey="oscSynthLfoRate"  min={0.01} max={20} step={0.01} fmt={v=>`${v.toFixed(2)}Hz`} srcKey="oscSynthLfoRateSource"  rateKey="oscSynthLfoRateRate"  liveValue={liveFor('oscSynthLfoRate', 'oscSynthLfoRateSource', 'oscSynthLfoRateRate', 0.01, 20)} {...sliderProps} />
+          <WLSliderRow label="Depth" paramKey="oscSynthLfoDepth" min={0}    max={1}  step={0.01} fmt={v=>v.toFixed(2)}        srcKey="oscSynthLfoDepthSource" rateKey="oscSynthLfoDepthRate" liveValue={liveFor('oscSynthLfoDepth', 'oscSynthLfoDepthSource', 'oscSynthLfoDepthRate', 0, 1)} {...sliderProps} />
         </div>
       </div>
     </div>
@@ -2190,6 +2188,107 @@ function WaveLabMiniSynth({ pts, sigs }: { pts: Array<{x:number;y:number}>; sigs
     ctx.stroke()
   }, [pts, sigs])
   return <canvas ref={canvasRef} width={800} height={200} style={{width:'100%',height:'100%',display:'block'}} />
+}
+
+function InlineWaveLabContent({
+  bodyId, slotKey, cs, simple, accent,
+}: { bodyId: string | null; slotKey: string; cs: ControlSet; simple: boolean; accent: string }) {
+  const { getBodyEffectiveParams, rackParamOverrides, setSlotOverride } = useControlSetStore()
+  const [trailPts, setTrailPts] = useState<Array<{x: number; y: number}> | null>(null)
+  const [, setWaveRefreshSeq] = useState(0)
+
+  useEffect(() => {
+    if (!bodyId) { setTrailPts(null); return }
+    const refresh = () => setTrailPts(getBodyTrailPoints(bodyId))
+    refresh()
+    const id = window.setInterval(refresh, 250)
+    return () => window.clearInterval(id)
+  }, [bodyId])
+
+  useEffect(() => {
+    if (!bodyId) return
+    return subscribeWaveLabWaveformRefresh(refreshedBodyId => {
+      if (refreshedBodyId !== bodyId) return
+      setTrailPts(getBodyTrailPoints(bodyId))
+      setWaveRefreshSeq(v => v + 1)
+    })
+  }, [bodyId])
+
+  const ep = (bodyId
+    ? getBodyEffectiveParams(bodyId)
+    : { ...cs.params, ...(rackParamOverrides[slotKey] ?? {}) }
+  ) as Record<string, unknown>
+  const selectedSigs = String(ep.wavLabSig ?? 'x')
+    .split(',')
+    .filter(s => WAV_SIGS.includes(s as typeof WAV_SIGS[number]))
+  const activeSigs = selectedSigs.length > 0 ? selectedSigs : ['x']
+  const engine = bodyId ? getBodyWaveLabEngine(bodyId) : null
+  const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.36)'
+  const panelBg = simple ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.045)'
+  const border = simple ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)'
+
+  const toggleSig = (sig: string) => {
+    const prev = activeSigs.filter(s => WAV_SIGS.includes(s as typeof WAV_SIGS[number]))
+    const next = prev.includes(sig) ? prev.filter(s => s !== sig) : [...prev, sig]
+    setSlotOverride(slotKey, { wavLabSig: next.length > 0 ? next.join(',') : 'x' })
+  }
+
+  const Preview = ({ label, children }: { label: string; children: ReactNode }) => (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 6.8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2, lineHeight: 1 }}>
+        {label}
+      </div>
+      <div style={{ height: 38, borderRadius: 3, overflow: 'hidden', background: panelBg, border: `0.5px solid ${border}` }}>
+        {children}
+      </div>
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, paddingTop: 2 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 6.8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginRight: 3 }}>
+          Wavetable
+        </span>
+        {WAV_SIGS.map(s => {
+          const on = activeSigs.includes(s)
+          return (
+            <button key={s} onClick={() => toggleSig(s)} style={{
+              minWidth: s === 'speed' ? 30 : 22,
+              height: 18,
+              fontSize: 8,
+              fontWeight: 800,
+              padding: '1px 6px',
+              borderRadius: 4,
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+              border: `0.5px solid ${on ? WAV_SIG_COLORS[s] + 'bb' : border}`,
+              background: on ? `${WAV_SIG_COLORS[s]}24` : 'transparent',
+              color: on ? WAV_SIG_COLORS[s] : dim,
+              lineHeight: 1,
+            }}>{WAV_SIG_LABELS[s]}</button>
+          )
+        })}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+        <Preview label="Orbit Trail">
+          {trailPts && trailPts.length >= 2
+            ? <WaveLabMiniCanvas pts={trailPts} sigs={activeSigs} />
+            : <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:7, color:dim }}>{bodyId ? '…' : 'no body'}</div>
+          }
+        </Preview>
+        <Preview label="Synthesis">
+          {trailPts && trailPts.length >= 2
+            ? <WaveLabMiniSynth pts={trailPts} sigs={activeSigs} />
+            : <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:7, color:dim }}>{bodyId ? '…' : 'no body'}</div>
+          }
+        </Preview>
+        <Preview label="Oscilloscope">
+          <WaveLabOscillo analyser={engine?.analyserNode ?? null} />
+        </Preview>
+      </div>
+    </div>
+  )
 }
 
 // ── Generic slot expanded panel ────────────────────────────────────────────────
@@ -2280,13 +2379,7 @@ function SlotCard({
 
   // ── One-shot active detection ──────────────────────────────────────────────
   const isOneShot = cs.id === 'instrument-oneshot' || cs.id === 'instrument-oneshot-stretch'
-
-  // ── Ambient Oscillator active detection ────────────────────────────────────
-  const isAmbientOsc = cs.id === 'instrument-ambient-osc'
-  const effectiveAmbientOscType = isAmbientOsc
-    ? String((overrides as Record<string, unknown>)['ambientOscType'] ?? cs.params.ambientOscType ?? 'off')
-    : 'off'
-  const isAmbientOscOn = isAmbientOsc && effectiveAmbientOscType === 'ambient-osc'
+  const isWaveLab = cs.id === 'instrument-wave-lab'
 
   // ── Osc Synth active detection ─────────────────────────────────────────────
   const isOscSynth        = cs.id === 'instrument-osc-synth'
@@ -2420,9 +2513,8 @@ function SlotCard({
         <InlineOneShotContent bodyId={bodyId} slotKey={slotKey} simple={simple} accent={accent} isStretch={cs.id === 'instrument-oneshot-stretch'} />
       )}
 
-      {/* Ambient Osc test-note button */}
-      {isAmbientOscOn && (
-        <InlineAmbientOscContent bodyId={bodyId} simple={simple} accent={accent} />
+      {isWaveLab && (
+        <InlineWaveLabContent bodyId={bodyId} slotKey={slotKey} cs={cs} simple={simple} accent={accent} />
       )}
 
       {/* Osc Synth test-note button */}
@@ -2452,9 +2544,6 @@ function SlotCard({
         if (['fmDroneRootNote','fmDroneRatio','fmDroneIndex','fmDroneVolume','fmDroneAttack','fmDroneRelease','fmDroneReverbMix'].includes(key) && !isFMOn) return null
         // Noise sub-params: only when noisePadType is 'noise'
         if (['noisePadVolume','noisePadFreq','noisePadQ','noisePadAttack','noisePadRelease','noisePadReverbMix'].includes(key) && !isNoiseOn) return null
-        // Ambient Osc sub-params: only when ambientOscType is 'ambient-osc'
-        if (['ambientOscWaveform','ambientOscAttack','ambientOscRelease','ambientOscFilterCutoff',
-             'ambientOscFilterResonance','ambientOscLevel','ambientOscNote'].includes(key) && !isAmbientOscOn) return null
         // Osc Synth sub-params: only when oscSynthType is 'osc-synth'
         if (['oscSynthWaveform','oscSynthAttack','oscSynthDecay','oscSynthSustain','oscSynthRelease',
              'oscSynthFilterCutoff','oscSynthFilterResonance','oscSynthLevel',
@@ -3471,7 +3560,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
           <div style={{ display: 'flex', alignItems: 'stretch', gap: 0 }}>
             <SectionLabel label="Instrument" simple={simple} highlighted={rackDragCat === 'instrument'} />
             <div style={{ width: 1, background: divCol, margin: '6px 0' }} />
-            <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 4, minWidth: (instrumentCs?.id === 'instrument-oneshot' || instrumentCs?.id === 'instrument-oneshot-stretch') ? 220 : instrumentCs?.id === 'instrument-ambient-osc' ? 185 : instrumentCs?.id === 'instrument-osc-synth' ? 210 : 160 }}>
+            <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 4, minWidth: (instrumentCs?.id === 'instrument-oneshot' || instrumentCs?.id === 'instrument-oneshot-stretch') ? 220 : instrumentCs?.id === 'instrument-wave-lab' ? 230 : instrumentCs?.id === 'instrument-osc-synth' ? 210 : 160 }}>
               {instrumentCs ? (
                 <SlotCard cs={instrumentCs}
                   slotKey={isBodyMode && !hasInstrumentOv ? 'g:instrument' : instrumentKey()}

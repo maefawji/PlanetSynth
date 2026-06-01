@@ -2,8 +2,8 @@
 // Headless component: manages one AmbientOscillatorEngine per body that has
 // instrument = 'instrument-osc-synth' in its effective rack.
 //
-// Unlike AmbientOscillatorLayer (always-on drone), this layer does NOT call
-// noteOn automatically. It only creates/maintains the engine and keeps params
+// This layer does NOT call noteOn automatically. It only creates/maintains
+// the engine and keeps params
 // in sync. noteOn / noteOff are fired externally by:
 //   • instrumentTrigger.ts  (orbit / rendezvous / orbit-complete)
 //   • InlineOscSynthContent test button (PlanetRack UI)
