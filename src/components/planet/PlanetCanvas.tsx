@@ -1558,7 +1558,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
 
     let launchId: number | null = null
     let pinchIds: [number, number] | null = null
-    let panMid: { sx: number; sy: number; ox: number; oy: number } | null = null
+    let pinchDist = 0
 
     function getTouchById(list: TouchList, id: number): Touch | null {
       for (let i = 0; i < list.length; i++) if (list[i].identifier === id) return list[i]
@@ -1589,36 +1589,36 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
         dragPlaceRef.current = dp
         setDragPlace({ ...dp })
       } else if (e.touches.length >= 2) {
-        // Cancel any ongoing launch and switch to two-finger pan.
+        // Cancel any ongoing launch and switch to two-finger pinch zoom.
         launchId = null
         dragPlaceRef.current = null
         setDragPlace(null)
         const t0 = e.touches[0], t1 = e.touches[1]
         pinchIds = [t0.identifier, t1.identifier]
-        const r = svg.getBoundingClientRect()
-        panMid = {
-          sx: (t0.clientX + t1.clientX) / 2 - r.left,
-          sy: (t0.clientY + t1.clientY) / 2 - r.top,
-          ox: viewOffsetRef.current.x,
-          oy: viewOffsetRef.current.y,
-        }
+        pinchDist = Math.max(1, Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY))
       }
     }
 
     function onMove(e: TouchEvent) {
       e.preventDefault()
       if (pinchIds !== null && e.touches.length >= 2) {
-        // Two-finger swipe: pan viewport.
+        // Two-finger pinch: zoom around the gesture midpoint.
         const t0 = getTouchById(e.touches, pinchIds[0])
         const t1 = getTouchById(e.touches, pinchIds[1])
-        if (!t0 || !t1 || !panMid) return
+        if (!t0 || !t1 || pinchDist <= 0) return
         const r = svg.getBoundingClientRect()
         const midSx = (t0.clientX + t1.clientX) / 2 - r.left
         const midSy = (t0.clientY + t1.clientY) / 2 - r.top
+        const { wx, wy } = tw(midSx, midSy)
+        const nextDist = Math.max(1, Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY))
+        const nextZoom = Math.max(0.02, Math.min(50, zoomRef.current * (nextDist / pinchDist)))
+        const cx = sizeRef.current.w / 2, cy = sizeRef.current.h / 2
+        setZoomSync(nextZoom)
         setViewOffsetSync({
-          x: panMid.ox - (midSx - panMid.sx) / zoomRef.current,
-          y: panMid.oy - (midSy - panMid.sy) / zoomRef.current,
+          x: wx - (midSx - cx) / nextZoom,
+          y: wy - (midSy - cy) / nextZoom,
         })
+        pinchDist = nextDist
       } else if (launchId !== null && dragPlaceRef.current) {
         // Single finger: update velocity vector
         const t = getTouchById(e.touches, launchId)
@@ -1647,7 +1647,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           launchId = null
         }
       }
-      if (e.touches.length < 2) { pinchIds = null; panMid = null }
+      if (e.touches.length < 2) { pinchIds = null; pinchDist = 0 }
     }
 
     svg.addEventListener('touchstart',  onStart, { passive: false })
