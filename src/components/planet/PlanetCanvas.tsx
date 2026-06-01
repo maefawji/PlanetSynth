@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import * as Tone from 'tone'
 import { usePlanetStore } from '../../store/planetStore'
 import { useProjectStore } from '../../store/projectStore'
 import { useControlSetStore } from '../../store/controlSetStore'
@@ -34,6 +33,7 @@ import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
 import { getBodyWaveLabEngine } from './WaveLabInstrumentLayer'
 import { sendMidiNote } from '../../audio/midiManager'
+import { unlockMobileAudio } from '../../audio/mobileAudioUnlock'
 import { generateStarIdentity, collectExistingIdentities } from '../../lib/starNaming'
 
 export type PlanetTool = 'select' | 'add-sun' | 'add-planet' | 'probe'
@@ -1428,6 +1428,11 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     const defs = dp.tool === 'add-sun'
       ? storeState.nextSunDefaults
       : storeState.nextPlanetDefaults
+    const resolvedMass = isSun
+      ? sunMassFromDrag(dp)
+      : mobileMode
+        ? 1 + Math.floor(Math.random() * 10)
+        : defs.mass
     const resolvedColor = defs.randomColor
       ? (dp.tool === 'add-sun'
           ? `hsl(${35 + Math.floor(Math.random() * 25)},90%,55%)`
@@ -1448,7 +1453,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       designation: starId.designation,
       catalogId:   starId.id,
       type: dp.tool === 'add-sun' ? 'sun' : 'planet',
-      mass: isSun ? sunMassFromDrag(dp) : defs.mass,
+      mass: resolvedMass,
       x: dp.bodyX, y: dp.bodyY, vx, vy,
       fixed: defs.fixed,
       color: resolvedColor,
@@ -1480,6 +1485,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     // Sun gets all-empty rack (override global rack defaults)
     if (isSun) {
       const cs = useControlSetStore.getState()
+      usePlanetStore.getState().updateSimParams({ standpointMode: true, standpointBodyId: newBody.id })
       cs.clearBodyRack(newBody.id)
       cs.addBodyTrigger(newBody.id, 'trigger-empty')
       cs.setBodySlot(newBody.id, 'instrument', 'instrument-empty')
@@ -1572,7 +1578,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
 
     function onStart(e: TouchEvent) {
       e.preventDefault()
-      void Tone.start()
+      void unlockMobileAudio()
       if (e.touches.length === 1 && launchId === null && pinchIds === null) {
         const t = e.touches[0]
         launchId = t.identifier

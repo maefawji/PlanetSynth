@@ -4,6 +4,7 @@
 
 import { usePlanetStore } from '../../store/planetStore'
 import type { PlanetTool } from '../planet/PlanetCanvas'
+import { unlockMobileAudio } from '../../audio/mobileAudioUnlock'
 
 export function MobileHud({
   tool,
@@ -50,8 +51,8 @@ export function MobileHud({
           WebkitTapHighlightColor: 'transparent',
           userSelect: 'none',
         }}
-        onTouchEnd={e => { e.preventDefault(); onSetTool(target) }}
-        onClick={() => onSetTool(target)}
+        onTouchEnd={e => { e.preventDefault(); void unlockMobileAudio(); onSetTool(target) }}
+        onClick={() => { void unlockMobileAudio(); onSetTool(target) }}
         title={target === 'add-sun' ? 'Add Sun' : 'Add Planet'}
       >
         {label}
@@ -69,8 +70,8 @@ export function MobileHud({
       {/* Pause / Play */}
       <button
         style={btnStyle}
-        onTouchEnd={e => { e.preventDefault(); updateSimParams({ paused: !paused }) }}
-        onClick={() => updateSimParams({ paused: !paused })}
+        onTouchEnd={e => { e.preventDefault(); void unlockMobileAudio(); updateSimParams({ paused: !paused }) }}
+        onClick={() => { void unlockMobileAudio(); updateSimParams({ paused: !paused }) }}
       >
         {paused ? '▶' : '⏸'}
       </button>
@@ -83,8 +84,8 @@ export function MobileHud({
       {/* Reset */}
       <button
         style={{ ...btnStyle, fontSize: 15 }}
-        onTouchEnd={e => { e.preventDefault(); restartSim() }}
-        onClick={() => restartSim()}
+        onTouchEnd={e => { e.preventDefault(); void unlockMobileAudio(); restartSim() }}
+        onClick={() => { void unlockMobileAudio(); restartSim() }}
       >
         ↺
       </button>

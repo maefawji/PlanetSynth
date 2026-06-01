@@ -181,6 +181,9 @@ export class AmbientOscillatorEngine {
 
   noteOn(note: number, velocity = 0.8): void {
     if (!this.ctx || !this.panner) return
+    if (this.ctx.state === 'suspended') {
+      void this.ctx.resume()
+    }
 
     // Retrigger: remove existing voice cleanly
     if (this.voices.has(note)) this._killVoice(note, 0)
