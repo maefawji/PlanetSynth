@@ -105,20 +105,25 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
     color: '#f59e0b',
     category: 'trigger',
     description:
-      'T周期を1小節として C3・E3・G3・B3 を4分音符で巡回。\n' +
-      'Osc Synth と組み合わせて使うシンプルなアルペジエーター。\n' +
-      'ノートは各ステップで個別に変更可能。',
+      'T周期を1小節としてノート列またはコードをトリガー。\n' +
+      'Arp mode はステップを巡回、Chord mode は選択したコードを同時発音。\n' +
+      '拡張パネルで root / quality / voicing を編集できます。',
     params: {
       orbitTriggerMode:     'orbit-complete',
       orbitTriggerType:     'tperiod',
       orbitTriggerDivision: 0.25,   // 4 triggers per orbit = quarter notes
       rendezvousDistance:   0,
       arpMode:   true,
+      arpPlayMode: 'arp',
       arpLength: 4,
       arpNote0:  48,  // C3
       arpNote1:  52,  // E3
       arpNote2:  55,  // G3
       arpNote3:  59,  // B3
+      arpChordRoot: 0,
+      arpChordQuality: 'Maj7',
+      arpChordOctave: 3,
+      arpChordInversion: 0,
     },
   },
   // ── Effect ─────────────────────────────────────────────────────────────────
@@ -470,7 +475,7 @@ export const MAX_TRIGGERS = 4
 
 export const DEFAULT_BODY_RACKS: Record<string, BodyRackOverride> = {
   sun:       { triggers: ['trigger-empty'], instrument: 'instrument-empty', effects: ['effect-empty'] },
-  perturber: { triggers: ['trigger-empty'], instrument: 'instrument-osc-synth-orbit', effects: ['effect-empty'] },
+  perturber: { triggers: ['trigger-arpeggio'], instrument: 'instrument-wave-lab', effects: ['effect-empty'] },
 }
 
 /** Blank rack — used when clearing. Empty trigger list = no trigger. */

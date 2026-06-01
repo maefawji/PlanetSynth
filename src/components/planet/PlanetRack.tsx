@@ -1152,6 +1152,34 @@ function midiToNoteName(n: number): string {
 // ── Inline Arpeggio trigger (rendered inside trigger SlotCard) ────────────────
 
 const ARP_STEP_KEYS = ['arpNote0', 'arpNote1', 'arpNote2', 'arpNote3'] as const
+const ARP_CHORD_QUALITIES = ['Major','Minor','Sus2','Sus4','Dim','Aug','Maj7','Min7','Dom7'] as const
+const ARP_CHORD_INTERVALS: Record<string, number[]> = {
+  Major: [0, 4, 7],
+  Minor: [0, 3, 7],
+  Sus2:  [0, 2, 7],
+  Sus4:  [0, 5, 7],
+  Dim:   [0, 3, 6],
+  Aug:   [0, 4, 8],
+  Maj7:  [0, 4, 7, 11],
+  Min7:  [0, 3, 7, 10],
+  Dom7:  [0, 4, 7, 10],
+}
+
+function getArpParam(overrides: Partial<PlanetSimParams>, key: string, fallback: unknown): unknown {
+  return key in (overrides as Record<string, unknown>)
+    ? (overrides as Record<string, unknown>)[key]
+    : fallback
+}
+
+function buildRackChordNotes(overrides: Partial<PlanetSimParams>): number[] {
+  const rootPc = Math.max(0, Math.min(11, Math.round(Number(getArpParam(overrides, 'arpChordRoot', 0)))))
+  const octave = Math.max(0, Math.min(8, Math.round(Number(getArpParam(overrides, 'arpChordOctave', 3)))))
+  const quality = String(getArpParam(overrides, 'arpChordQuality', 'Maj7'))
+  const intervals = ARP_CHORD_INTERVALS[quality] ?? ARP_CHORD_INTERVALS.Maj7
+  const inversion = Math.max(0, Math.min(intervals.length - 1, Math.round(Number(getArpParam(overrides, 'arpChordInversion', 0)))))
+  const base = (octave + 1) * 12 + rootPc
+  return intervals.map((iv, i) => Math.max(0, Math.min(127, base + iv + (i < inversion ? 12 : 0)))).sort((a, b) => a - b)
+}
 
 function InlineArpContent({
   bodyId, slotKey, simple, accent,
@@ -1160,6 +1188,11 @@ function InlineArpContent({
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
   const resetSlotParam  = useControlSetStore(s => s.resetSlotParam)
   const dimText = simple ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.35)'
+  const playMode = String(getArpParam(overrides, 'arpPlayMode', 'arp'))
+  const chordNotes = buildRackChordNotes(overrides)
+  const chordLabel = chordNotes.map(midiToNoteName).join(' ')
+  const division = Number(getArpParam(overrides, 'orbitTriggerDivision', 0.25))
+  const divisionLabel = division === 1 ? '1/1' : division === 0.5 ? '1/2' : division === 0.25 ? '1/4' : division === 0.125 ? '1/8' : '1/16'
 
   // defaults C3 E3 G3 B3
   const DEFAULT_NOTES = [48, 52, 55, 59]
@@ -1199,7 +1232,56 @@ function InlineArpContent({
 
   return (
     <div style={{ paddingTop: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 4 }}>
+        <span style={{ fontSize: 7, color: dimText, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginRight: 2 }}>
+          {divisionLabel}
+        </span>
+        {(['arp', 'chord'] as const).map(mode => (
+          <button key={mode}
+            onClick={() => setSlotOverride(slotKey, { arpPlayMode: mode } as Partial<PlanetSimParams>)}
+            style={{
+              flex: 1,
+              fontSize: 7.5,
+              fontWeight: 800,
+              padding: '2px 4px',
+              borderRadius: 4,
+              border: `0.5px solid ${playMode === mode ? accent : accent + '44'}`,
+              background: playMode === mode ? `${accent}24` : 'transparent',
+              color: playMode === mode ? accent : dimText,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              textTransform: 'uppercase',
+              lineHeight: 1,
+            }}
+          >{mode}</button>
+        ))}
+      </div>
       {/* Step grid: 4 note cells */}
+      {playMode === 'chord' ? (
+        <div
+          onClick={() => {
+            const tgt = bodyId || usePlanetStore.getState().selectedBodyId
+            if (!tgt) return
+            chordNotes.forEach(midi => {
+              const body = usePlanetStore.getState().bodies.find(b => b.id === tgt)
+              sendMidiNote(body?.midiChannel ?? 1, midi, body?.midiVelocity ?? 100, 300)
+              fireBodyInstrumentTrigger(tgt, 1, midi)
+            })
+            markBodyTriggered(tgt)
+          }}
+          style={{
+            borderRadius: 4,
+            border: `0.5px solid ${accent}55`,
+            background: `${accent}10`,
+            padding: '5px 6px',
+            cursor: 'pointer',
+          }}
+          title="Click to preview chord"
+        >
+          <div style={{ fontSize: 7, color: dimText, lineHeight: 1, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Chord</div>
+          <div style={{ fontSize: 9, fontWeight: 800, color: accent, lineHeight: 1.2 }}>{chordLabel}</div>
+        </div>
+      ) : (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 3 }}>
         {[0, 1, 2, 3].map(i => {
           const midi = noteValue(i)
@@ -1232,8 +1314,187 @@ function InlineArpContent({
           )
         })}
       </div>
+      )}
       <div style={{ fontSize: 7, color: dimText, marginTop: 3, lineHeight: 1.3 }}>
-        scroll: ±1st · click: preview · right-click: reset
+        {playMode === 'chord' ? 'click: preview · expand: edit chord' : 'scroll: ±1st · click: preview · right-click: reset'}
+      </div>
+    </div>
+  )
+}
+
+function ArpeggioExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; slotKey: string; simple: boolean }) {
+  const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
+  const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
+  const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
+  const accent = '#f59e0b'
+  const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.38)'
+  const dim2 = simple ? 'rgba(0,0,0,0.64)' : 'rgba(255,255,255,0.64)'
+  const border = simple ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.08)'
+  const panel = simple ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.04)'
+  const playMode = String(getArpParam(overrides, 'arpPlayMode', 'arp'))
+  const rootPc = Math.max(0, Math.min(11, Math.round(Number(getArpParam(overrides, 'arpChordRoot', 0)))))
+  const quality = String(getArpParam(overrides, 'arpChordQuality', 'Maj7'))
+  const octave = Math.max(0, Math.min(8, Math.round(Number(getArpParam(overrides, 'arpChordOctave', 3)))))
+  const inversion = Math.max(0, Math.min(3, Math.round(Number(getArpParam(overrides, 'arpChordInversion', 0)))))
+  const chordNotes = buildRackChordNotes(overrides)
+  const chordPcs = new Set(chordNotes.map(n => n % 12))
+  const stepNotes = ARP_STEP_KEYS.map((key, i) => Number(getArpParam(overrides, key, [48, 52, 55, 59][i])))
+
+  const setNum = (key: string, value: number) => setSlotOverride(slotKey, { [key]: value } as Partial<PlanetSimParams>)
+  const setStr = (key: string, value: string) => setSlotOverride(slotKey, { [key]: value } as Partial<PlanetSimParams>)
+
+  function preview(notes: number[]) {
+    const tgt = bodyId || usePlanetStore.getState().selectedBodyId
+    if (!tgt) return
+    const body = usePlanetStore.getState().bodies.find(b => b.id === tgt)
+    notes.forEach(midi => {
+      sendMidiNote(body?.midiChannel ?? 1, midi, body?.midiVelocity ?? 100, 350)
+      fireBodyInstrumentTrigger(tgt, 1, midi)
+    })
+    markBodyTriggered(tgt)
+  }
+
+  function applyChordToSteps() {
+    const patch: Partial<PlanetSimParams> = {
+      arpLength: Math.min(4, chordNotes.length),
+      arpNote0: chordNotes[0] ?? 48,
+      arpNote1: chordNotes[1] ?? chordNotes[0] ?? 52,
+      arpNote2: chordNotes[2] ?? chordNotes[1] ?? 55,
+      arpNote3: chordNotes[3] ?? chordNotes[2] ?? 59,
+    }
+    setSlotOverride(slotKey, patch)
+  }
+
+  const sectionLabel = (label: string) => (
+    <div style={{ fontSize: 8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5 }}>{label}</div>
+  )
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr 260px', gap: 14, padding: '12px 14px', minHeight: 300 }}>
+      <div style={{ borderRight: `0.5px solid ${border}`, paddingRight: 14 }}>
+        {sectionLabel('Mode')}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 12 }}>
+          {(['arp', 'chord'] as const).map(mode => (
+            <button key={mode} onClick={() => setStr('arpPlayMode', mode)} style={{
+              fontSize: 10, fontWeight: 800, padding: '7px 8px', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+              border: `0.5px solid ${playMode === mode ? accent : border}`,
+              background: playMode === mode ? `${accent}22` : panel,
+              color: playMode === mode ? accent : dim2,
+              textTransform: 'uppercase',
+            }}>{mode}</button>
+          ))}
+        </div>
+
+        {sectionLabel('Timing')}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <span style={{ width: 54, fontSize: 8, color: dim, textAlign: 'right' }}>division</span>
+          <select value={String(getArpParam(overrides, 'orbitTriggerDivision', 0.25))}
+            onChange={e => setNum('orbitTriggerDivision', Number(e.target.value))}
+            style={{ flex: 1, fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px' }}>
+            <option value={1}>1/1</option>
+            <option value={0.5}>1/2</option>
+            <option value={0.25}>1/4</option>
+            <option value={0.125}>1/8</option>
+            <option value={0.0625}>1/16</option>
+          </select>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ width: 54, fontSize: 8, color: dim, textAlign: 'right' }}>length</span>
+          <input type="range" min={1} max={4} step={1} value={Number(getArpParam(overrides, 'arpLength', 4))}
+            onChange={e => setNum('arpLength', Number(e.target.value))}
+            style={{ flex: 1, accentColor: accent }} />
+          <span style={{ width: 16, fontSize: 9, color: accent, fontFamily: 'monospace' }}>{Number(getArpParam(overrides, 'arpLength', 4))}</span>
+        </div>
+      </div>
+
+      <div>
+        {sectionLabel('Arp Steps')}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(70px, 1fr))', gap: 6, marginBottom: 14, opacity: playMode === 'arp' ? 1 : 0.45 }}>
+          {ARP_STEP_KEYS.map((key, i) => {
+            const midi = stepNotes[i]
+            return (
+              <div key={key} onClick={() => preview([midi])} onContextMenu={e => { e.preventDefault(); resetSlotParam(slotKey, key) }} style={{
+                border: `0.5px solid ${border}`, borderRadius: 5, background: panel, padding: 7, cursor: 'pointer', minHeight: 56,
+              }}>
+                <div style={{ fontSize: 8, color: dim, marginBottom: 5 }}>Step {i + 1}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: accent, lineHeight: 1 }}>{midiToNoteName(midi)}</div>
+                <input type="range" min={24} max={84} step={1} value={midi}
+                  onChange={e => setNum(key, Number(e.target.value))}
+                  style={{ width: '100%', accentColor: accent, marginTop: 6 }} />
+              </div>
+            )
+          })}
+        </div>
+
+        {sectionLabel('Chord')}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 8 }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 8, color: dim }}>root
+            <select value={rootPc} onChange={e => setNum('arpChordRoot', Number(e.target.value))}
+              style={{ fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 5px' }}>
+              {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 8, color: dim }}>quality
+            <select value={quality} onChange={e => setStr('arpChordQuality', e.target.value)}
+              style={{ fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 5px' }}>
+              {ARP_CHORD_QUALITIES.map(q => <option key={q} value={q}>{q}</option>)}
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 8, color: dim }}>octave
+            <input type="number" min={0} max={8} value={octave} onChange={e => setNum('arpChordOctave', Number(e.target.value))}
+              style={{ fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 5px' }} />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 8, color: dim }}>inv
+            <input type="number" min={0} max={3} value={inversion} onChange={e => setNum('arpChordInversion', Number(e.target.value))}
+              style={{ fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 5px' }} />
+          </label>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
+          <button onClick={() => preview(chordNotes)} style={{
+            border: `0.5px solid ${accent}66`, borderRadius: 5, background: `${accent}18`,
+            color: accent, fontSize: 11, fontWeight: 800, padding: '7px 10px', cursor: 'pointer', fontFamily: 'inherit',
+          }}>
+            {chordNotes.map(midiToNoteName).join('  ')}
+          </button>
+          <button onClick={applyChordToSteps} style={{
+            border: `0.5px solid ${border}`, borderRadius: 5, background: panel,
+            color: dim2, fontSize: 9, fontWeight: 800, padding: '7px 10px', cursor: 'pointer', fontFamily: 'inherit',
+            whiteSpace: 'nowrap',
+          }}>
+            use as steps
+          </button>
+        </div>
+      </div>
+
+      <div style={{ borderLeft: `0.5px solid ${border}`, paddingLeft: 14 }}>
+        {sectionLabel('Geometry')}
+        <div style={{ aspectRatio: '1 / 1', maxHeight: 220, margin: '0 auto', position: 'relative' }}>
+          <svg viewBox="0 0 220 220" style={{ width: '100%', height: '100%', display: 'block' }}>
+            <circle cx="110" cy="110" r="78" fill={panel} stroke={border} strokeWidth="1" />
+            <polygon
+              points={chordNotes.map(n => {
+                const pc = n % 12
+                const a = (-Math.PI / 2) + (pc / 12) * Math.PI * 2
+                return `${110 + Math.cos(a) * 78},${110 + Math.sin(a) * 78}`
+              }).join(' ')}
+              fill={`${accent}22`}
+              stroke={accent}
+              strokeWidth="1.5"
+            />
+            {NOTE_NAMES.map((name, pc) => {
+              const a = (-Math.PI / 2) + (pc / 12) * Math.PI * 2
+              const x = 110 + Math.cos(a) * 78
+              const y = 110 + Math.sin(a) * 78
+              const active = chordPcs.has(pc)
+              return (
+                <g key={name} onClick={() => setNum('arpChordRoot', pc)} style={{ cursor: 'pointer' }}>
+                  <circle cx={x} cy={y} r={active ? 9 : 6} fill={active ? accent : panel} stroke={active ? accent : border} />
+                  <text x={110 + Math.cos(a) * 98} y={114 + Math.sin(a) * 98} textAnchor="middle" fontSize="9" fill={active ? accent : dim2}>{name}</text>
+                </g>
+              )
+            })}
+          </svg>
+        </div>
       </div>
     </div>
   )
@@ -2544,6 +2805,8 @@ function SlotCard({
         if (['fmDroneRootNote','fmDroneRatio','fmDroneIndex','fmDroneVolume','fmDroneAttack','fmDroneRelease','fmDroneReverbMix'].includes(key) && !isFMOn) return null
         // Noise sub-params: only when noisePadType is 'noise'
         if (['noisePadVolume','noisePadFreq','noisePadQ','noisePadAttack','noisePadRelease','noisePadReverbMix'].includes(key) && !isNoiseOn) return null
+        // Arpeggio's main controls are rendered by InlineArpContent and ArpeggioExpanded.
+        if (isArpTrigger) return null
         // Osc Synth sub-params: only when oscSynthType is 'osc-synth'
         if (['oscSynthWaveform','oscSynthAttack','oscSynthDecay','oscSynthSustain','oscSynthRelease',
              'oscSynthFilterCutoff','oscSynthFilterResonance','oscSynthLevel',
@@ -3444,10 +3707,12 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
               <span style={{ fontSize: 10, fontWeight: 700, color: expandedCs.color }}>{expandedCs.icon} {expandedCs.name}</span>
             )}
           </div>
-          {/* Content: WaveLabView for wave-lab, generic param editor for others */}
+          {/* Content: custom expanded editors where available, generic params otherwise */}
           <div style={{ flex: 1, overflow: 'auto' }}>
             {expandedCs?.id === 'instrument-wave-lab' ? (
               <WaveLabInstrumentExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} />
+            ) : expandedCs?.id === 'trigger-arpeggio' ? (
+              <ArpeggioExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} />
             ) : (
               <GenericSlotExpanded slotKey={expandedSlotKey} simple={simple} />
             )}

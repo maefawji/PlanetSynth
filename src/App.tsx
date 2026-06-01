@@ -116,12 +116,13 @@ export default function App() {
         <DroneLayer /><GranularLayer /><FMDroneLayer /><NoisePadLayer />
         <SamplerLayer /><OneShotLayer />
         <OscSynthLayer />
+        <WaveLabInstrumentLayer />
         {/* Full-screen canvas */}
         <div style={{ position: 'absolute', inset: 0 }}>
-          <PlanetCanvas tool="add-planet" onSelectTool={() => {}} mobileMode />
+          <PlanetCanvas tool={planetTool} onSelectTool={() => {}} mobileMode />
         </div>
         {/* Minimal HUD */}
-        <MobileHud />
+        <MobileHud tool={planetTool} onSetTool={setPlanetTool} />
       </div>
     )
   }

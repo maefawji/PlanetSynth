@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import * as Tone from 'tone'
 import { usePlanetStore } from '../../store/planetStore'
 import { useProjectStore } from '../../store/projectStore'
 import { useControlSetStore } from '../../store/controlSetStore'
@@ -55,6 +56,31 @@ export function getPlanetLiveBodySnapshot(): LiveBodySnap[] {
 // Updated every RAF frame. Prevents rate jitter caused by instantaneous ω variation.
 const _smoothedPeriods = new Map<string, number>()
 const PERIOD_SMOOTH_ALPHA = 0.015  // slow alpha → stable rate for time-stretch
+
+const ARP_CHORD_INTERVALS: Record<string, number[]> = {
+  Major: [0, 4, 7],
+  Minor: [0, 3, 7],
+  Sus2:  [0, 2, 7],
+  Sus4:  [0, 5, 7],
+  Dim:   [0, 3, 6],
+  Aug:   [0, 4, 8],
+  Maj7:  [0, 4, 7, 11],
+  Min7:  [0, 3, 7, 10],
+  Dom7:  [0, 4, 7, 10],
+}
+
+function buildArpChordNotes(tp: Record<string, unknown>): number[] {
+  const rootPc = Math.max(0, Math.min(11, Math.round(Number(tp.arpChordRoot ?? 0))))
+  const octave = Math.max(0, Math.min(8, Math.round(Number(tp.arpChordOctave ?? 3))))
+  const quality = String(tp.arpChordQuality ?? 'Maj7')
+  const intervals = ARP_CHORD_INTERVALS[quality] ?? ARP_CHORD_INTERVALS.Maj7
+  const inversion = Math.max(0, Math.min(intervals.length - 1, Math.round(Number(tp.arpChordInversion ?? 0))))
+  const base = (octave + 1) * 12 + rootPc
+  return intervals.map((iv, i) => {
+    const raised = i < inversion ? 12 : 0
+    return Math.max(0, Math.min(127, base + iv + raised))
+  }).sort((a, b) => a - b)
+}
 
 // Reusable acceleration buffers for verletStep — eliminates per-step heap allocation
 let _prevAxBuf = new Float64Array(0)
@@ -241,6 +267,23 @@ function pushTrail(ring: TrailRing, x: number, y: number): void {
   if (ring.count < ring.capacity) ring.count++
 }
 
+function seedLaunchTrail(ring: TrailRing, dp: DragPlaceState): void {
+  const dx = dp.bodyX - dp.dragX
+  const dy = dp.bodyY - dp.dragY
+  const fallback = Math.abs(dx) + Math.abs(dy) < 0.001
+  for (let i = 0; i < 8; i++) {
+    const t = i / 7
+    const wobble = Math.sin(t * Math.PI * 2) * 0.5
+    pushTrail(
+      ring,
+      dp.dragX + dx * t + (fallback ? i * 0.25 : -dy * 0.02 * wobble),
+      dp.dragY + dy * t + (fallback ? Math.sin(i) * 0.25 : dx * 0.02 * wobble),
+    )
+  }
+}
+
+const MOBILE_MAX_PLANETS = 10
+
 function trailToPoints(ring: TrailRing): string {
   if (ring.count < 2) return ''
   const parts = new Array<string>(ring.count)
@@ -330,7 +373,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   // Arpeggiator: current step index per timerKey
   const arpStepRef      = useRef<Map<string, number>>(new Map())
   // Arpeggiator: last note fired per timerKey (for monophonic noteOff on next step)
-  const arpPrevNoteRef  = useRef<Map<string, number>>(new Map())
+  const arpPrevNoteRef  = useRef<Map<string, number[]>>(new Map())
 
   // Sync storeBodiesRef + purge deleted bodies from live simulation
   useEffect(() => {
@@ -964,8 +1007,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 if (lastWall === undefined || (nowMs - lastWall) >= intervalMs) {
                   lastTriggerWallMsRef.current.set(timerKey, nowMs)
 
-                  // ── Arpeggiator: pick note from sequence ─────────────────────
-                  const arpMode  = Boolean((tp as Record<string, unknown>).arpMode)
+                  // ── Arpeggiator / chord trigger notes ────────────────────────
+                  const tpRecord = tp as Record<string, unknown>
+                  const arpMode  = Boolean(tpRecord.arpMode)
+                  const arpPlayMode = String(tpRecord.arpPlayMode ?? 'arp')
                   const arpLen   = Math.max(1, Math.min(4, Number((tp as Record<string, unknown>).arpLength ?? 4)))
                   const arpNotes = [
                     Number((tp as Record<string, unknown>).arpNote0 ?? 48),
@@ -973,21 +1018,31 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                     Number((tp as Record<string, unknown>).arpNote2 ?? 55),
                     Number((tp as Record<string, unknown>).arpNote3 ?? 59),
                   ]
-                  let fireNote = sbi.midiNote ?? 60
+                  let fireNotes = [sbi.midiNote ?? 60]
                   if (arpMode) {
-                    // Release previous step's note before firing next (monophonic arp)
-                    const prevNote = arpPrevNoteRef.current.get(timerKey)
-                    if (prevNote !== undefined) {
-                      getBodyOscSynthEngine(b.id)?.noteOff(prevNote)
-                      getBodyWaveLabEngine(b.id)?.noteOff(prevNote)
+                    // Release previous step/chord before firing next.
+                    const prevNotes = arpPrevNoteRef.current.get(timerKey) ?? []
+                    if (prevNotes.length > 0) {
+                      const oscEng = getBodyOscSynthEngine(b.id)
+                      const waveEng = getBodyWaveLabEngine(b.id)
+                      for (const prevNote of prevNotes) {
+                        oscEng?.noteOff(prevNote)
+                        waveEng?.noteOff(prevNote)
+                      }
                     }
-                    const step = arpStepRef.current.get(timerKey) ?? 0
-                    fireNote = arpNotes[step % arpLen]
-                    arpStepRef.current.set(timerKey, (step + 1) % arpLen)
-                    arpPrevNoteRef.current.set(timerKey, fireNote)
+                    if (arpPlayMode === 'chord') {
+                      fireNotes = buildArpChordNotes(tpRecord)
+                    } else {
+                      const step = arpStepRef.current.get(timerKey) ?? 0
+                      fireNotes = [arpNotes[step % arpLen]]
+                      arpStepRef.current.set(timerKey, (step + 1) % arpLen)
+                    }
+                    arpPrevNoteRef.current.set(timerKey, fireNotes)
                   }
 
-                  sendMidiNote(sbi.midiChannel ?? 1, fireNote, sbi.midiVelocity ?? 100, 200)
+                  for (const fireNote of fireNotes) {
+                    sendMidiNote(sbi.midiChannel ?? 1, fireNote, sbi.midiVelocity ?? 100, 200)
+                  }
                   if (ti === 0) {
                     const tpNumer = Number((bodyParams as Record<string, unknown>).orbitLoopNumer ?? 1)
                     const tpDenom = Number((bodyParams as Record<string, unknown>).orbitLoopDenom ?? 1)
@@ -1002,7 +1057,15 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                           orbitSource: (bodyParams as Record<string, unknown>).sampleOrbitSource as string ?? 'current',
                         }) ?? 1)
                       : 1
-                    if (fireBodyInstrumentTrigger(b.id, tpRate, arpMode ? fireNote : undefined)) {
+                    const supportsPitchedNotes =
+                      rack.instrument === 'instrument-wave-lab' ||
+                      rack.instrument === 'instrument-osc-synth-orbit'
+                    const instrumentNotes = supportsPitchedNotes ? fireNotes : [fireNotes[0]]
+                    let consumed = false
+                    for (const fireNote of instrumentNotes) {
+                      consumed = fireBodyInstrumentTrigger(b.id, tpRate, arpMode ? fireNote : undefined) || consumed
+                    }
+                    if (consumed) {
                       markBodyTriggered(b.id)
                     } else {
                       const sample = resolveBodySamplerSample(b.id, sbi.sampleId, smpArr)
@@ -1407,7 +1470,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       id: newBody.id, mass: newBody.mass, x: dp.bodyX, y: dp.bodyY,
       vx, vy, ax: 0, ay: 0, fixed: newBody.fixed,
     })
-    trailsRef.current.set(newBody.id, makeTrail(simParamsRef.current.trailLength))
+    const launchTrail = makeTrail(simParamsRef.current.trailLength)
+    if (!isSun) seedLaunchTrail(launchTrail, dp)
+    trailsRef.current.set(newBody.id, launchTrail)
+    _trailsSnap.set(newBody.id, launchTrail)
     computeAccels(liveBodiesRef.current, simParamsRef.current.G, simParamsRef.current.epsilon)
     setSelectedBodyId(newBody.id)
 
@@ -1418,6 +1484,41 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       cs.addBodyTrigger(newBody.id, 'trigger-empty')
       cs.setBodySlot(newBody.id, 'instrument', 'instrument-empty')
       cs.addBodyEffect(newBody.id, 'effect-empty')
+    } else if (mobileMode) {
+      const cs = useControlSetStore.getState()
+      cs.clearBodyRack(newBody.id)
+      cs.addBodyTrigger(newBody.id, 'trigger-arpeggio')
+      cs.setBodySlot(newBody.id, 'instrument', 'instrument-wave-lab')
+
+      const mobilePlanets = storeBodiesRef.current.filter(b => b.type === 'planet')
+      const overflow = mobilePlanets.length - MOBILE_MAX_PLANETS
+      if (overflow > 0) {
+        const removeIds = mobilePlanets.slice(0, overflow).map(b => b.id)
+        for (const id of removeIds) {
+          usePlanetStore.getState().removeBody(id)
+          useControlSetStore.getState().clearBodyRack(id)
+          destroyEffectorBus(id)
+          liveBodiesRef.current = liveBodiesRef.current.filter(b => b.id !== id)
+          storeBodiesRef.current = storeBodiesRef.current.filter(b => b.id !== id)
+          storeBodiesMapRef.current.delete(id)
+          trailsRef.current.delete(id)
+          _trailsSnap.delete(id)
+          prevAngleRef.current.delete(id)
+          lfoAccumRef.current.delete(id)
+          lastTriggerSimTimeRef.current.delete(id)
+          lastTriggerWallMsRef.current.delete(id)
+          tperiodIntervalMsRef.current.delete(id)
+          lastOrbitCrossWallMsRef.current.delete(id)
+          measuredRealTMsRef.current.delete(id)
+          planetBodyStatsCache.delete(id)
+          toggleStateRef.current.delete(id)
+          arpStepRef.current.delete(id)
+          arpPrevNoteRef.current.delete(id)
+          clearBodyOutputLevel(id, 'sampler')
+        }
+        if (liveBodiesRef.current.length > 0)
+          computeAccels(liveBodiesRef.current, simParamsRef.current.G, simParamsRef.current.epsilon)
+      }
     }
 
     const _launchId = newBody.id
@@ -1439,7 +1540,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
         setBodyOutputLevel(_launchId, 'sampler', finalVol, 900)
       }
       markBodyTriggered(_launchId)
-    }, 150)
+    }, mobileMode ? 300 : 150)
   }
 
   // ── Mobile touch handlers (non-passive, attached in useEffect) ────────────────
@@ -1451,7 +1552,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
 
     let launchId: number | null = null
     let pinchIds: [number, number] | null = null
-    let pinchDist = 0
+    let panMid: { sx: number; sy: number; ox: number; oy: number } | null = null
 
     function getTouchById(list: TouchList, id: number): Touch | null {
       for (let i = 0; i < list.length; i++) if (list[i].identifier === id) return list[i]
@@ -1471,48 +1572,47 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
 
     function onStart(e: TouchEvent) {
       e.preventDefault()
+      void Tone.start()
       if (e.touches.length === 1 && launchId === null && pinchIds === null) {
         const t = e.touches[0]
         launchId = t.identifier
         const { sx, sy } = svgPos(t)
         const { wx, wy } = tw(sx, sy)
-        const dp: DragPlaceState = { bodyX: wx, bodyY: wy, dragX: wx, dragY: wy, tool: 'add-planet' }
+        const currentTool = toolRef.current === 'add-sun' ? 'add-sun' : 'add-planet'
+        const dp: DragPlaceState = { bodyX: wx, bodyY: wy, dragX: wx, dragY: wy, tool: currentTool }
         dragPlaceRef.current = dp
         setDragPlace({ ...dp })
       } else if (e.touches.length >= 2) {
-        // Cancel any ongoing launch and switch to pinch
+        // Cancel any ongoing launch and switch to two-finger pan.
         launchId = null
         dragPlaceRef.current = null
         setDragPlace(null)
         const t0 = e.touches[0], t1 = e.touches[1]
         pinchIds = [t0.identifier, t1.identifier]
-        const dx = t1.clientX - t0.clientX, dy = t1.clientY - t0.clientY
-        pinchDist = Math.sqrt(dx * dx + dy * dy)
+        const r = svg.getBoundingClientRect()
+        panMid = {
+          sx: (t0.clientX + t1.clientX) / 2 - r.left,
+          sy: (t0.clientY + t1.clientY) / 2 - r.top,
+          ox: viewOffsetRef.current.x,
+          oy: viewOffsetRef.current.y,
+        }
       }
     }
 
     function onMove(e: TouchEvent) {
       e.preventDefault()
       if (pinchIds !== null && e.touches.length >= 2) {
-        // Pinch zoom: scale around midpoint
+        // Two-finger swipe: pan viewport.
         const t0 = getTouchById(e.touches, pinchIds[0])
         const t1 = getTouchById(e.touches, pinchIds[1])
-        if (!t0 || !t1) return
-        const dx = t1.clientX - t0.clientX, dy = t1.clientY - t0.clientY
-        const newDist = Math.sqrt(dx * dx + dy * dy)
-        if (pinchDist > 0) {
-          const r    = svg.getBoundingClientRect()
-          const midSx = (t0.clientX + t1.clientX) / 2 - r.left
-          const midSy = (t0.clientY + t1.clientY) / 2 - r.top
-          const cx = sizeRef.current.w / 2, cy = sizeRef.current.h / 2
-          const curZ = zoomRef.current, curO = viewOffsetRef.current
-          const wx = (midSx - cx) / curZ + curO.x
-          const wy = (midSy - cy) / curZ + curO.y
-          const nz = Math.max(0.02, Math.min(50, curZ * (newDist / pinchDist)))
-          setZoomSync(nz)
-          setViewOffsetSync({ x: wx - (midSx - cx) / nz, y: wy - (midSy - cy) / nz })
-        }
-        pinchDist = newDist
+        if (!t0 || !t1 || !panMid) return
+        const r = svg.getBoundingClientRect()
+        const midSx = (t0.clientX + t1.clientX) / 2 - r.left
+        const midSy = (t0.clientY + t1.clientY) / 2 - r.top
+        setViewOffsetSync({
+          x: panMid.ox - (midSx - panMid.sx) / zoomRef.current,
+          y: panMid.oy - (midSy - panMid.sy) / zoomRef.current,
+        })
       } else if (launchId !== null && dragPlaceRef.current) {
         // Single finger: update velocity vector
         const t = getTouchById(e.touches, launchId)
@@ -1541,7 +1641,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           launchId = null
         }
       }
-      if (e.touches.length < 2) { pinchIds = null; pinchDist = 0 }
+      if (e.touches.length < 2) { pinchIds = null; panMid = null }
     }
 
     svg.addEventListener('touchstart',  onStart, { passive: false })

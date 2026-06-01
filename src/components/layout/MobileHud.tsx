@@ -3,8 +3,15 @@
 // Shows: Pause/Play, Reset, body count.
 
 import { usePlanetStore } from '../../store/planetStore'
+import type { PlanetTool } from '../planet/PlanetCanvas'
 
-export function MobileHud() {
+export function MobileHud({
+  tool,
+  onSetTool,
+}: {
+  tool: PlanetTool
+  onSetTool: (tool: PlanetTool) => void
+}) {
   const paused  = usePlanetStore(s => s.simParams.paused)
   const bodies  = usePlanetStore(s => s.bodies)
   const updateSimParams = usePlanetStore(s => s.updateSimParams)
@@ -20,6 +27,36 @@ export function MobileHud() {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     WebkitTapHighlightColor: 'transparent',
     userSelect: 'none',
+  }
+  const toolBtn = (target: 'add-sun' | 'add-planet', label: string, color: string) => {
+    const active = tool === target
+    return (
+      <button
+        key={target}
+        style={{
+          width: 44,
+          height: 34,
+          borderRadius: 17,
+          border: `0.5px solid ${active ? color : 'rgba(255,255,255,0.16)'}`,
+          background: active ? `${color}33` : 'rgba(15,15,28,0.68)',
+          backdropFilter: 'blur(8px)',
+          color: active ? color : 'rgba(255,255,255,0.55)',
+          fontSize: 15,
+          fontWeight: 800,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          WebkitTapHighlightColor: 'transparent',
+          userSelect: 'none',
+        }}
+        onTouchEnd={e => { e.preventDefault(); onSetTool(target) }}
+        onClick={() => onSetTool(target)}
+        title={target === 'add-sun' ? 'Add Sun' : 'Add Planet'}
+      >
+        {label}
+      </button>
+    )
   }
 
   return (
@@ -37,6 +74,11 @@ export function MobileHud() {
       >
         {paused ? '▶' : '⏸'}
       </button>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {toolBtn('add-sun', '☀', '#f59e0b')}
+        {toolBtn('add-planet', '●', '#60a5fa')}
+      </div>
 
       {/* Reset */}
       <button

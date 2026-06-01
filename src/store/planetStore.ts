@@ -250,11 +250,16 @@ export interface PlanetSimParams {
 
   // ── Arpeggiator trigger ───────────────────────────────────────────────────
   arpMode:   boolean   // true = this trigger cycles through arp notes
+  arpPlayMode: 'arp' | 'chord'
   arpLength: number    // active step count 1–4
   arpNote0:  number    // step 0 (default 48 = C3)
   arpNote1:  number    // step 1 (default 52 = E3)
   arpNote2:  number    // step 2 (default 55 = G3)
   arpNote3:  number    // step 3 (default 59 = B3)
+  arpChordRoot: number
+  arpChordQuality: 'Major' | 'Minor' | 'Sus2' | 'Sus4' | 'Dim' | 'Aug' | 'Maj7' | 'Min7' | 'Dom7'
+  arpChordOctave: number
+  arpChordInversion: number
 }
 
 // ── Next-body placement defaults ──────────────────────────────────────────────
@@ -492,11 +497,16 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   oneShotType: 'off',
 
   arpMode:   false,
+  arpPlayMode: 'arp',
   arpLength: 4,
   arpNote0:  48,  // C3
   arpNote1:  52,  // E3
   arpNote2:  55,  // G3
   arpNote3:  59,  // B3
+  arpChordRoot: 0,
+  arpChordQuality: 'Maj7',
+  arpChordOctave: 3,
+  arpChordInversion: 0,
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
