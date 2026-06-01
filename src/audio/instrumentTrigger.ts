@@ -9,6 +9,7 @@ import { useControlSetStore } from '../store/controlSetStore'
 import { usePlanetStore } from '../store/planetStore'
 import { getBodyOneShotEngine } from './OneShotSamplerEngine'
 import { getBodyOscSynthEngine } from '../components/planet/OscSynthLayer'
+import { getBodyWaveLabEngine } from '../components/planet/WaveLabInstrumentLayer'
 
 /**
  * Fire a trigger event on the body's active instrument engine.
@@ -63,6 +64,18 @@ export function fireBodyInstrumentTrigger(bodyId: string, playbackRate = 1, note
     const release = Number(ep.oscSynthRelease ?? 1.5)
     eng.noteOn(note, (body?.midiVelocity ?? 100) / 127)
     // Schedule noteOff after 2× release (the engine's release envelope takes care of the tail)
+    setTimeout(() => eng.noteOff(note), Math.max(300, release * 2000))
+    return true
+  }
+
+  if (rack.instrument === 'instrument-wave-lab') {
+    const eng = getBodyWaveLabEngine(bodyId)
+    if (!eng) return false
+    const body    = usePlanetStore.getState().bodies.find(b => b.id === bodyId)
+    const ep      = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
+    const note    = noteOverride ?? (body?.midiNote ?? 60)
+    const release = Number(ep.oscSynthRelease ?? 1.5)
+    eng.noteOn(note, (body?.midiVelocity ?? 100) / 127)
     setTimeout(() => eng.noteOff(note), Math.max(300, release * 2000))
     return true
   }

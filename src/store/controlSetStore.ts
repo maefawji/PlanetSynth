@@ -446,6 +446,46 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       samplePitchCorrection: false,
     },
   },
+  {
+    id: 'instrument-wave-lab',
+    name: 'Wave Lab',
+    icon: '∿',
+    color: '#34d399',
+    category: 'instrument',
+    description:
+      '軌道のtrailデータをウェーブテーブルに変換するシンセ。\n' +
+      'X/Y/r/θ/spdシグナルを複数選択して加算合成。\n' +
+      'ADSR・LFOは軌道パラメータから自動マッピング。',
+    params: {
+      wavLabType:              'wave-lab',
+      wavLabSig:               'x',           // comma-separated: 'x', 'x,y', 'r', etc.
+      oscSynthAttack:          0.05,
+      oscSynthDecay:           0.3,
+      oscSynthSustain:         0.7,
+      oscSynthRelease:         1.0,
+      oscSynthFilterCutoff:    2000,
+      oscSynthFilterResonance: 0.4,
+      oscSynthLevel:           0.55,
+      oscSynthLfoTarget:       'off' as const,
+      oscSynthLfoRate:         1.0,
+      oscSynthLfoDepth:        0.3,
+      oscSynthLfoWaveform:     'sine' as const,
+      oscSynthAttackSource:    'period',
+      oscSynthAttackRate:      0.06,
+      oscSynthDecaySource:     'eccentricity',
+      oscSynthDecayRate:       8.0,
+      oscSynthSustainSource:   'distance',
+      oscSynthSustainRate:     0.003,
+      oscSynthReleaseSource:   'period',
+      oscSynthReleaseRate:     0.2,
+      oscSynthCutoffSource:    'velocity',
+      oscSynthCutoffRate:      600,
+      oscSynthLfoRateSource:   'eccentricity',
+      oscSynthLfoRateRate:     5.0,
+      oscSynthLfoDepthSource:  'eccentricity',
+      oscSynthLfoDepthRate:    0.8,
+    },
+  },
 ]
 
 // ── Rack types ────────────────────────────────────────────────────────────────

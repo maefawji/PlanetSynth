@@ -12,6 +12,7 @@ import { SamplerLayer } from './components/planet/SamplerLayer'
 import { OneShotLayer } from './components/planet/OneShotLayer'
 import { AmbientOscillatorLayer } from './components/planet/AmbientOscillatorLayer'
 import { OscSynthLayer } from './components/planet/OscSynthLayer'
+import { WaveLabInstrumentLayer } from './components/planet/WaveLabInstrumentLayer'
 import { SamplerInstrumentPanel } from './components/sampler/SamplerInstrumentPanel'
 import { OneShotSamplerPanel } from './components/sampler/OneShotSamplerPanel'
 import { ChordGeometryLab } from './components/chord/ChordGeometryLab'
@@ -141,6 +142,7 @@ export default function App() {
       <OneShotLayer />
       <AmbientOscillatorLayer />
       <OscSynthLayer />
+      <WaveLabInstrumentLayer />
 
       {appMode === 'chord-lab' ? (
         /* ── Chord Geometry Lab ─────────────────────────────────────────── */

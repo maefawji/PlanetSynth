@@ -1065,7 +1065,7 @@ function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import
 
       {/* Param tags */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-        {Object.entries(cs.params).map(([k, v]) => (
+        {Object.entries(cs.params).filter(([k]) => !k.endsWith('Type') && !k.endsWith('Source')).map(([k, v]) => (
           <span key={k} style={{
             fontSize: 8, fontFamily: 'monospace',
             background: t.tagBg, borderRadius: 3, padding: '1px 5px',

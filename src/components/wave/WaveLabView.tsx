@@ -149,8 +149,20 @@ function TrailWaveform({ pts, signals, zoom, offset }: {
 
 // ── Synthesis waveform (sum of checked signals, normalized) ───────────────────
 
-function SynthesisWaveform({ pts, signals, zoom, offset, dimColor }: {
-  pts: TrailPoint[]; signals: Signal[]; zoom: number; offset: number; dimColor: string
+function makeFallbackPts(wf: string, n = 512): TrailPoint[] {
+  return Array.from({ length: n }, (_, i) => {
+    const t = i / n
+    let y: number
+    if (wf === 'triangle') y = t < 0.5 ? 4*t-1 : 3-4*t
+    else if (wf === 'sawtooth') y = 2*t - 1
+    else if (wf === 'square')   y = t < 0.5 ? 1 : -1
+    else                        y = Math.sin(2*Math.PI*t)  // sine default
+    return { x: i, y }
+  })
+}
+
+function SynthesisWaveform({ pts, signals, zoom, offset, dimColor, fallbackWaveform }: {
+  pts: TrailPoint[]; signals: Signal[]; zoom: number; offset: number; dimColor: string; fallbackWaveform?: string
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
@@ -164,9 +176,20 @@ function SynthesisWaveform({ pts, signals, zoom, offset, dimColor }: {
     for (let y=0;y<=4;y++){const py=H/4*y;ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(W,py);ctx.stroke()}
     ctx.strokeStyle='rgba(255,255,255,0.09)';ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke()
 
+    // fallback: draw standard waveform when no trail
     if (pts.length < 2 || signals.length === 0) {
-      ctx.fillStyle = dimColor; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'
-      ctx.fillText('← paste trail JSON', W/2, H/2 + 4)
+      if (fallbackWaveform) {
+        const fbPts = makeFallbackPts(fallbackWaveform)
+        ctx.beginPath(); ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.6; ctx.lineJoin='round'
+        fbPts.forEach((p,i) => {
+          const px = (i/(fbPts.length-1))*W, py = ((1-p.y)/2)*H
+          i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py)
+        })
+        ctx.stroke(); ctx.globalAlpha = 1
+      } else {
+        ctx.fillStyle = dimColor; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'
+        ctx.fillText('← paste trail JSON', W/2, H/2 + 4)
+      }
       return
     }
     const total = pts.length, viewLen = Math.max(2, Math.floor(total/zoom))
@@ -411,7 +434,7 @@ export function WaveLabView() {
                 ▶ use as wavetable
               </button>
             </div>
-            <SynthesisWaveform pts={trailPts} signals={signals} zoom={zoom} offset={offset} dimColor={dim} />
+            <SynthesisWaveform pts={trailPts} signals={signals} zoom={zoom} offset={offset} dimColor={dim} fallbackWaveform={params.waveform} />
           </div>
 
           {/* Oscilloscope */}

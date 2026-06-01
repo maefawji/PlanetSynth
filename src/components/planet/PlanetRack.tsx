@@ -12,6 +12,7 @@ import {
 } from '../../store/controlSetStore'
 import { computeOrbitDroneParams, computeOrbitStats } from './DroneLayer'
 import { getPlanetLiveBodySnapshot, planetBodyStatsCache, getBodyTrailPoints, type PlanetBodyStats, type PlanetTool } from './PlanetCanvas'
+import { getBodyWaveLabEngine } from './WaveLabInstrumentLayer'
 import { PlanetBodyInspector, NextBodyInspector } from '../layout/RightInspector'
 import { draggingControlSetId, setDraggingControlSetId } from '../../lib/dragControlSet'
 import { getBodyOutputLevel } from '../../audio/bodyOutputMeter'
@@ -1894,10 +1895,340 @@ function InstrumentEffectorBridge({ bodyId, simple }: { bodyId: string | null; s
 
 // ── Slot card (filled) ────────────────────────────────────────────────────────
 
+// ── Wave Lab expanded panel ───────────────────────────────────────────────────
+
+const WAV_SIGS = ['x','y','r','angle','speed'] as const
+const WAV_SIG_COLORS: Record<string, string> = { x:'#60a5fa', y:'#34d399', r:'#a78bfa', angle:'#fbbf24', speed:'#f87171' }
+const WAV_SIG_LABELS: Record<string, string> = { x:'X', y:'Y', r:'r', angle:'θ', speed:'spd' }
+
+function WaveLabOscillo({ analyser }: { analyser: AnalyserNode | null }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const rafRef    = useRef(0)
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return
+    const ctx = canvas.getContext('2d'); if (!ctx) return
+    const W = canvas.width, H = canvas.height
+    function draw() {
+      rafRef.current = requestAnimationFrame(draw)
+      ctx.clearRect(0,0,W,H)
+      ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fillRect(0,0,W,H)
+      ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 0.5
+      ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke()
+      if (!analyser) {
+        ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='8px sans-serif'; ctx.textAlign='center'
+        ctx.fillText('no signal', W/2, H/2+3); return
+      }
+      const buf = new Float32Array(analyser.fftSize)
+      analyser.getFloatTimeDomainData(buf)
+      ctx.beginPath(); ctx.strokeStyle='#34d399'; ctx.lineWidth=1.5; ctx.lineJoin='round'
+      buf.forEach((v,i) => {
+        const px = (i/(buf.length-1))*W, py = (0.5-v*0.45)*H
+        i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py)
+      })
+      ctx.stroke()
+    }
+    draw()
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [analyser])
+  return <canvas ref={canvasRef} width={360} height={120} style={{width:'100%',height:'100%',display:'block'}} />
+}
+
+const ORBIT_SOURCES = ['off','period','eccentricity','distance','velocity','accel'] as const
+const ORBIT_SRC_LABELS: Record<string,string> = { off:'—', period:'T', eccentricity:'ecc', distance:'r', velocity:'v', accel:'a' }
+const LFO_TARGETS = ['off','pitch','filter','amplitude'] as const
+const LFO_TARGET_LABELS: Record<string,string> = { off:'Off', pitch:'Pitch', filter:'Filt', amplitude:'Amp' }
+const LFO_WAVES = ['sine','triangle','sawtooth','square'] as const
+const LFO_WAVE_LABELS: Record<string,string> = { sine:'Sine', triangle:'Tri', sawtooth:'Saw', square:'Sq' }
+
+// Standalone slider row — must be module-level to avoid remount on every parent render
+function WLSliderRow({ label, paramKey, min, max, step, fmt, srcKey, rateKey, showSrc,
+  ep, dim, dim2, accent, onSetNum, onSetStr }: {
+  label: string; paramKey: string; min: number; max: number; step: number
+  fmt: (v: number) => string; srcKey?: string; rateKey?: string; showSrc: boolean
+  ep: Record<string, unknown>; dim: string; dim2: string; accent: string
+  onSetNum: (key: string, val: number) => void
+  onSetStr: (key: string, val: string) => void
+}) {
+  const storeVal = Number(ep[paramKey] ?? 0)
+  const [drag, setDrag] = useState<number | null>(null)
+  const val = drag ?? storeVal
+  const src  = srcKey  ? String(ep[srcKey]  ?? 'off') : null
+  const rate = rateKey ? Number(ep[rateKey] ?? 1)     : null
+  return (
+    <div style={{ marginBottom: 3 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+        <span style={{ fontSize:8.5, color:dim, width:50, flexShrink:0, textAlign:'right' }}>{label}</span>
+        <input type="range" min={min} max={max} step={step} value={val}
+          onMouseDown={() => setDrag(storeVal)}
+          onChange={e => setDrag(parseFloat(e.target.value))}
+          onMouseUp={e => { const v = parseFloat((e.target as HTMLInputElement).value); setDrag(null); onSetNum(paramKey, v) }}
+          style={{ flex:1, accentColor:accent, minWidth:0, cursor:'ew-resize' }} />
+        <span style={{ fontSize:8.5, fontFamily:'monospace', color:accent, width:46, textAlign:'right', flexShrink:0 }}>
+          {fmt(val)}
+        </span>
+      </div>
+      {srcKey && rateKey && showSrc && (
+        <div style={{ display:'flex', alignItems:'center', gap:3, marginTop:1, paddingLeft:54 }}>
+          <span style={{ fontSize:7.5, color:dim, marginRight:2 }}>src</span>
+          {ORBIT_SOURCES.filter(s => s !== 'off').map(s => (
+            <button key={s} onClick={() => onSetStr(srcKey, s)} style={{
+              fontSize:7, padding:'1px 5px', borderRadius:3, fontFamily:'inherit', cursor:'pointer',
+              border:`0.5px solid ${src===s ? accent+'88' : 'rgba(255,255,255,0.08)'}`,
+              background: src===s ? accent+'20' : 'transparent',
+              color: src===s ? accent : dim,
+            }}>{ORBIT_SRC_LABELS[s]}</button>
+          ))}
+          <span style={{ fontSize:7.5, color:dim, marginLeft:4 }}>×</span>
+          <input type="number" value={rate ?? 1} step={0.01}
+            onChange={e => onSetNum(rateKey, parseFloat(e.target.value))}
+            style={{ width:44, fontSize:8, fontFamily:'monospace', padding:'1px 3px', borderRadius:3,
+              border:'0.5px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.05)',
+              color:dim2, outline:'none' }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WaveLabInstrumentExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; slotKey: string; simple: boolean }) {
+  const { getBodyEffectiveParams, setSlotOverride } = useControlSetStore()
+  const ep = (bodyId
+    ? getBodyEffectiveParams(bodyId)
+    : useControlSetStore.getState().rackParamOverrides['g:instrument'] ?? {}
+  ) as Record<string, unknown>
+
+  const [manualADSR, setManualADSR] = useState(false)
+
+  const dim    = simple ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'
+  const dim2   = simple ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)'
+  const bg2    = simple ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.04)'
+  const accent = '#34d399'
+
+  const currentSig = String(ep.wavLabSig ?? 'x')
+  const selectedSigs = currentSig.split(',').filter(s => WAV_SIGS.includes(s as typeof WAV_SIGS[number]))
+
+  const toggleSig = useCallback((sig: string) => {
+    const prev = (ep.wavLabSig ? String(ep.wavLabSig) : 'x').split(',').filter(s => WAV_SIGS.includes(s as typeof WAV_SIGS[number]))
+    const next = prev.includes(sig) ? prev.filter(s => s !== sig) : [...prev, sig]
+    setSlotOverride(slotKey, { wavLabSig: next.length > 0 ? next.join(',') : 'x' })
+  }, [ep, slotKey, setSlotOverride])
+
+  const setNum = useCallback((key: string, val: number) => setSlotOverride(slotKey, { [key]: val }), [slotKey, setSlotOverride])
+  const setStr = useCallback((key: string, val: string) => setSlotOverride(slotKey, { [key]: val }), [slotKey, setSlotOverride])
+
+  const trailPts = bodyId ? getBodyTrailPoints(bodyId) : null
+  const lfoTarget = String(ep.oscSynthLfoTarget ?? 'off')
+  const lfoWave   = String(ep.oscSynthLfoWaveform ?? 'sine')
+  const lfoOn     = lfoTarget !== 'off'
+
+  const sliderProps = { ep, dim, dim2, accent, showSrc: !manualADSR, onSetNum: setNum, onSetStr: setStr }
+
+  const secLabel = (label: string) => (
+    <div style={{ fontSize:8, fontWeight:700, color:dim, textTransform:'uppercase', letterSpacing:'0.07em', marginTop:8, marginBottom:4 }}>{label}</div>
+  )
+
+  const engine = bodyId ? getBodyWaveLabEngine(bodyId) : null
+
+  return (
+    <div style={{ display:'flex', gap:0, height: 380, overflow:'hidden' }}>
+
+      {/* Left: signal selector / synthesis / oscilloscope */}
+      <div style={{ width:200, flexShrink:0, borderRight:`0.5px solid ${simple?'rgba(0,0,0,0.07)':'rgba(255,255,255,0.06)'}`, padding:'8px 10px', display:'flex', flexDirection:'column', gap:0 }}>
+        {/* Signal selector */}
+        <div style={{ fontSize:8, fontWeight:700, color:dim, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:4 }}>Wavetable Signal</div>
+        <div style={{ display:'flex', gap:3, flexWrap:'wrap', marginBottom:6 }}>
+          {WAV_SIGS.map(s => {
+            const on = selectedSigs.includes(s)
+            return (
+              <button key={s} onClick={() => toggleSig(s)} style={{
+                fontSize:9, fontWeight:700, padding:'2px 8px', borderRadius:4, fontFamily:'inherit', cursor:'pointer',
+                border:`0.5px solid ${on ? WAV_SIG_COLORS[s]+'bb' : 'rgba(255,255,255,0.1)'}`,
+                background: on ? `${WAV_SIG_COLORS[s]}28` : 'transparent',
+                color: on ? WAV_SIG_COLORS[s] : dim,
+              }}>{WAV_SIG_LABELS[s]}</button>
+            )
+          })}
+        </div>
+        {/* Orbit Trail: individual signals */}
+        <div style={{ fontSize:7.5, color:dim, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Orbit Trail</div>
+        <div style={{ height:72, background:bg2, borderRadius:3, overflow:'hidden', flexShrink:0, marginBottom:5 }}>
+          {trailPts && trailPts.length >= 2
+            ? <WaveLabMiniCanvas pts={trailPts} sigs={selectedSigs} />
+            : <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, color:dim }}>{trailPts ? '…' : 'no body'}</div>
+          }
+        </div>
+        {/* Synthesis: summed waveform */}
+        <div style={{ fontSize:7.5, color:dim, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Synthesis</div>
+        <div style={{ height:72, background:bg2, borderRadius:3, overflow:'hidden', flexShrink:0, marginBottom:5 }}>
+          {trailPts && trailPts.length >= 2
+            ? <WaveLabMiniSynth pts={trailPts} sigs={selectedSigs} />
+            : <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, color:dim }}>{trailPts ? '…' : 'no body'}</div>
+          }
+        </div>
+        {/* Oscilloscope */}
+        <div style={{ fontSize:7.5, color:dim, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Oscilloscope</div>
+        <div style={{ flex:1, minHeight:0, background:bg2, borderRadius:3, overflow:'hidden' }}>
+          <WaveLabOscillo analyser={engine?.analyserNode ?? null} />
+        </div>
+      </div>
+
+      {/* Center: Envelope + Filter */}
+      <div style={{ width:270, flexShrink:0, borderRight:`0.5px solid ${simple?'rgba(0,0,0,0.07)':'rgba(255,255,255,0.06)'}`, padding:'10px 12px', overflowY:'auto' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+          <span style={{ fontSize:8, fontWeight:700, color:dim, textTransform:'uppercase', letterSpacing:'0.07em' }}>Envelope / Filter</span>
+          <button onClick={() => setManualADSR(v => !v)} style={{
+            fontSize:7, padding:'1px 7px', borderRadius:3, fontFamily:'inherit', cursor:'pointer',
+            border:`0.5px solid ${manualADSR ? '#fbbf2488' : 'rgba(255,255,255,0.1)'}`,
+            background: manualADSR ? 'rgba(251,191,36,0.15)' : 'transparent',
+            color: manualADSR ? '#fbbf24' : dim,
+          }}>{manualADSR ? '✎ manual' : '⟳ orbit src'}</button>
+        </div>
+        <WLSliderRow label="Level"   paramKey="oscSynthLevel"           min={0}     max={1}     step={0.01} fmt={v=>v.toFixed(2)}        {...sliderProps} />
+        <WLSliderRow label="Attack"  paramKey="oscSynthAttack"          min={0.001} max={20}    step={0.05} fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthAttackSource"  rateKey="oscSynthAttackRate"  {...sliderProps} />
+        <WLSliderRow label="Decay"   paramKey="oscSynthDecay"           min={0.01}  max={10}    step={0.05} fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthDecaySource"   rateKey="oscSynthDecayRate"   {...sliderProps} />
+        <WLSliderRow label="Sustain" paramKey="oscSynthSustain"         min={0}     max={1}     step={0.01} fmt={v=>v.toFixed(2)}        srcKey="oscSynthSustainSource" rateKey="oscSynthSustainRate" {...sliderProps} />
+        <WLSliderRow label="Release" paramKey="oscSynthRelease"         min={0.01}  max={30}    step={0.1}  fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthReleaseSource" rateKey="oscSynthReleaseRate" {...sliderProps} />
+        <WLSliderRow label="Cutoff"  paramKey="oscSynthFilterCutoff"    min={80}    max={12000}  step={50}  fmt={v=>`${Math.round(v)}Hz`} srcKey="oscSynthCutoffSource"  rateKey="oscSynthCutoffRate"  {...sliderProps} />
+        <WLSliderRow label="Q"       paramKey="oscSynthFilterResonance" min={0.01}  max={15}    step={0.05} fmt={v=>v.toFixed(2)}        {...sliderProps} />
+      </div>
+
+      {/* Right: LFO */}
+      <div style={{ flex:1, padding:'10px 12px', overflowY:'auto' }}>
+        {secLabel('LFO')}
+        <div style={{ display:'flex', gap:3, flexWrap:'wrap', marginBottom:6 }}>
+          {LFO_TARGETS.map(t => (
+            <button key={t} onClick={() => setStr('oscSynthLfoTarget', t)} style={{
+              fontSize:8.5, fontWeight:600, padding:'2px 8px', borderRadius:4, fontFamily:'inherit', cursor:'pointer',
+              border:`0.5px solid ${lfoTarget===t ? '#a78bfa88' : 'rgba(255,255,255,0.1)'}`,
+              background: lfoTarget===t ? 'rgba(167,139,250,0.18)' : 'transparent',
+              color: lfoTarget===t ? '#a78bfa' : dim,
+            }}>{LFO_TARGET_LABELS[t]}</button>
+          ))}
+        </div>
+        <div style={{ display:'flex', gap:3, flexWrap:'wrap', marginBottom:8, opacity: lfoOn ? 1 : 0.4 }}>
+          {LFO_WAVES.map(w => (
+            <button key={w} onClick={() => lfoOn && setStr('oscSynthLfoWaveform', w)} style={{
+              fontSize:8.5, fontWeight:600, padding:'2px 8px', borderRadius:4, fontFamily:'inherit', cursor: lfoOn ? 'pointer' : 'default',
+              border:`0.5px solid ${lfoWave===w && lfoOn ? '#a78bfa88' : 'rgba(255,255,255,0.1)'}`,
+              background: lfoWave===w && lfoOn ? 'rgba(167,139,250,0.18)' : 'transparent',
+              color: lfoWave===w && lfoOn ? '#a78bfa' : dim,
+            }}>{LFO_WAVE_LABELS[w]}</button>
+          ))}
+        </div>
+        <div style={{ opacity: lfoOn ? 1 : 0.4 }}>
+          <WLSliderRow label="Rate"  paramKey="oscSynthLfoRate"  min={0.01} max={20} step={0.01} fmt={v=>`${v.toFixed(2)}Hz`} srcKey="oscSynthLfoRateSource"  rateKey="oscSynthLfoRateRate"  {...sliderProps} />
+          <WLSliderRow label="Depth" paramKey="oscSynthLfoDepth" min={0}    max={1}  step={0.01} fmt={v=>v.toFixed(2)}        srcKey="oscSynthLfoDepthSource" rateKey="oscSynthLfoDepthRate" {...sliderProps} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function WaveLabMiniCanvas({ pts, sigs }: { pts: Array<{x:number;y:number}>; sigs: string[] }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return
+    const ctx = canvas.getContext('2d'); if (!ctx) return
+    const W = canvas.width, H = canvas.height
+    ctx.clearRect(0,0,W,H)
+    ctx.fillStyle='rgba(255,255,255,0.03)'; ctx.fillRect(0,0,W,H)
+    ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=0.5
+    ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke()
+    const sigColors: Record<string,string> = { x:'#60a5fa',y:'#34d399',r:'#a78bfa',angle:'#fbbf24',speed:'#f87171' }
+    sigs.forEach(sig => {
+      let arr: number[]
+      if (sig==='x')     arr = pts.map(p=>p.x)
+      else if (sig==='y') arr = pts.map(p=>p.y)
+      else if (sig==='r') arr = pts.map(p=>Math.sqrt(p.x*p.x+p.y*p.y))
+      else if (sig==='angle') arr = pts.map(p=>Math.atan2(p.y,p.x))
+      else arr = pts.map((p,i)=>i===0?0:Math.sqrt((p.x-pts[i-1].x)**2+(p.y-pts[i-1].y)**2))
+      const min=Math.min(...arr),max=Math.max(...arr),range=max-min||1
+      const norm = arr.map(v=>(v-min)/range*2-1)
+      ctx.beginPath(); ctx.strokeStyle=sigColors[sig]??'#fff'; ctx.lineWidth=1.5; ctx.lineJoin='round'
+      norm.forEach((v,i)=>{const px=(i/(norm.length-1))*W,py=((1-v)/2)*H;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py)})
+      ctx.stroke()
+    })
+  }, [pts, sigs])
+  return <canvas ref={canvasRef} width={800} height={200} style={{width:'100%',height:'100%',display:'block'}} />
+}
+
+function WaveLabMiniSynth({ pts, sigs }: { pts: Array<{x:number;y:number}>; sigs: string[] }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return
+    const ctx = canvas.getContext('2d'); if (!ctx) return
+    const W = canvas.width, H = canvas.height
+    ctx.clearRect(0,0,W,H)
+    ctx.fillStyle='rgba(255,255,255,0.03)'; ctx.fillRect(0,0,W,H)
+    ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=0.5
+    ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke()
+    if (pts.length < 2 || sigs.length === 0) return
+    const sigColors: Record<string,string> = { x:'#60a5fa',y:'#34d399',r:'#a78bfa',angle:'#fbbf24',speed:'#f87171' }
+    const arrays = sigs.map(sig => {
+      let arr: number[]
+      if (sig==='x')     arr = pts.map(p=>p.x)
+      else if (sig==='y') arr = pts.map(p=>p.y)
+      else if (sig==='r') arr = pts.map(p=>Math.sqrt(p.x*p.x+p.y*p.y))
+      else if (sig==='angle') arr = pts.map(p=>Math.atan2(p.y,p.x))
+      else arr = pts.map((p,i)=>i===0?0:Math.sqrt((p.x-pts[i-1].x)**2+(p.y-pts[i-1].y)**2))
+      const min=Math.min(...arr),max=Math.max(...arr),range=max-min||1
+      return arr.map(v=>(v-min)/range*2-1)
+    })
+    // draw each signal faintly
+    sigs.forEach((sig, si) => {
+      ctx.beginPath(); ctx.strokeStyle=sigColors[sig]??'#fff'; ctx.lineWidth=0.8; ctx.globalAlpha=0.2; ctx.lineJoin='round'
+      arrays[si].forEach((v,i)=>{const px=(i/(arrays[si].length-1))*W,py=((1-v)/2)*H;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py)})
+      ctx.stroke()
+    })
+    ctx.globalAlpha=1
+    // draw sum
+    const summed = arrays[0].map((_,i) => arrays.reduce((acc,a)=>acc+a[i],0))
+    const smin=Math.min(...summed),smax=Math.max(...summed),srange=smax-smin||1
+    const norm = summed.map(v=>(v-smin)/srange*2-1)
+    ctx.beginPath(); ctx.strokeStyle='#a78bfa'; ctx.lineWidth=1.8; ctx.lineJoin='round'
+    norm.forEach((v,i)=>{const px=(i/(norm.length-1))*W,py=((1-v)/2)*H;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py)})
+    ctx.stroke()
+  }, [pts, sigs])
+  return <canvas ref={canvasRef} width={800} height={200} style={{width:'100%',height:'100%',display:'block'}} />
+}
+
+// ── Generic slot expanded panel ────────────────────────────────────────────────
+
+function GenericSlotExpanded({ slotKey, simple }: { slotKey: string; simple: boolean }) {
+  const { rackParamOverrides, setSlotOverride } = useControlSetStore()
+  const overrides = rackParamOverrides[slotKey] ?? {}
+  const csId = BUILTIN_CONTROL_SETS.find(c => slotKey.includes(c.id.slice(0,8)))?.id
+  const cs   = csId ? BUILTIN_CONTROL_SETS.find(c => c.id === csId) : null
+  const dim  = simple ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'
+
+  if (!cs) return <div style={{ padding:16, fontSize:10, color:dim }}>No params</div>
+
+  const params = { ...cs.params, ...overrides }
+  const numericParams = Object.entries(params).filter(([,v]) => typeof v === 'number')
+
+  return (
+    <div style={{ padding:'10px 16px', display:'flex', flexWrap:'wrap', gap:'6px 24px', alignContent:'flex-start' }}>
+      {numericParams.map(([key, val]) => (
+        <div key={key} style={{ display:'flex', alignItems:'center', gap:6, minWidth:240 }}>
+          <span style={{ fontSize:8.5, color:dim, width:80, flexShrink:0, textAlign:'right' }}>{key.replace(/([A-Z])/g,' $1').toLowerCase()}</span>
+          <input type="range" min={0} max={key.includes('Cutoff')?12000:key.includes('Rate')?20:1} step={0.01} value={Number(val)}
+            onChange={e => setSlotOverride(slotKey, key, parseFloat(e.target.value))}
+            style={{ flex:1, accentColor: cs.color }} />
+          <span style={{ fontSize:8.5, fontFamily:'monospace', color:cs.color, width:40, textAlign:'right', flexShrink:0 }}>{Number(val).toFixed(2)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function SlotCard({
   cs, slotKey, simple, onClear, bodyId = null, onExtend, ghost = false,
+  expandedSlotKey, onToggleExpand,
 }: {
   cs: ControlSet; slotKey: string; simple: boolean; onClear: () => void; bodyId?: string | null; onExtend?: () => void; ghost?: boolean
+  expandedSlotKey?: string | null; onToggleExpand?: (key: string) => void
 }) {
   const overrides     = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
@@ -2027,6 +2358,21 @@ function SlotCard({
     }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 1 }}>
+        {/* Ableton-style expand triangle — top-left */}
+        {!ghost && onToggleExpand && (
+          <button
+            title={expandedSlotKey === slotKey ? 'Collapse' : 'Expand'}
+            onClick={e => { e.stopPropagation(); onToggleExpand(slotKey) }}
+            style={{
+              width: 12, height: 12, padding: 0, border: 'none', background: 'transparent',
+              cursor: 'pointer', flexShrink: 0, lineHeight: 1,
+              fontSize: 8, color: expandedSlotKey === slotKey ? accent : dimText,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transform: expandedSlotKey === slotKey ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.15s, color 0.15s',
+            }}
+          >▶</button>
+        )}
         <span style={{ fontSize: 13, lineHeight: 1 }}>{cs.icon}</span>
         <span style={{
           fontSize: 8.5, fontWeight: 700, color: accent, flex: 1,
@@ -2746,6 +3092,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
   const simple         = usePlanetStore(s => s.simParams.simpleTheme)
   const selectedBodyId = usePlanetStore(s => s.selectedBodyId)
   const [inspectorExpanded, setInspectorExpanded] = useState(false)
+  const [expandedSlotKey, setExpandedSlotKey]     = useState<string | null>(null)
   const bodies         = usePlanetStore(s => s.bodies)
 
   const { globalRack, bodyRacks,
@@ -2960,14 +3307,64 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
     )
   }
 
+  // Find which CS is currently expanded by matching the slot key directly
+  const expandedCs = expandedSlotKey
+    ? (() => {
+        const instrumentActualKey = isBodyMode && hasInstrumentOv ? instrumentKey() : 'g:instrument'
+        const allSlots = [
+          ...triggerCsList.map((cs, i) => ({ cs, key: isBodyMode ? `b:trigger:${i}:${bodyId}` : `g:trigger:${i}` })),
+          instrumentCs ? { cs: instrumentCs, key: instrumentActualKey } : null,
+          ...effectCsList.map((cs, i) => ({ cs, key: isBodyMode ? `b:effect:${i}:${bodyId}` : `g:effect:${i}` })),
+        ].filter(Boolean) as {cs: typeof instrumentCs; key: string}[]
+        return allSlots.find(s => s.key === expandedSlotKey)?.cs ?? null
+      })()
+    : null
+
   return (
     <div style={{
       height,
       flexShrink: 0, background: bg,
       borderTop: `0.5px solid ${border}`,
       display: 'flex', flexDirection: 'row',
-      overflow: 'hidden',
+      overflow: 'visible',
+      position: 'relative',
+      zIndex: 10,
     }}>
+      {/* ── Expanded panel — floats above the rack ── */}
+      {expandedSlotKey && (
+        <div style={{
+          position: 'absolute', bottom: '100%', left: 0, right: 0,
+          background: bg,
+          borderTop: `0.5px solid ${border}`,
+          borderBottom: `0.5px solid ${border}`,
+          zIndex: 50,
+          maxHeight: 420,
+          overflow: 'hidden',
+          display: 'flex', flexDirection: 'column',
+        }}>
+          {/* Header */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px 4px',
+            borderBottom: `0.5px solid ${divCol}`, flexShrink: 0,
+          }}>
+            <button onClick={() => setExpandedSlotKey(null)}
+              style={{ fontSize: 9, color: hdrCol, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '0 4px' }}>
+              ▼ close
+            </button>
+            {expandedCs && (
+              <span style={{ fontSize: 10, fontWeight: 700, color: expandedCs.color }}>{expandedCs.icon} {expandedCs.name}</span>
+            )}
+          </div>
+          {/* Content: WaveLabView for wave-lab, generic param editor for others */}
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            {expandedCs?.id === 'instrument-wave-lab' ? (
+              <WaveLabInstrumentExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} />
+            ) : (
+              <GenericSlotExpanded slotKey={expandedSlotKey} simple={simple} />
+            )}
+          </div>
+        </div>
+      )}
       {/* ── Left strip — collapse toggle (always visible) ── */}
       <div style={{
         width: 14, flexShrink: 0,
@@ -3047,7 +3444,9 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
                       simple={simple}
                       bodyId={isBodyMode ? bodyId : null}
                       ghost={isBodyMode && !hasTriggerOv}
-                      onClear={() => handleClearTrigger(i)} />
+                      onClear={() => handleClearTrigger(i)}
+                      expandedSlotKey={expandedSlotKey}
+                      onToggleExpand={key => setExpandedSlotKey(prev => prev === key ? null : key)} />
                   </div>
                 ) : null
               ) : (
@@ -3084,7 +3483,9 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
                     instrumentCs.id === 'instrument-sampler'
                       ? () => onExtendSampler?.(isBodyMode ? bodyId : '', instrumentKey())
                       : undefined
-                  } />
+                  }
+                  expandedSlotKey={expandedSlotKey}
+                  onToggleExpand={key => setExpandedSlotKey(prev => prev === key ? null : key)} />
               ) : (
                 <EmptySlot simple={simple} highlighted={rackDragCat === 'instrument'} />
               )}
@@ -3113,7 +3514,9 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
                       simple={simple}
                       bodyId={isBodyMode ? bodyId : null}
                       ghost={isBodyMode && !hasEffectsOv}
-                      onClear={() => handleClearEffect(i)} />
+                      onClear={() => handleClearEffect(i)}
+                      expandedSlotKey={expandedSlotKey}
+                      onToggleExpand={key => setExpandedSlotKey(prev => prev === key ? null : key)} />
                   </div>
                 ) : null
               )}
