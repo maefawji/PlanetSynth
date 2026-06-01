@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Waves, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Waves, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio } from 'lucide-react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { usePlanetStore, type PlanetSimParams } from '../../store/planetStore'
+import {
+  getMidiOutputs, getMidiInputs, getSelectedOutputId, setSelectedOutputId,
+  isMidiReady, sendMidiNote, type MidiPortInfo,
+} from '../../audio/midiManager'
 import { UNIVERSE_PRESETS, loadUserUniversePresets, saveUserUniversePresets } from '../../presets/universe'
 import { PLANET_PRESETS, loadUserPlanetPresets, saveUserPlanetPresets } from '../../presets/planet'
 import type { UserUniversePreset, UserPlanetPreset } from '../../presets/types'
@@ -42,6 +46,7 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
     | 'planet-triggers'
     | 'planet-controls-trigger' | 'planet-controls-instrument' | 'planet-controls-effect'
     | 'planet-playback' | 'planet-localization' | 'planet-adsr'
+    | 'midi'
   >('planet-samples')
   const [cachedLibrary, setCachedLibrary] = useState<CachedSampleLibrary | null>(() => loadCachedSampleLibrary())
   const addSampleAssets     = useProjectStore(s => s.addSampleAssets)
@@ -299,6 +304,13 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         <RailDivider />
 
         <RailButton
+          active={activePanel === 'midi' && !collapsed}
+          title="MIDI"
+          onClick={() => { setActivePanel('midi'); if (collapsed) onToggleCollapsed() }}
+        >
+          <Radio size={14} />
+        </RailButton>
+        <RailButton
           active={activePanel === 'canvas' && !collapsed}
           title="Canvas Settings"
           onClick={() => { setActivePanel('canvas'); if (collapsed) onToggleCollapsed() }}
@@ -356,6 +368,9 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
 
       {!collapsed && activePanel === 'canvas' && (
         <CanvasSettingsPanel />
+      )}
+      {!collapsed && activePanel === 'midi' && (
+        <MidiPanel />
       )}
     </div>
   )
@@ -1953,6 +1968,177 @@ function LocalizationPanel() {
           </div>
         </SettingsGroup>
 
+      </div>
+    </div>
+  )
+}
+
+// ── MIDI Panel ────────────────────────────────────────────────────────────────
+
+function MidiPanel() {
+  const t = useTheme()
+  const [outputs,   setOutputs]   = useState<MidiPortInfo[]>([])
+  const [inputs,    setInputs]    = useState<MidiPortInfo[]>([])
+  const [selOutId,  setSelOutId]  = useState<string | null>(null)
+  const [ready,     setReady]     = useState(false)
+  const [testNote,  setTestNote]  = useState(60)
+
+  // Refresh port list every 1.5 s (devices can connect/disconnect)
+  useEffect(() => {
+    function refresh() {
+      setOutputs(getMidiOutputs())
+      setInputs(getMidiInputs())
+      setSelOutId(getSelectedOutputId())
+      setReady(isMidiReady())
+    }
+    refresh()
+    const id = window.setInterval(refresh, 1500)
+    return () => window.clearInterval(id)
+  }, [])
+
+  function handleOutSelect(id: string | null) {
+    setSelectedOutputId(id)
+    setSelOutId(id)
+  }
+
+  function handleTest() {
+    sendMidiNote(1, testNote, 100, 300)
+  }
+
+  const rowStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6,
+  }
+  const labelStyle: React.CSSProperties = {
+    fontSize: 8, fontWeight: 700, color: t.textDim,
+    textTransform: 'uppercase', letterSpacing: '0.09em',
+    width: 40, flexShrink: 0,
+  }
+  const selectStyle: React.CSSProperties = {
+    flex: 1, fontSize: 9, border: `0.5px solid ${t.btnBorder}`,
+    borderRadius: 4, padding: '3px 5px',
+    background: t.inputBg, color: t.inputText, fontFamily: 'inherit',
+  }
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <SectionHeader label="MIDI" />
+      <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
+
+        {/* ── Status ────────────────────────────────────────────────────── */}
+        <div style={{ ...rowStyle, marginBottom: 12 }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+            background: ready ? '#4ade80' : '#6b7280',
+            boxShadow: ready ? '0 0 6px #4ade80' : 'none',
+          }} />
+          <span style={{ fontSize: 10, color: ready ? '#4ade80' : t.textDim, fontWeight: 700 }}>
+            {ready ? 'Web MIDI Ready' : 'MIDI Unavailable'}
+          </span>
+        </div>
+
+        {!ready && (
+          <div style={{
+            fontSize: 9, color: t.textDim, lineHeight: 1.6, marginBottom: 12,
+            padding: '8px', background: t.sectionBg, borderRadius: 6,
+            border: `0.5px solid ${t.panelBorder}`,
+          }}>
+            Chrome / Edge が必要です。<br />
+            Safari は Web MIDI 非対応。<br />
+            ページ読み込み時に許可ダイアログが表示されます。
+          </div>
+        )}
+
+        {ready && (
+          <>
+            {/* ── Output port ─────────────────────────────────────────── */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: t.textMid, marginBottom: 6, letterSpacing: '0.05em' }}>
+                OUTPUT PORT
+              </div>
+              {outputs.length === 0 ? (
+                <div style={{ fontSize: 9, color: t.textDim, fontStyle: 'italic' }}>
+                  出力ポートが見つかりません<br />
+                  <span style={{ fontSize: 8 }}>Mac: Audio MIDI設定 → IAC Driver を有効化</span>
+                </div>
+              ) : (
+                <select
+                  value={selOutId ?? ''}
+                  onChange={e => handleOutSelect(e.target.value || null)}
+                  style={selectStyle}
+                >
+                  <option value="">すべてのポートに送信</option>
+                  {outputs.map(o => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* ── Input ports (display only) ───────────────────────────── */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: t.textMid, marginBottom: 6, letterSpacing: '0.05em' }}>
+                INPUT PORTS
+              </div>
+              {inputs.length === 0 ? (
+                <div style={{ fontSize: 9, color: t.textDim, fontStyle: 'italic' }}>なし</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {inputs.map(inp => (
+                    <div key={inp.id} style={{
+                      fontSize: 9, color: t.textMid, padding: '3px 6px',
+                      background: t.sectionBg, borderRadius: 4,
+                      border: `0.5px solid ${t.panelBorder}`,
+                    }}>
+                      {inp.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Test note ────────────────────────────────────────────── */}
+            <div style={{
+              padding: '8px', background: t.sectionBg, borderRadius: 6,
+              border: `0.5px solid ${t.panelBorder}`,
+            }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: t.textMid, marginBottom: 7, letterSpacing: '0.05em' }}>
+                TEST NOTE
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="number" value={testNote} min={0} max={127} step={1}
+                  onChange={e => setTestNote(Math.max(0, Math.min(127, Number(e.target.value))))}
+                  style={{ width: 44, fontSize: 10, fontFamily: 'monospace', textAlign: 'center', border: `0.5px solid ${t.btnBorder}`, borderRadius: 4, padding: '3px 4px', background: t.inputBg, color: t.inputText }}
+                />
+                <span style={{ fontSize: 9, color: t.textDim, minWidth: 26 }}>
+                  {['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'][testNote % 12]}
+                  {Math.floor(testNote / 12) - 1}
+                </span>
+                <button
+                  onClick={handleTest}
+                  style={{
+                    flex: 1, fontSize: 9, padding: '4px 8px',
+                    background: 'rgba(74,222,128,0.12)',
+                    border: '0.5px solid rgba(74,222,128,0.4)',
+                    borderRadius: 4, color: '#4ade80', cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(74,222,128,0.22)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(74,222,128,0.12)')}
+                >
+                  ▶ Send
+                </button>
+              </div>
+              <div style={{ fontSize: 8, color: t.textDim, marginTop: 5 }}>
+                ch 1 / vel 100 / 300ms
+              </div>
+            </div>
+
+            {/* ── Hint ─────────────────────────────────────────────────── */}
+            <div style={{ fontSize: 8.5, color: t.textDim, lineHeight: 1.6, marginTop: 12 }}>
+              各ボディの CH / NOTE / VEL は右パネルの Inspector で個別に設定できます。
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
