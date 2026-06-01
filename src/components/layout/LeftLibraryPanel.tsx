@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Waves, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star } from 'lucide-react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
-import { usePlanetStore, BODY_DRONE_DEFAULTS, BODY_MIDI_DEFAULTS, DEFAULT_BODIES, DEFAULT_SIM_PARAMS, type PlanetBody, type PlanetSimParams } from '../../store/planetStore'
+import { usePlanetStore, type PlanetSimParams } from '../../store/planetStore'
+import { UNIVERSE_PRESETS, loadUserUniversePresets, saveUserUniversePresets } from '../../presets/universe'
+import { PLANET_PRESETS, loadUserPlanetPresets, saveUserPlanetPresets } from '../../presets/planet'
+import type { UserUniversePreset, UserPlanetPreset } from '../../presets/types'
 import { useProjectStore } from '../../store/projectStore'
 import { useControlSetStore, BUILTIN_CONTROL_SETS, type ControlSet, type ControlSetCategory } from '../../store/controlSetStore'
 import { setDraggingControlSetId } from '../../lib/dragControlSet'
@@ -1169,170 +1172,84 @@ function RailDivider() {
   )
 }
 
-// ── Planet presets ───────────────────────────────────────────────────────────
-
-const PRESET_BODY_DEFAULTS = {
-  orbitLoopNumer: 1,
-  orbitLoopDenom: 1,
-  effectorType: 'none' as const,
-  effectorDistance: 200,
-  effectorMaxWet: 0.7,
-  effectorDecay: 2.5,
-  effectorDelayDivision: 0.25,
-  effectorFeedback: 0.9,
-  effectorDistortion: 0.4,
-  effectorChorusFreq: 1.5,
-  effectorChorusDepth: 0.5,
-  ...BODY_DRONE_DEFAULTS,
-  ...BODY_MIDI_DEFAULTS,
-  muted: false,
-  volume: 1,
-}
-
-function planetPresetBody(
-  id: string,
-  name: string,
-  mass: number,
-  distance: number,
-  eccentricity: number,
-  color: string,
-  sunMass = 1000,
-): PlanetBody {
-  const perihelion = distance * (1 - eccentricity)
-  const speed = Math.sqrt(sunMass * (1 + eccentricity) / Math.max(1, distance * (1 - eccentricity)))
-  return {
-    id,
-    name,
-    type: 'planet',
-    mass,
-    x: perihelion,
-    y: 0,
-    vx: 0,
-    vy: speed,
-    fixed: false,
-    color,
-    sampleId: null,
-    ...PRESET_BODY_DEFAULTS,
-  }
-}
-
-function createSolarSystemPreset(): PlanetBody[] {
-  const sun: PlanetBody = {
-    id: 'sun',
-    name: 'Sun',
-    type: 'sun',
-    mass: 1000,
-    x: 0,
-    y: 0,
-    vx: 0,
-    vy: 0,
-    fixed: true,
-    color: '#f59e0b',
-    sampleId: null,
-    ...PRESET_BODY_DEFAULTS,
-  }
-
-  return [
-    sun,
-    planetPresetBody('mercury', 'Mercury', 0.12, 95, 0.21, '#a3a3a3'),
-    planetPresetBody('venus', 'Venus', 0.82, 145, 0.01, '#eab308'),
-    planetPresetBody('earth', 'Earth', 1, 195, 0.02, '#38bdf8'),
-    planetPresetBody('mars', 'Mars', 0.25, 255, 0.09, '#ef4444'),
-    planetPresetBody('jupiter', 'Jupiter', 12, 390, 0.05, '#d97706'),
-    planetPresetBody('saturn', 'Saturn', 9, 520, 0.06, '#facc15'),
-  ]
-}
-
-const SOLAR_SYSTEM_SIM: Partial<PlanetSimParams> = {
-  G: 1,
-  epsilon: 8,
-  dt: 0.16,
-  trailLength: 1200,
-  showTrails: true,
-  showVelocityVectors: false,
-  paused: false,
-  rendezvousDistance: 50,
-  orbitTriggerMode: 'orbit-complete',
-  sampleStretchMode: 'rate',
-  sampleOrbitSource: 'predicted',
-  sampleLoopMode: 'loop',
-}
+// ── Universe Preset Panel ─────────────────────────────────────────────────────
 
 function UniversePresetPanel() {
   const t = useTheme()
-  const applyPreset = usePlanetStore(s => s.applyPreset)
+  const applyPreset           = usePlanetStore(s => s.applyPreset)
   const resetBodyRacksToDefaults = useControlSetStore(s => s.resetBodyRacksToDefaults)
+  const [userPresets, setUserPresets] = useState<UserUniversePreset[]>(() => loadUserUniversePresets())
 
-  function applyDefaultTrio() {
-    applyPreset(DEFAULT_BODIES, DEFAULT_SIM_PARAMS)
+  function handleApply(preset: { bodies: typeof UNIVERSE_PRESETS[0]['bodies']; simParams: typeof UNIVERSE_PRESETS[0]['simParams'] }) {
+    applyPreset([...preset.bodies], preset.simParams)
     resetBodyRacksToDefaults()
   }
 
-  function applySolarSystem() {
-    applyPreset(createSolarSystemPreset(), SOLAR_SYSTEM_SIM)
+  function handleDeleteUser(id: string) {
+    const next = userPresets.filter(p => p.id !== id)
+    setUserPresets(next)
+    saveUserUniversePresets(next)
+  }
+
+  const btnBase: React.CSSProperties = {
+    width: '100%', border: `0.5px solid ${t.panelBorder}`, borderRadius: 7,
+    background: t.sectionBg, cursor: 'pointer', padding: '8px 10px',
+    textAlign: 'left', fontFamily: 'inherit', marginBottom: 6,
   }
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <SectionHeader label="Universe Presets" />
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px' }}>
-        <button
-          onClick={applyDefaultTrio}
-          style={{
-            width: '100%',
-            border: `0.5px solid ${t.panelBorder}`,
-            borderRadius: 7,
-            background: 'rgba(6,182,212,0.06)',
-            cursor: 'pointer',
-            padding: '10px',
-            textAlign: 'left',
-            fontFamily: 'inherit',
-            marginBottom: 8,
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(6,182,212,0.10)')}
-          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(6,182,212,0.06)')}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <span style={{ width: 24, height: 24, borderRadius: '50%', background: '#06b6d4', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13 }}>
-              ⊕
-            </span>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: t.text }}>Default Trio</div>
-              <div style={{ fontSize: 9, color: t.textMid }}>Sun standpoint + Perturber Pad Drone</div>
+
+        {/* ── Built-in (hardcoded) ─────────────────────────────────────────── */}
+        <div style={{ fontSize: 8, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: 5 }}>
+          Built-in
+        </div>
+        {UNIVERSE_PRESETS.map(preset => (
+          <button
+            key={preset.id}
+            onClick={() => handleApply(preset)}
+            style={btnBase}
+            onMouseEnter={e => (e.currentTarget.style.background = `${t.accent}14`)}
+            onMouseLeave={e => (e.currentTarget.style.background = t.sectionBg)}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 14, lineHeight: 1 }}>{preset.icon ?? '⊙'}</span>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: t.text }}>{preset.name}</div>
+                {preset.description && (
+                  <div style={{ fontSize: 8.5, color: t.textMid, marginTop: 1 }}>{preset.description}</div>
+                )}
+              </div>
             </div>
-          </div>
-          <div style={{ fontSize: 9.5, color: t.textMid, lineHeight: 1.45 }}>
-            Sunをstandpointに設定し、distance 1000で全body trackの最終出力を減衰。PerturberにはPad Droneを割り当てます。
-          </div>
-        </button>
-        <button
-          onClick={applySolarSystem}
-          style={{
-            width: '100%',
-            border: `0.5px solid ${t.panelBorder}`,
-            borderRadius: 7,
-            background: t.sectionBg,
-            cursor: 'pointer',
-            padding: '10px',
-            textAlign: 'left',
-            fontFamily: 'inherit',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.08)')}
-          onMouseLeave={e => (e.currentTarget.style.background = t.sectionBg)}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <span style={{ width: 24, height: 24, borderRadius: '50%', background: '#f59e0b', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13 }}>
-              ☉
-            </span>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: t.text }}>Solar System</div>
-              <div style={{ fontSize: 9, color: t.textMid }}>Sun + Mercury to Saturn</div>
+          </button>
+        ))}
+
+        {/* ── User-saved ───────────────────────────────────────────────────── */}
+        {userPresets.length > 0 && (
+          <>
+            <div style={{ fontSize: 8, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '0.10em', margin: '10px 0 5px' }}>
+              My Presets
             </div>
-          </div>
-          <div style={{ fontSize: 9.5, color: t.textMid, lineHeight: 1.45 }}>
-            太陽を固定し、各惑星を近日点から開始します。距離・速度・離心率は音楽的に扱いやすいスケールへ圧縮しています。
-          </div>
-        </button>
+            {userPresets.map(preset => (
+              <div key={preset.id} style={{ ...btnBase, display: 'flex', alignItems: 'center', gap: 4, padding: '6px 8px' }}>
+                <button
+                  onClick={() => handleApply(preset)}
+                  style={{ flex: 1, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', padding: 0 }}
+                >
+                  <div style={{ fontSize: 11, fontWeight: 700, color: t.text }}>{preset.name}</div>
+                  <div style={{ fontSize: 8, color: t.textDim }}>{new Date(preset.createdAt).toLocaleDateString()}</div>
+                </button>
+                <button
+                  onClick={() => handleDeleteUser(preset.id)}
+                  style={{ width: 18, height: 18, border: 'none', background: 'none', cursor: 'pointer', color: t.textDim, fontSize: 11, padding: 0, lineHeight: 1 }}
+                >×</button>
+              </div>
+            ))}
+          </>
+        )}
+
         <div style={{ fontSize: 9, color: t.textDim, lineHeight: 1.5, marginTop: 10 }}>
           プリセット適用時は現在の body 配置を置き換え、シミュレーションを再初期化します。
         </div>
@@ -1343,41 +1260,8 @@ function UniversePresetPanel() {
 
 // ── Planet Preset (individual body) panel ─────────────────────────────────────
 
-const BODY_PRESETS_KEY = 'planet-body-presets-v1'
-
-interface BodyPresetEntry {
-  id: string
-  name: string
-  createdAt: number
-  bodyInfo: {
-    name: string
-    type: string
-    mass: number
-    color: string
-    muted: boolean
-    volume: number
-    midiChannel: number
-    midiNote: number
-    midiVelocity: number
-  }
-  rack: {
-    triggers: string[]
-    instrument: string | null
-    effects: string[]
-  }
-}
-
-function loadBodyPresetsFromStorage(): BodyPresetEntry[] {
-  try {
-    return JSON.parse(localStorage.getItem(BODY_PRESETS_KEY) ?? '[]') as BodyPresetEntry[]
-  } catch {
-    return []
-  }
-}
-
-function saveBodyPresetsToStorage(presets: BodyPresetEntry[]): void {
-  localStorage.setItem(BODY_PRESETS_KEY, JSON.stringify(presets))
-}
+// Planet preset storage is managed by src/presets/planet/index.ts
+// Types: UserPlanetPreset (imported from src/presets/types.ts)
 
 function PlanetPresetPanel() {
   const t = useTheme()
@@ -1385,7 +1269,8 @@ function PlanetPresetPanel() {
   const updateBody = usePlanetStore(s => s.updateBody)
   const { getBodyEffectiveRack, setBodySlot, addBodyTrigger, addBodyEffect, clearBodyRack } = useControlSetStore()
 
-  const [presets, setPresets] = useState<BodyPresetEntry[]>(() => loadBodyPresetsFromStorage())
+  const [builtinPresets]                        = useState(() => PLANET_PRESETS)
+  const [userPresets, setUserPresets]           = useState<UserPlanetPreset[]>(() => loadUserPlanetPresets())
   const [saveName, setSaveName] = useState('')
 
   const selectedBody = bodies.find(b => b.id === selectedBodyId) ?? null
@@ -1394,64 +1279,55 @@ function PlanetPresetPanel() {
     if (!selectedBody) return
     const rack = getBodyEffectiveRack(selectedBody.id)
     const name = saveName.trim() || selectedBody.name
-    const entry: BodyPresetEntry = {
+    const entry: UserPlanetPreset = {
       id: `bp-${Date.now()}`,
       name,
       createdAt: Date.now(),
       bodyInfo: {
-        name: selectedBody.name,
-        type: selectedBody.type,
-        mass: selectedBody.mass,
-        color: selectedBody.color,
-        muted: selectedBody.muted,
-        volume: selectedBody.volume,
-        midiChannel: selectedBody.midiChannel,
-        midiNote: selectedBody.midiNote,
+        name:         selectedBody.name,
+        type:         selectedBody.type as 'sun' | 'planet',
+        mass:         selectedBody.mass,
+        color:        selectedBody.color,
+        muted:        selectedBody.muted,
+        volume:       selectedBody.volume,
+        midiChannel:  selectedBody.midiChannel,
+        midiNote:     selectedBody.midiNote,
         midiVelocity: selectedBody.midiVelocity,
       },
       rack: {
-        triggers: [...rack.triggers],
+        triggers:   [...rack.triggers],
         instrument: rack.instrument,
-        effects: [...rack.effects],
+        effects:    [...rack.effects],
       },
     }
-    const next = [entry, ...presets]
-    setPresets(next)
-    saveBodyPresetsToStorage(next)
+    const next = [entry, ...userPresets]
+    setUserPresets(next)
+    saveUserPlanetPresets(next)
     setSaveName('')
   }
 
-  function handleApply(preset: BodyPresetEntry) {
+  function handleApply(preset: UserPlanetPreset | typeof PLANET_PRESETS[0]) {
     if (!selectedBodyId) return
     updateBody(selectedBodyId, {
-      name: preset.bodyInfo.name,
-      mass: preset.bodyInfo.mass,
-      color: preset.bodyInfo.color,
-      muted: preset.bodyInfo.muted,
-      volume: preset.bodyInfo.volume,
-      midiChannel: preset.bodyInfo.midiChannel,
-      midiNote: preset.bodyInfo.midiNote,
+      name:         preset.bodyInfo.name,
+      mass:         preset.bodyInfo.mass,
+      color:        preset.bodyInfo.color,
+      muted:        preset.bodyInfo.muted,
+      volume:       preset.bodyInfo.volume,
+      midiChannel:  preset.bodyInfo.midiChannel,
+      midiNote:     preset.bodyInfo.midiNote,
       midiVelocity: preset.bodyInfo.midiVelocity,
     })
     clearBodyRack(selectedBodyId)
     setBodySlot(selectedBodyId, 'instrument', preset.rack.instrument)
-    for (const trig of preset.rack.triggers) {
-      addBodyTrigger(selectedBodyId, trig)
-    }
-    for (const eff of preset.rack.effects) {
-      addBodyEffect(selectedBodyId, eff)
-    }
+    for (const trig of preset.rack.triggers) addBodyTrigger(selectedBodyId, trig)
+    for (const eff  of preset.rack.effects)  addBodyEffect(selectedBodyId, eff)
   }
 
   function handleDelete(id: string) {
-    const next = presets.filter(p => p.id !== id)
-    setPresets(next)
-    saveBodyPresetsToStorage(next)
-  }
-
-  function formatDate(ts: number): string {
-    const d = new Date(ts)
-    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
+    const next = userPresets.filter(p => p.id !== id)
+    setUserPresets(next)
+    saveUserPlanetPresets(next)
   }
 
   return (
@@ -1521,14 +1397,53 @@ function PlanetPresetPanel() {
           )}
         </div>
 
-        {/* ── Preset list ──────────────────────────────────────────────────── */}
-        {presets.length === 0 ? (
+        {/* ── Built-in presets ─────────────────────────────────────────────── */}
+        {builtinPresets.length > 0 && (
+          <>
+            <div style={{ fontSize: 8, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: 5 }}>
+              Built-in
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+              {builtinPresets.map(preset => (
+                <button
+                  key={preset.id}
+                  onClick={() => handleApply(preset)}
+                  disabled={!selectedBodyId}
+                  style={{
+                    textAlign: 'left', fontFamily: 'inherit', cursor: selectedBodyId ? 'pointer' : 'default',
+                    opacity: selectedBodyId ? 1 : 0.4,
+                    background: t.sectionBg, border: `0.5px solid ${t.panelBorder}`,
+                    borderRadius: 6, padding: '6px 8px',
+                  }}
+                  onMouseEnter={e => { if (selectedBodyId) e.currentTarget.style.background = `${t.accent}14` }}
+                  onMouseLeave={e => (e.currentTarget.style.background = t.sectionBg)}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontSize: 12 }}>{preset.icon ?? '●'}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: t.text }}>{preset.name}</span>
+                  </div>
+                  {preset.description && (
+                    <div style={{ fontSize: 8.5, color: t.textMid, marginTop: 2 }}>{preset.description}</div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ── User-saved presets ────────────────────────────────────────────── */}
+        {userPresets.length > 0 && (
+          <div style={{ fontSize: 8, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: 5 }}>
+            My Presets
+          </div>
+        )}
+        {userPresets.length === 0 && builtinPresets.length === 0 ? (
           <div style={{ fontSize: 9.5, color: t.textDim, textAlign: 'center', marginTop: 20 }}>
             保存されたプリセットはありません
           </div>
-        ) : (
+        ) : userPresets.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {presets.map(preset => (
+            {userPresets.map(preset => (
               <div
                 key={preset.id}
                 style={{
@@ -1572,7 +1487,7 @@ function PlanetPresetPanel() {
                     <><br /><span>fx: <span style={{ color: t.text }}>{preset.rack.effects.join(', ')}</span></span></>
                   )}
                   <br />
-                  <span style={{ color: t.textDim }}>{formatDate(preset.createdAt)}</span>
+                  <span style={{ color: t.textDim }}>{new Date((preset as UserPlanetPreset).createdAt).toLocaleDateString()}</span>
                 </div>
                 {selectedBodyId && (
                   <button
@@ -1597,7 +1512,7 @@ function PlanetPresetPanel() {
               </div>
             ))}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   )
