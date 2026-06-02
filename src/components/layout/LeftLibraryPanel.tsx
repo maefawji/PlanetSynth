@@ -39,16 +39,17 @@ interface LeftLibraryPanelProps {
   onToggleCollapsed: () => void
 }
 
+type LeftPanelId =
+  | 'canvas' | 'universe-presets' | 'planet-presets' | 'planet-samples'
+  | 'planet-triggers'
+  | 'planet-auto'
+  | 'planet-controls-trigger' | 'planet-controls-instrument' | 'planet-controls-effect'
+  | 'planet-playback' | 'planet-localization' | 'planet-adsr'
+  | 'midi' | 'help'
+
 export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPanelProps) {
   const t = useTheme()
-  const [activePanel, setActivePanel] = useState<
-    | 'canvas' | 'universe-presets' | 'planet-presets' | 'planet-samples'
-    | 'planet-triggers'
-    | 'planet-auto'
-    | 'planet-controls-trigger' | 'planet-controls-instrument' | 'planet-controls-effect'
-    | 'planet-playback' | 'planet-localization' | 'planet-adsr'
-    | 'midi' | 'help'
-  >('planet-samples')
+  const [activePanel, setActivePanel] = useState<LeftPanelId>('planet-samples')
   const [cachedLibrary, setCachedLibrary] = useState<CachedSampleLibrary | null>(() => loadCachedSampleLibrary())
   const addSampleAssets     = useProjectStore(s => s.addSampleAssets)
   const setSampleObjectUrl  = useProjectStore(s => s.setSampleObjectUrl)
@@ -57,6 +58,7 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
   const project             = useProjectStore(s => s.project)
   const samples             = useProjectStore(s => s.project.samples)
   const randomAssignSamplesToPlanets = usePlanetStore(s => s.randomAssignSamplesToPlanets)
+  const expandedWidth: number | string = activePanel === 'canvas' ? 'min(500px, 62vw)' : 246
 
   const [sampleImportStatus, setSampleImportStatus] = useState('')
   const didRestoreRef = useRef(false)
@@ -208,9 +210,18 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
     setCachedLibrary({ fileName: cachedLibrary?.fileName ?? `${library.name}.sample-library.json`, library })
   }
 
+  function handleSelectPanel(panel: LeftPanelId) {
+    if (!collapsed && activePanel === panel) {
+      onToggleCollapsed()
+      return
+    }
+    setActivePanel(panel)
+    if (collapsed) onToggleCollapsed()
+  }
+
   return (
     <div style={{
-      width: collapsed ? 34 : 246, flexShrink: 0,
+      width: collapsed ? 34 : expandedWidth, flexShrink: 0,
       background: t.panelBg,
       borderRight: `0.5px solid ${t.panelBorder}`,
       display: 'flex',
@@ -234,56 +245,56 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         <RailButton
           active={activePanel === 'planet-samples' && !collapsed}
           title="Samples"
-          onClick={() => { setActivePanel('planet-samples'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('planet-samples')}
         >
           <FolderOpen size={14} />
         </RailButton>
         <RailButton
           active={activePanel === 'universe-presets' && !collapsed}
           title="Universe Presets"
-          onClick={() => { setActivePanel('universe-presets'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('universe-presets')}
         >
           <Sun size={14} />
         </RailButton>
         <RailButton
           active={activePanel === 'planet-presets' && !collapsed}
           title="Planet Presets"
-          onClick={() => { setActivePanel('planet-presets'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('planet-presets')}
         >
           <Star size={14} />
         </RailButton>
         <RailButton
           active={activePanel === 'planet-triggers' && !collapsed}
           title="Triggers"
-          onClick={() => { setActivePanel('planet-triggers'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('planet-triggers')}
         >
           <SlidersHorizontal size={14} />
         </RailButton>
         <RailButton
           active={activePanel === 'planet-auto' && !collapsed}
           title="Auto Spawn"
-          onClick={() => { setActivePanel('planet-auto'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('planet-auto')}
         >
           <Sparkles size={14} />
         </RailButton>
         <RailButton
           active={activePanel === 'planet-playback' && !collapsed}
           title="Sample Playback"
-          onClick={() => { setActivePanel('planet-playback'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('planet-playback')}
         >
           <Waves size={14} />
         </RailButton>
         <RailButton
           active={activePanel === 'planet-adsr' && !collapsed}
           title="ADSR"
-          onClick={() => { setActivePanel('planet-adsr'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('planet-adsr')}
         >
           <Activity size={14} />
         </RailButton>
         <RailButton
           active={activePanel === 'planet-localization' && !collapsed}
           title="Localization"
-          onClick={() => { setActivePanel('planet-localization'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('planet-localization')}
         >
           <Crosshair size={14} />
         </RailButton>
@@ -293,21 +304,21 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         <RailButton
           active={activePanel === 'planet-controls-trigger' && !collapsed}
           title="Trigger Sets"
-          onClick={() => { setActivePanel('planet-controls-trigger'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('planet-controls-trigger')}
         >
           <ToggleLeft size={14} />
         </RailButton>
         <RailButton
           active={activePanel === 'planet-controls-instrument' && !collapsed}
           title="Instrument Sets"
-          onClick={() => { setActivePanel('planet-controls-instrument'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('planet-controls-instrument')}
         >
           <Music size={14} />
         </RailButton>
         <RailButton
           active={activePanel === 'planet-controls-effect' && !collapsed}
           title="Effect Sets"
-          onClick={() => { setActivePanel('planet-controls-effect'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('planet-controls-effect')}
         >
           <Wand2 size={14} />
         </RailButton>
@@ -316,14 +327,14 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         <RailButton
           active={activePanel === 'midi' && !collapsed}
           title="MIDI"
-          onClick={() => { setActivePanel('midi'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('midi')}
         >
           <Radio size={14} />
         </RailButton>
         <RailButton
           active={activePanel === 'canvas' && !collapsed}
           title="Canvas Settings"
-          onClick={() => { setActivePanel('canvas'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('canvas')}
         >
           <Settings size={14} />
         </RailButton>
@@ -331,7 +342,7 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         <RailButton
           active={activePanel === 'help' && !collapsed}
           title="Help"
-          onClick={() => { setActivePanel('help'); if (collapsed) onToggleCollapsed() }}
+          onClick={() => handleSelectPanel('help')}
         >
           <CircleHelp size={14} />
         </RailButton>
@@ -1374,6 +1385,7 @@ function RailButton({ active, title, onClick, children }: {
 }) {
   const t = useTheme()
   const [hovered, setHovered] = useState(false)
+  const mono = t.activeBg === '#111'
   return (
     <div
       style={{ position: 'relative', width: 28, height: 28, marginTop: 4, flexShrink: 0 }}
@@ -1385,9 +1397,9 @@ function RailButton({ active, title, onClick, children }: {
         onClick={onClick}
         style={{
           width: 28, height: 28,
-          border: 'none', borderRadius: 5,
-          background: active ? 'rgba(37,99,235,0.12)' : 'transparent',
-          color: active ? '#2563eb' : t.textMid,
+          border: 'none', borderRadius: mono ? 1 : 5,
+          background: active ? t.activeBg : 'transparent',
+          color: active ? (mono ? '#fff' : '#2563eb') : t.textMid,
           cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
@@ -2546,21 +2558,45 @@ function CanvasSettingsPanel() {
   const settings = useCanvasSettingsStore()
   const update = settings.updateCanvasSettings
   const { simParams, updateSimParams } = usePlanetStore()
+  const checkboxRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 12 }
+  const smallButtonStyle: React.CSSProperties = {
+    padding: '4px 6px',
+    fontSize: 10,
+    color: t.textMid,
+    background: t.inputBg,
+    border: 'none',
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  }
+
+  function handleBackgroundImageFile(file: File | undefined) {
+    if (!file) return
+    update({ canvasBackgroundImageUrl: URL.createObjectURL(file) })
+  }
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <SectionHeader label="Canvas Settings" />
-      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        padding: '10px 12px 12px',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+        alignContent: 'start',
+        gap: 10,
+      }}>
         <SettingsGroup label="UI">
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+          <label style={checkboxRowStyle}>
             <input
               type="checkbox"
               checked={settings.monochromeMode}
               onChange={e => update({ monochromeMode: e.target.checked })}
             />
-            <span style={{ fontSize: 10, color: t.textMid }}>Monochrome mode</span>
+            <span style={{ fontSize: 10, color: t.textMid }}>Monochrome paper UI</span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+          <label style={checkboxRowStyle}>
             <input
               type="checkbox"
               checked={settings.showModeBar}
@@ -2568,6 +2604,72 @@ function CanvasSettingsPanel() {
             />
             <span style={{ fontSize: 10, color: t.textMid }}>Show mode bar</span>
           </label>
+        </SettingsGroup>
+        <SettingsGroup label="Paper Canvas">
+          <TextSetting label="Paper" value={settings.paperCanvasBackground}
+            onChange={paperCanvasBackground => update({ paperCanvasBackground })} />
+          <TextSetting label="Ink" value={settings.paperCanvasInk}
+            onChange={paperCanvasInk => update({ paperCanvasInk })} />
+          <NumberSetting label="Tone" value={settings.paperCanvasTone} min={0} max={1} step={0.05}
+            onChange={paperCanvasTone => update({ paperCanvasTone })} />
+          <NumberSetting label="Trails" value={settings.paperCanvasTrailOpacity} min={0} max={1} step={0.05}
+            onChange={paperCanvasTrailOpacity => update({ paperCanvasTrailOpacity })} />
+          <NumberSetting label="Labels" value={settings.paperCanvasLabelOpacity} min={0} max={1} step={0.05}
+            onChange={paperCanvasLabelOpacity => update({ paperCanvasLabelOpacity })} />
+          <label style={checkboxRowStyle}>
+            <input
+              type="checkbox"
+              checked={settings.paperCanvasKeepBodyColors}
+              onChange={e => update({ paperCanvasKeepBodyColors: e.target.checked })}
+            />
+            <span style={{ fontSize: 10, color: t.textMid }}>Keep body colors</span>
+          </label>
+        </SettingsGroup>
+        <SettingsGroup label="Background Image">
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <span style={{ fontSize: 10, color: t.textMid, paddingLeft: 12 }}>Image file</span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={e => handleBackgroundImageFile(e.target.files?.[0])}
+              style={{ fontSize: 10, color: t.textMid, width: '100%' }}
+            />
+          </label>
+          <TextSetting label="URL" value={settings.canvasBackgroundImageUrl}
+            onChange={canvasBackgroundImageUrl => update({ canvasBackgroundImageUrl })} />
+          <NumberSetting label="Opacity" value={settings.canvasBackgroundImageOpacity} min={0} max={1} step={0.05}
+            onChange={canvasBackgroundImageOpacity => update({ canvasBackgroundImageOpacity })} />
+          <label style={checkboxRowStyle}>
+            <input
+              type="checkbox"
+              checked={settings.canvasBackgroundImageColorInMonochrome}
+              onChange={e => update({ canvasBackgroundImageColorInMonochrome: e.target.checked })}
+            />
+            <span style={{ fontSize: 10, color: t.textMid }}>Color in mono</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 10, color: t.textMid, width: 68, textAlign: 'right', flexShrink: 0 }}>Fit</span>
+            <select
+              value={settings.canvasBackgroundImageFit}
+              onChange={e => update({ canvasBackgroundImageFit: e.target.value as 'cover' | 'contain' | 'stretch' })}
+              style={{
+                flex: 1, minWidth: 0, fontSize: 11,
+                border: 'none', borderRadius: 4, padding: '3px 6px',
+                background: t.inputBg, color: t.inputText, fontFamily: 'inherit',
+              }}
+            >
+              <option value="cover">Cover</option>
+              <option value="contain">Contain</option>
+              <option value="stretch">Stretch</option>
+            </select>
+          </label>
+          <button
+            onClick={() => update({ canvasBackgroundImageUrl: '' })}
+            style={{ ...smallButtonStyle, marginLeft: 12, opacity: settings.canvasBackgroundImageUrl ? 1 : 0.45 }}
+            disabled={!settings.canvasBackgroundImageUrl}
+          >
+            Clear image
+          </button>
         </SettingsGroup>
         <SettingsGroup label="Drawing">
           <NumberSetting label="Circle r" value={settings.circleRadius} min={1} step={1} onChange={circleRadius => {
@@ -2583,12 +2685,7 @@ function CanvasSettingsPanel() {
           <NumberSetting label="Zoom" value={settings.zoom} min={0.2} step={0.1} onChange={zoom => update({ zoom })} />
           <button
             onClick={() => update({ zoom: 1 })}
-            style={{
-              marginLeft: 76, padding: '4px 6px',
-              fontSize: 10, color: t.textMid,
-              background: t.inputBg, border: 'none', borderRadius: 4,
-              cursor: 'pointer', fontFamily: 'inherit',
-            }}
+            style={{ ...smallButtonStyle, marginLeft: 12 }}
           >
             Reset zoom
           </button>
@@ -2598,32 +2695,32 @@ function CanvasSettingsPanel() {
         <SettingsGroup label="Planet Display">
           <NumberSetting label="Trail len" value={simParams.trailLength} min={10} step={100}
             onChange={trailLength => updateSimParams({ trailLength })} />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+          <label style={checkboxRowStyle}>
             <input type="checkbox" checked={simParams.showTrails}
               onChange={e => updateSimParams({ showTrails: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Show trails</span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+          <label style={checkboxRowStyle}>
             <input type="checkbox" checked={simParams.showVelocityVectors}
               onChange={e => updateSimParams({ showVelocityVectors: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Velocity vectors</span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+          <label style={checkboxRowStyle}>
             <input type="checkbox" checked={simParams.simpleTheme}
               onChange={e => updateSimParams({ simpleTheme: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Simple (light) theme</span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+          <label style={checkboxRowStyle}>
             <input type="checkbox" checked={simParams.showPredictedOrbit}
               onChange={e => updateSimParams({ showPredictedOrbit: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Predicted orbit on drag</span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+          <label style={checkboxRowStyle}>
             <input type="checkbox" checked={simParams.bodyRadiusFromMass}
               onChange={e => updateSimParams({ bodyRadiusFromMass: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Body size from mass (×0.1)</span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+          <label style={checkboxRowStyle}>
             <input type="checkbox" checked={simParams.showSampleName}
               onChange={e => updateSimParams({ showSampleName: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Show sample name</span>
@@ -2631,7 +2728,7 @@ function CanvasSettingsPanel() {
         </SettingsGroup>
 
         <SettingsGroup label="Trigger Stars">
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+          <label style={checkboxRowStyle}>
             <input type="checkbox" checked={simParams.showTriggerStars}
               onChange={e => updateSimParams({ showTriggerStars: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Show trigger stars</span>
@@ -2640,15 +2737,25 @@ function CanvasSettingsPanel() {
             onChange={triggerStarSize => updateSimParams({ triggerStarSize })} />
           <NumberSetting label="Max count" value={simParams.triggerStarMaxCount} min={1} step={10}
             onChange={triggerStarMaxCount => updateSimParams({ triggerStarMaxCount })} />
+          <NumberSetting label="Life ms" value={simParams.triggerStarLifetimeMs} min={80} step={20}
+            onChange={triggerStarLifetimeMs => updateSimParams({ triggerStarLifetimeMs })} />
+          <NumberSetting label="Spread" value={simParams.triggerStarSpread} min={0.2} step={0.1}
+            onChange={triggerStarSpread => updateSimParams({ triggerStarSpread })} />
+          <NumberSetting label="Line w" value={simParams.triggerStarLineWidth} min={0.1} step={0.1}
+            onChange={triggerStarLineWidth => updateSimParams({ triggerStarLineWidth })} />
+          <NumberSetting label="Glow" value={simParams.triggerStarGlow} min={0} step={0.2}
+            onChange={triggerStarGlow => updateSimParams({ triggerStarGlow })} />
+          <NumberSetting label="Fade" value={simParams.triggerStarFadeStart} min={0} max={0.95} step={0.05}
+            onChange={triggerStarFadeStart => updateSimParams({ triggerStarFadeStart })} />
         </SettingsGroup>
 
         <SettingsGroup label="Body Oscilloscope Rings">
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+          <label style={checkboxRowStyle}>
             <input type="checkbox" checked={simParams.showBodyOscilloscope}
               onChange={e => updateSimParams({ showBodyOscilloscope: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Show canvas rings</span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+          <label style={checkboxRowStyle}>
             <input type="checkbox" checked={simParams.showRackBodyOscilloscope}
               onChange={e => updateSimParams({ showRackBodyOscilloscope: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Show rack rings</span>

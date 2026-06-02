@@ -48,6 +48,7 @@ interface TopBarProps {
 
 export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
   const t         = useTheme()
+  const mono      = t.activeBg === '#111'
   const project   = useProjectStore(s => s.project)
   const isDirty   = useProjectStore(s => s.isDirty)
   const loadProj  = useProjectStore(s => s.loadProject)
@@ -261,7 +262,7 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
 
       {/* Mode switcher — hidden by default, shown when showModeBar is on */}
       {onSetAppMode && showModeBar && (
-        <div style={{ display: 'flex', gap: 2, background: t.sectionBg, borderRadius: 6, padding: 2, border: `0.5px solid ${t.panelBorder}` }}>
+        <div style={{ display: 'flex', gap: 2, background: t.sectionBg, borderRadius: mono ? 1 : 6, padding: 2, border: `0.5px solid ${t.panelBorder}` }}>
           {([
             ['planet',    '⬤ Planet'],
             ['chord-lab', '⬡ Chord Lab'],
@@ -272,10 +273,10 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
               key={mode}
               onClick={() => onSetAppMode(mode)}
               style={{
-                fontSize: 10, fontWeight: 600, padding: '2px 9px', borderRadius: 4,
+                fontSize: 10, fontWeight: 600, padding: '2px 9px', borderRadius: mono ? 1 : 4,
                 border: 'none', fontFamily: 'inherit', cursor: 'pointer',
-                background: appMode === mode ? 'rgba(139,92,246,0.22)' : 'transparent',
-                color: appMode === mode ? '#a78bfa' : t.textMid,
+                background: appMode === mode ? t.activeBg : 'transparent',
+                color: appMode === mode ? (mono ? '#fff' : '#a78bfa') : t.textMid,
               }}>
               {label}
             </button>
@@ -291,12 +292,13 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
 }
 
 function btnStyle(active: boolean, disabled: boolean, t: ReturnType<typeof useTheme>): React.CSSProperties {
+  const mono = t.activeBg === '#111'
   return {
     display: 'flex', alignItems: 'center', gap: 4,
-    padding: '3px 8px', borderRadius: 5, border: `0.5px solid ${t.btnBorder}`,
-    background: active ? 'rgba(37,99,235,0.15)' : t.btnBg,
+    padding: '3px 8px', borderRadius: mono ? 1 : 5, border: `0.5px solid ${t.btnBorder}`,
+    background: active ? t.activeBg : t.btnBg,
     fontSize: 11, fontWeight: 500, cursor: disabled ? 'default' : 'pointer',
-    opacity: disabled ? 0.4 : 1, color: t.text,
+    opacity: disabled ? 0.4 : 1, color: active && mono ? '#fff' : t.text,
     fontFamily: 'inherit',
   }
 }

@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePlanetStore } from '../../store/planetStore'
+import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { useProjectStore } from '../../store/projectStore'
 import { useControlSetStore } from '../../store/controlSetStore'
 import type { PlanetSimParams } from '../../store/planetStore'
@@ -27,7 +28,9 @@ interface Props {
 const EMPTY_OVERRIDES: Partial<PlanetSimParams> = {}
 
 export function OneShotSamplerPanel({ bodyId, slotKey, onClose }: Props) {
-  const simple       = usePlanetStore(s => s.simParams.simpleTheme)
+  const simpleTheme  = usePlanetStore(s => s.simParams.simpleTheme)
+  const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
+  const simple       = simpleTheme || monochromeMode
   const samples      = useProjectStore(s => s.project.samples)
   const addSampleAsset = useProjectStore(s => s.addSampleAsset)
   const body         = usePlanetStore(s => s.bodies.find(b => b.id === bodyId) ?? null)

@@ -91,6 +91,11 @@ export interface PlanetSimParams {
   showTriggerStars: boolean
   triggerStarSize: number
   triggerStarMaxCount: number
+  triggerStarLifetimeMs: number
+  triggerStarSpread: number
+  triggerStarLineWidth: number
+  triggerStarGlow: number
+  triggerStarFadeStart: number
   rackBodyOscilloscopeStrokeWidth: number
   rackBodyOscilloscopeHeight: number
   rackBodyOscilloscopeGap: number
@@ -398,6 +403,11 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   showTriggerStars: false,
   triggerStarSize: 7,
   triggerStarMaxCount: 160,
+  triggerStarLifetimeMs: 680,
+  triggerStarSpread: 2.2,
+  triggerStarLineWidth: 1.25,
+  triggerStarGlow: 3.2,
+  triggerStarFadeStart: 0.18,
   rackBodyOscilloscopeStrokeWidth: 1,
   rackBodyOscilloscopeHeight: 30,
   rackBodyOscilloscopeGap: 13,

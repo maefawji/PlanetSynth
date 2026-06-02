@@ -4,6 +4,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useSelectionStore } from '../../store/selectionStore'
 import { useAudioStore } from '../../store/audioStore'
 import { usePlanetStore } from '../../store/planetStore'
+import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { useControlSetStore } from '../../store/controlSetStore'
 import type { PlanetBody } from '../../store/planetStore'
 import type { PlanetTool } from '../planet/PlanetCanvas'
@@ -537,7 +538,9 @@ function MidiOutSection({
 /** Live orbital statistics for one body, polled at 100 ms. */
 function BodyOrbitSection({ bodyId }: { bodyId: string }) {
   const t      = useTheme()
-  const simple = usePlanetStore(s => s.simParams.simpleTheme)
+  const simpleTheme = usePlanetStore(s => s.simParams.simpleTheme)
+  const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
+  const simple = simpleTheme || monochromeMode
 
   // Both liveStats and orbitStats are updated together in one interval.
   // Calling update() immediately on mount avoids stale-display after reload

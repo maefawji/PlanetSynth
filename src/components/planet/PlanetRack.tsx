@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { usePlanetStore } from '../../store/planetStore'
+import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import type { PlanetSimParams } from '../../store/planetStore'
 import { useProjectStore } from '../../store/projectStore'
 import {
@@ -3602,7 +3603,9 @@ interface PlanetRackProps {
 }
 
 export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampler, onExtendOneShot, planetTool }: PlanetRackProps) {
-  const simple         = usePlanetStore(s => s.simParams.simpleTheme)
+  const simpleTheme    = usePlanetStore(s => s.simParams.simpleTheme)
+  const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
+  const simple         = simpleTheme || monochromeMode
   const selectedBodyId = usePlanetStore(s => s.selectedBodyId)
   const [inspectorExpanded, setInspectorExpanded] = useState(false)
   const [expandedSlotKey, setExpandedSlotKey]     = useState<string | null>(null)

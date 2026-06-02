@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePlanetStore } from '../../store/planetStore'
 import { useProjectStore } from '../../store/projectStore'
 import { useControlSetStore } from '../../store/controlSetStore'
+import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import {
   triggerBodySound,
   startStandpointSound,
@@ -224,6 +225,7 @@ interface TriggerStarMarker {
   x: number
   y: number
   color: string
+  bornMs: number
 }
 
 // ── Physics ───────────────────────────────────────────────────────────────────
@@ -318,7 +320,6 @@ const STEPS_PER_FRAME   = 4
 const TRAIL_STEP_INTERVAL = 2
 const VELOCITY_SCALE    = 0.02   // bow-and-arrow: velocity per world-unit of drag pullback
 const PREDICT_STEPS     = 800    // forward-sim steps for drag-place orbit preview
-
 // ── Predicted orbit ───────────────────────────────────────────────────────────
 
 /** Run a forward simulation clone and return the preview body's trajectory as
@@ -386,6 +387,17 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
 
   // ── Store subscriptions ──────────────────────────────────────────────────
   const { bodies: storeBodies, simParams: storeParams, selectedBodyId, selectedBodyIds, resetSeq, setSelectedBodyId } = usePlanetStore()
+  const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
+  const paperCanvasBackground = useCanvasSettingsStore(s => s.paperCanvasBackground)
+  const paperCanvasInk = useCanvasSettingsStore(s => s.paperCanvasInk)
+  const paperCanvasTone = useCanvasSettingsStore(s => s.paperCanvasTone)
+  const paperCanvasTrailOpacity = useCanvasSettingsStore(s => s.paperCanvasTrailOpacity)
+  const paperCanvasLabelOpacity = useCanvasSettingsStore(s => s.paperCanvasLabelOpacity)
+  const paperCanvasKeepBodyColors = useCanvasSettingsStore(s => s.paperCanvasKeepBodyColors)
+  const canvasBackgroundImageUrl = useCanvasSettingsStore(s => s.canvasBackgroundImageUrl)
+  const canvasBackgroundImageOpacity = useCanvasSettingsStore(s => s.canvasBackgroundImageOpacity)
+  const canvasBackgroundImageFit = useCanvasSettingsStore(s => s.canvasBackgroundImageFit)
+  const canvasBackgroundImageColorInMonochrome = useCanvasSettingsStore(s => s.canvasBackgroundImageColorInMonochrome)
 
   // ── Simulation refs (declared first so all effects can use them) ─────────
   const storeBodiesRef    = useRef<PlanetBody[]>(storeBodies)
@@ -515,12 +527,14 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     const live = liveBodiesRef.current.find(b => b.id === bodyId)
     if (!live) return
     const storeBody = storeBodiesMapRef.current.get(bodyId)
+    const nowMs = performance.now()
     const marker: TriggerStarMarker = {
-      id: `${bodyId}:${performance.now().toFixed(2)}:${triggerStarMarkersRef.current.length}`,
+      id: `${bodyId}:${nowMs.toFixed(2)}:${triggerStarMarkersRef.current.length}`,
       bodyId,
       x: live.x,
       y: live.y,
       color: storeBody?.color ?? '#facc15',
+      bornMs: nowMs,
     }
     const maxCount = Math.max(1, Math.floor(sp.triggerStarMaxCount || 1))
     triggerStarMarkersRef.current = [...triggerStarMarkersRef.current, marker].slice(-maxCount)
@@ -1914,34 +1928,41 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const cx = w / 2, cy = h / 2
   const camTx = `translate(${cx},${cy}) scale(${zoom}) translate(${-viewOffset.x},${-viewOffset.y})`
 
-  const simple       = storeParams.simpleTheme
-  const bgColor      = simple ? '#fafaf9' : '#0a0a0f'
-  const labelColor   = simple ? 'rgba(0,0,0,0.5)'   : 'rgba(255,255,255,0.5)'
-  const hudColor     = simple ? 'rgba(0,0,0,0.38)'  : 'rgba(255,255,255,0.38)'
-  const selStroke    = simple ? 'rgba(0,0,0,0.35)'  : 'rgba(255,255,255,0.45)'
-  const trailOpacity = simple ? 0.45 : 0.30
-  const triggerStars = storeParams.showTriggerStars ? triggerStarMarkersRef.current : []
-  const triggerStarPath = (x: number, y: number, r: number) => {
-    const pts: string[] = []
-    for (let i = 0; i < 10; i++) {
-      const a = -Math.PI / 2 + i * Math.PI / 5
-      const rr = i % 2 === 0 ? r : r * 0.42
-      pts.push(`${x + Math.cos(a) * rr},${y + Math.sin(a) * rr}`)
-    }
-    return `M ${pts.join(' L ')} Z`
+  const simple       = storeParams.simpleTheme || monochromeMode
+  const paperTone    = Math.max(0, Math.min(1, paperCanvasTone))
+  const bgColor      = monochromeMode ? paperCanvasBackground : simple ? '#fafaf9' : '#0a0a0f'
+  const labelColor   = monochromeMode ? paperCanvasInk : simple ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)'
+  const labelOpacity = monochromeMode ? Math.max(0, Math.min(1, paperCanvasLabelOpacity)) : 1
+  const hudColor     = monochromeMode ? paperCanvasInk : simple ? 'rgba(0,0,0,0.38)' : 'rgba(255,255,255,0.38)'
+  const hudOpacity   = monochromeMode ? Math.max(0.12, labelOpacity * 0.72) : 1
+  const selStroke    = monochromeMode ? paperCanvasInk : simple ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.45)'
+  const trailOpacity = monochromeMode ? Math.max(0, Math.min(1, paperCanvasTrailOpacity)) : simple ? 0.45 : 0.30
+  const paperMainOpacity = 0.28 + paperTone * 0.68
+  const paperLineOpacity = 0.14 + paperTone * 0.56
+  const paperSubtleOpacity = 0.04 + paperTone * 0.18
+  const bgImageOpacity = Math.max(0, Math.min(1, canvasBackgroundImageOpacity))
+  const bgImagePreserveAspectRatio = canvasBackgroundImageFit === 'stretch'
+    ? 'none'
+    : `xMidYMid ${canvasBackgroundImageFit === 'contain' ? 'meet' : 'slice'}`
+  const renderNowMs = performance.now()
+  const triggerStars = storeParams.showTriggerStars
+    ? triggerStarMarkersRef.current.filter(marker => renderNowMs - marker.bornMs < Math.max(80, storeParams.triggerStarLifetimeMs))
+    : []
+  if (storeParams.showTriggerStars && triggerStars.length !== triggerStarMarkersRef.current.length) {
+    triggerStarMarkersRef.current = triggerStars
   }
 
   // Probe cursor params
   const probePos = tool === 'probe' ? mousePosWorldRef.current : null
   const probeWr  = probePos ? bodyScreenR(storeParams.probeMass, 'planet', storeParams.bodyRadiusFromMass) / zoom : 0
-  const probeCol = '#a78bfa'
+  const probeCol = monochromeMode ? paperCanvasInk : '#a78bfa'
 
   // Drag-place overlay data
   const dpOverlay = dragPlace ? (() => {
     const isSunDrag = dragPlace.tool === 'add-sun'
     const previewMass = isSunDrag ? sunMassFromDrag(dragPlace) : 1
     return {
-      col:      isSunDrag ? '#f59e0b' : '#60a5fa',
+      col:      monochromeMode ? paperCanvasInk : isSunDrag ? '#f59e0b' : '#60a5fa',
       wr:       bodyScreenR(previewMass, isSunDrag ? 'sun' : 'planet', storeParams.bodyRadiusFromMass) / zoom,
       arrowX:   dragPlace.bodyX + (dragPlace.bodyX - dragPlace.dragX) * 0.5,
       arrowY:   dragPlace.bodyY + (dragPlace.bodyY - dragPlace.dragY) * 0.5,
@@ -1988,7 +2009,22 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           )}
         </defs>
 
-        <rect width={w} height={h} fill={simple ? '#fafaf9' : 'url(#bgGrad)'} />
+        <rect width={w} height={h} fill={monochromeMode ? paperCanvasBackground : simple ? '#fafaf9' : 'url(#bgGrad)'} />
+        {canvasBackgroundImageUrl && (
+          <image
+            href={canvasBackgroundImageUrl}
+            x={0}
+            y={0}
+            width={w}
+            height={h}
+            preserveAspectRatio={bgImagePreserveAspectRatio}
+            opacity={bgImageOpacity}
+            style={{
+              pointerEvents: 'none',
+              filter: monochromeMode && !canvasBackgroundImageColorInMonochrome ? 'grayscale(1)' : undefined,
+            }}
+          />
+        )}
 
         {!simple && Array.from({ length: 80 }, (_, i) => {
           const seed = i * 137.508
@@ -2007,26 +2043,64 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
             const pts = trailToPoints(ring)
             if (!pts) return null
             const sb = storeBodiesMapRef.current.get(b.id)
+            const trailColor = monochromeMode && !paperCanvasKeepBodyColors ? paperCanvasInk : sb?.color ?? '#888'
             return (
               <polyline key={`trail-${b.id}`} points={pts} fill="none"
-                stroke={sb?.color ?? '#888'} strokeWidth={1.2 / zoom} strokeOpacity={trailOpacity} />
+                stroke={trailColor} strokeWidth={1.2 / zoom} strokeOpacity={trailOpacity} />
             )
           })}
 
           {triggerStars.length > 0 && (
             <g style={{ pointerEvents: 'none' }}>
               {triggerStars.map(marker => {
-                const r = Math.max(1, storeParams.triggerStarSize) / zoom
+                const age = Math.max(0, renderNowMs - marker.bornMs)
+                const lifetimeMs = Math.max(80, storeParams.triggerStarLifetimeMs)
+                const progress = Math.min(1, age / lifetimeMs)
+                const burst = 1 - Math.pow(1 - Math.min(1, progress * 1.45), 3)
+                const fadeStart = Math.max(0, Math.min(0.95, storeParams.triggerStarFadeStart))
+                const fadeSpan = Math.max(0.05, 1 - fadeStart)
+                const fade = Math.max(0, 1 - Math.pow(Math.max(0, progress - fadeStart) / fadeSpan, 1.6))
+                const base = Math.max(1, storeParams.triggerStarSize) / zoom
+                const outer = base * (0.45 + burst * Math.max(0.2, storeParams.triggerStarSpread))
+                const inner = base * Math.max(0, burst * 0.82 - 0.24)
+                const strokeWidth = Math.max(0.1, storeParams.triggerStarLineWidth) / zoom
+                const glowWidth = strokeWidth * Math.max(0, storeParams.triggerStarGlow)
+                const arms = [
+                  [marker.x - outer, marker.y, marker.x - inner, marker.y],
+                  [marker.x + inner, marker.y, marker.x + outer, marker.y],
+                  [marker.x, marker.y - outer, marker.x, marker.y - inner],
+                  [marker.x, marker.y + inner, marker.x, marker.y + outer],
+                ]
                 return (
-                  <path
-                    key={marker.id}
-                    d={triggerStarPath(marker.x, marker.y, r)}
-                    fill={marker.color}
-                    fillOpacity={0.55}
-                    stroke="#fff7ed"
-                    strokeWidth={0.6 / zoom}
-                    strokeOpacity={0.72}
-                  />
+                  <g key={marker.id} opacity={fade}>
+                    {arms.map(([x1, y1, x2, y2], i) => (
+                      <line
+                        key={`glow-${i}`}
+                        x1={x1} y1={y1} x2={x2} y2={y2}
+                        stroke={monochromeMode && !paperCanvasKeepBodyColors ? paperCanvasInk : marker.color}
+                        strokeWidth={glowWidth}
+                        strokeLinecap="round"
+                        strokeOpacity={monochromeMode ? paperSubtleOpacity : simple ? 0.12 : 0.20}
+                      />
+                    ))}
+                    {arms.map(([x1, y1, x2, y2], i) => (
+                      <line
+                        key={i}
+                        x1={x1} y1={y1} x2={x2} y2={y2}
+                        stroke={monochromeMode && !paperCanvasKeepBodyColors ? paperCanvasInk : marker.color}
+                        strokeWidth={strokeWidth}
+                        strokeLinecap="round"
+                        strokeOpacity={monochromeMode ? paperLineOpacity : simple ? 0.74 : 0.88}
+                      />
+                    ))}
+                    <circle
+                      cx={marker.x}
+                      cy={marker.y}
+                      r={base * Math.max(0, 0.36 - progress * 0.7)}
+                      fill={monochromeMode && !paperCanvasKeepBodyColors ? paperCanvasInk : marker.color}
+                      opacity={monochromeMode ? paperMainOpacity : simple ? 0.45 : 0.65}
+                    />
+                  </g>
                 )
               })}
             </g>
@@ -2035,10 +2109,11 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           {/* Velocity vectors */}
           {storeParams.showVelocityVectors && bodies.map(b => {
             const sb = storeBodiesMapRef.current.get(b.id)
+            const velColor = monochromeMode && !paperCanvasKeepBodyColors ? paperCanvasInk : sb?.color ?? '#888'
             return (
               <line key={`vel-${b.id}`}
                 x1={b.x} y1={b.y} x2={b.x + b.vx * 25} y2={b.y + b.vy * 25}
-                stroke={sb?.color ?? '#888'} strokeWidth={1.5 / zoom} strokeOpacity={0.7}
+                stroke={velColor} strokeWidth={1.5 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.7}
                 markerEnd="url(#velArrow)" />
             )
           })}
@@ -2048,6 +2123,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
             const sb        = storeBodiesMapRef.current.get(b.id)
             const type      = sb?.type  ?? 'planet'
             const color     = sb?.color ?? '#888'
+            const inkColor  = monochromeMode && !paperCanvasKeepBodyColors ? paperCanvasInk : color
             const samplerSample = resolveBodySamplerSample(b.id, sb?.sampleId, projectSamplesRef.current)
             const hasSample = Boolean(samplerSample)
             // Label: show sample name when enabled and sample is assigned
@@ -2065,7 +2141,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   <circle cx={b.x} cy={b.y} r={wr * 2.5} fill={color} opacity={0.07} />
                 ) : (
                   type === 'sun' && (
-                    <circle cx={b.x} cy={b.y} r={wr * 1.6} fill={color} opacity={0.12} />
+                    !monochromeMode && <circle cx={b.x} cy={b.y} r={wr * 1.6} fill={inkColor} opacity={0.12} />
                   )
                 )}
                 {storeParams.showBodyOscilloscope && (() => {
@@ -2079,9 +2155,9 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                     <path
                       d={path}
                       fill="none"
-                      stroke={color}
+                      stroke={inkColor}
                       strokeWidth={Math.max(0.1, storeParams.bodyOscilloscopeStrokeWidth)}
-                      strokeOpacity={simple ? 0.42 : 0.62}
+                      strokeOpacity={monochromeMode ? paperLineOpacity : simple ? 0.42 : 0.62}
                       vectorEffect="non-scaling-stroke"
                       style={{ pointerEvents: 'none' }}
                     />
@@ -2094,7 +2170,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 )}
                 {isMultiSel && (
                   <circle cx={b.x} cy={b.y} r={wr + 5 / zoom} fill="none"
-                    stroke="rgba(139,92,246,0.65)" strokeWidth={1 / zoom}
+                    stroke={monochromeMode ? paperCanvasInk : 'rgba(139,92,246,0.65)'} strokeWidth={1 / zoom}
                     strokeDasharray={`${4 / zoom} ${3 / zoom}`} />
                 )}
                 {/* Effector ring + influence radius */}
@@ -2104,7 +2180,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   const effType = (rackOv.effectorType ?? sb?.effectorType ?? 'none') as string
                   if (effType === 'none') return null
                   const effDist = ((rackOv.effectorDistance ?? sb?.effectorDistance ?? 200) as number)
-                  const effCol  = effType === 'delay'      ? '#a78bfa'
+                  const effCol  = monochromeMode && !paperCanvasKeepBodyColors ? paperCanvasInk
+                               : effType === 'delay'      ? '#a78bfa'
                                : effType === 'distortion'  ? '#ef4444'
                                : effType === 'chorus'      ? '#10b981'
                                : effType === 'phaser'      ? '#c084fc'
@@ -2123,14 +2200,14 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   return (
                     <>
                       <circle cx={b.x} cy={b.y} r={wr + 6 / zoom} fill="none"
-                        stroke={effCol} strokeWidth={1.5 / zoom} strokeOpacity={0.65}
+                        stroke={effCol} strokeWidth={1.5 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.65}
                         strokeDasharray={`${3 / zoom} ${2 / zoom}`} />
                       <circle cx={b.x} cy={b.y} r={effDist} fill="none"
-                        stroke={effCol} strokeWidth={0.5 / zoom} strokeOpacity={0.20}
+                        stroke={effCol} strokeWidth={0.5 / zoom} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.20}
                         strokeDasharray={`${8 / zoom} ${5 / zoom}`} />
                       <text
                         x={b.x + wr + 10 / zoom} y={b.y - 2 / zoom}
-                        fontSize={8 / zoom} fill={effCol} opacity={0.75}
+                        fontSize={8 / zoom} fill={effCol} opacity={monochromeMode ? labelOpacity : 0.75}
                         style={{ pointerEvents: 'none', userSelect: 'none' }}>
                         {effLabel}
                       </text>
@@ -2159,22 +2236,22 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   return (
                     <>
                       <circle cx={b.x} cy={b.y} r={wr + 7 / zoom} fill="none"
-                        stroke="#06b6d4" strokeWidth={1.5 / zoom} strokeOpacity={0.75} />
+                        stroke={monochromeMode ? paperCanvasInk : '#06b6d4'} strokeWidth={1.5 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.75} />
                       {/* Range: cone sector if directional, full circle otherwise */}
                       {dirOn ? (
                         // Directional: arc only (no center lines, no fill)
                         <path
                           d={`M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`}
-                          fill="none" stroke="#06b6d4" strokeWidth={1 / zoom} strokeOpacity={0.6}
+                          fill="none" stroke={monochromeMode ? paperCanvasInk : '#06b6d4'} strokeWidth={1 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.6}
                           strokeDasharray={`${7 / zoom} ${5 / zoom}`} />
                       ) : (
                         <circle cx={b.x} cy={b.y} r={r} fill="none"
-                          stroke="#06b6d4" strokeWidth={0.5 / zoom} strokeOpacity={0.22}
+                          stroke={monochromeMode ? paperCanvasInk : '#06b6d4'} strokeWidth={0.5 / zoom} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.22}
                           strokeDasharray={`${7 / zoom} ${5 / zoom}`} />
                       )}
                       <text
                         x={b.x + wr + 11 / zoom} y={b.y + 3 / zoom}
-                        fontSize={9 / zoom} fill="#06b6d4" opacity={0.75}
+                        fontSize={9 / zoom} fill={monochromeMode ? paperCanvasInk : '#06b6d4'} opacity={monochromeMode ? labelOpacity : 0.75}
                         style={{ pointerEvents: 'none', userSelect: 'none' }}>
                         SP
                       </text>
@@ -2202,43 +2279,44 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                     return (
                       <g key={k}>
                         <circle cx={mx} cy={my} r={5 / zoom} fill="none"
-                          stroke="#60a5fa" strokeWidth={1.2 / zoom} strokeOpacity={0.65} />
+                          stroke={monochromeMode ? paperCanvasInk : '#60a5fa'} strokeWidth={1.2 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.65} />
                         <line
                           x1={mx} y1={my - 5 / zoom} x2={mx} y2={my + 5 / zoom}
-                          stroke="#60a5fa" strokeWidth={0.8 / zoom} strokeOpacity={0.40} />
+                          stroke={monochromeMode ? paperCanvasInk : '#60a5fa'} strokeWidth={0.8 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.40} />
                       </g>
                     )
                   })
                 })()}
                 {hasSample && storeParams.rendezvousDistance > 0 && (
                   <circle cx={b.x} cy={b.y} r={storeParams.rendezvousDistance} fill="none"
-                    stroke={color} strokeWidth={0.5 / zoom} strokeOpacity={0.18}
+                    stroke={inkColor} strokeWidth={0.5 / zoom} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.18}
                     strokeDasharray={`${8 / zoom} ${6 / zoom}`} />
                 )}
-                <circle cx={b.x} cy={b.y} r={wr} fill={color}
-                  stroke={simple ? 'rgba(0,0,0,0.15)' : 'none'}
+                <circle cx={b.x} cy={b.y} r={wr} fill={inkColor}
+                  opacity={monochromeMode ? paperMainOpacity : 1}
+                  stroke={monochromeMode ? paperCanvasInk : simple ? 'rgba(0,0,0,0.15)' : 'none'}
                   strokeWidth={simple ? 1 / zoom : 0}
                   style={{
                     cursor: storeParams.paused && !b.fixed ? 'grab' : 'default',
-                    filter: !simple
+                    filter: monochromeMode ? 'none' : !simple
                       ? `drop-shadow(0 0 ${type === 'sun' ? 8 : 4}px ${color}88)`
                       : type === 'sun' ? `drop-shadow(0 0 3px ${color}66)` : 'none',
                   }}
                 />
-                {simple && type === 'sun' && (
+                {simple && !monochromeMode && type === 'sun' && (
                   <>
                     <line x1={b.x - wr * 1.5} y1={b.y} x2={b.x + wr * 1.5} y2={b.y}
-                      stroke={color} strokeWidth={1 / zoom} strokeOpacity={0.45} />
+                      stroke={inkColor} strokeWidth={1 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.45} />
                     <line x1={b.x} y1={b.y - wr * 1.5} x2={b.x} y2={b.y + wr * 1.5}
-                      stroke={color} strokeWidth={1 / zoom} strokeOpacity={0.45} />
+                      stroke={inkColor} strokeWidth={1 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.45} />
                   </>
                 )}
                 {hasSample && (
                   <circle cx={b.x + wr * 0.7} cy={b.y - wr * 0.7} r={2.5 / zoom}
-                    fill={simple ? '#2563eb' : '#60a5fa'} opacity={0.9} />
+                    fill={monochromeMode ? paperCanvasInk : simple ? '#2563eb' : '#60a5fa'} opacity={monochromeMode ? paperMainOpacity : 0.9} />
                 )}
                 <text x={b.x} y={b.y - wr - 5 / zoom} textAnchor="middle"
-                  fontSize={10 / zoom} fill={labelColor}
+                  fontSize={10 / zoom} fill={labelColor} opacity={labelOpacity}
                   style={{ pointerEvents: 'none', userSelect: 'none' }}>
                   {name}
                 </text>
@@ -2250,20 +2328,20 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           {probePos && (
             <g>
               <circle cx={probePos.x} cy={probePos.y} r={probeWr * 3}
-                fill={probeCol} opacity={0.06} />
+                fill={probeCol} opacity={monochromeMode ? paperSubtleOpacity : 0.06} />
               <circle cx={probePos.x} cy={probePos.y} r={probeWr} fill="none"
-                stroke={probeCol} strokeWidth={1.5 / zoom} strokeDasharray={`${4 / zoom} ${3 / zoom}`} />
+                stroke={probeCol} strokeWidth={1.5 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 1} strokeDasharray={`${4 / zoom} ${3 / zoom}`} />
               <circle cx={probePos.x} cy={probePos.y} r={3 / zoom}
-                fill={probeCol} opacity={0.85} />
+                fill={probeCol} opacity={monochromeMode ? paperMainOpacity : 0.85} />
               {/* Crosshair */}
               {[[-1.6, 0, -0.55, 0], [0.55, 0, 1.6, 0], [0, -1.6, 0, -0.55], [0, 0.55, 0, 1.6]].map(([x1f, y1f, x2f, y2f], i) => (
                 <line key={i}
                   x1={probePos.x + x1f * probeWr} y1={probePos.y + y1f * probeWr}
                   x2={probePos.x + x2f * probeWr} y2={probePos.y + y2f * probeWr}
-                  stroke={probeCol} strokeWidth={1 / zoom} opacity={0.65} />
+                  stroke={probeCol} strokeWidth={1 / zoom} opacity={monochromeMode ? paperLineOpacity : 0.65} />
               ))}
               <text x={probePos.x} y={probePos.y - probeWr - 5 / zoom} textAnchor="middle"
-                fontSize={9 / zoom} fill={probeCol} opacity={0.8}
+                fontSize={9 / zoom} fill={probeCol} opacity={monochromeMode ? labelOpacity : 0.8}
                 style={{ userSelect: 'none', pointerEvents: 'none' }}>
                 probe m={storeParams.probeMass}
               </text>
@@ -2289,7 +2367,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
               {!dpOverlay.isSun && (
                 <line x1={dragPlace.bodyX} y1={dragPlace.bodyY}
                   x2={dragPlace.dragX} y2={dragPlace.dragY}
-                  stroke={simple ? 'rgba(0,0,0,0.38)' : 'rgba(255,255,255,0.38)'}
+                  stroke={monochromeMode ? paperCanvasInk : simple ? 'rgba(0,0,0,0.38)' : 'rgba(255,255,255,0.38)'}
+                  strokeOpacity={monochromeMode ? paperLineOpacity : 1}
                   strokeWidth={1.5 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} />
               )}
               {dpOverlay.hasDrag && (
@@ -2298,12 +2377,12 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   stroke={dpOverlay.col} strokeWidth={2 / zoom} markerEnd="url(#placeArrow)" />
               )}
               <circle cx={dragPlace.bodyX} cy={dragPlace.bodyY} r={dpOverlay.wr}
-                fill={dpOverlay.col} opacity={0.72} />
+                fill={dpOverlay.col} opacity={monochromeMode ? paperMainOpacity : 0.72} />
               {/* Sun: show mass label that grows with drag */}
               {dpOverlay.isSun && dpOverlay.sunMass !== undefined && (
                 <text x={dragPlace.bodyX} y={dragPlace.bodyY - dpOverlay.wr - 6 / zoom}
                   textAnchor="middle" fontSize={11 / zoom}
-                  fill={dpOverlay.col} fontFamily="monospace" opacity={0.9}>
+                  fill={dpOverlay.col} fontFamily="monospace" opacity={monochromeMode ? labelOpacity : 0.9}>
                   m={dpOverlay.sunMass}
                 </text>
               )}
@@ -2314,18 +2393,21 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
         {storeParams.paused && (
           <g>
             <rect x={6} y={6} width={230} height={20} rx={3}
-              fill={simple ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.4)'} />
-            <text x={12} y={21} fontSize={11} fill={hudColor} fontFamily="monospace">
+              fill={monochromeMode ? paperCanvasInk : simple ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.4)'}
+              opacity={monochromeMode ? 0.06 : 1} />
+            <text x={12} y={21} fontSize={11} fill={hudColor} opacity={hudOpacity} fontFamily="monospace">
               ⏸  PAUSED — drag bodies to reposition
             </text>
           </g>
         )}
         <text x={8} y={h - 8} fontSize={9} fontFamily="monospace"
-          fill={simple ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.18)'}>
+          fill={monochromeMode ? paperCanvasInk : simple ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.18)'}
+          opacity={monochromeMode ? hudOpacity : 1}>
           scroll: zoom · right-drag: pan
         </text>
         <text x={w - 8} y={h - 8} fontSize={9} fontFamily="monospace"
-          textAnchor="end" fill={simple ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.18)'}>
+          textAnchor="end" fill={monochromeMode ? paperCanvasInk : simple ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.18)'}
+          opacity={monochromeMode ? hudOpacity : 1}>
           {bodies.length} bodies · speed={(storeParams.dt / 0.2).toFixed(storeParams.dt < 0.2 ? 2 : 1)}x · G={storeParams.G} · ε={storeParams.epsilon} · dt={storeParams.dt}
         </text>
 
@@ -2337,8 +2419,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           const rh = Math.abs(dragSel.ey - dragSel.sy)
           return (
             <rect x={rx} y={ry} width={rw} height={rh}
-              fill="rgba(139,92,246,0.07)"
-              stroke="rgba(139,92,246,0.55)"
+              fill={monochromeMode ? paperCanvasInk : 'rgba(139,92,246,0.07)'}
+              fillOpacity={monochromeMode ? 0.06 : undefined}
+              stroke={monochromeMode ? paperCanvasInk : 'rgba(139,92,246,0.55)'}
+              strokeOpacity={monochromeMode ? paperLineOpacity : undefined}
               strokeWidth={1}
               strokeDasharray="5 3"
               style={{ pointerEvents: 'none' }} />

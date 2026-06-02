@@ -3,6 +3,7 @@
 // Panels follow the simpleTheme flag: false (default) = dark, true = light.
 
 import { usePlanetStore } from '../store/planetStore'
+import { useCanvasSettingsStore } from '../store/canvasSettingsStore'
 
 export interface UITheme {
   /** Main panel background */
@@ -77,8 +78,29 @@ export const LIGHT_THEME: UITheme = {
   tagText:     '#666',
 }
 
+export const MONOCHROME_THEME: UITheme = {
+  panelBg:     '#fff',
+  panelBorder: 'rgba(0,0,0,0.16)',
+  headerBg:    '#fff',
+  divider:     'rgba(0,0,0,0.12)',
+  text:        '#050505',
+  textMid:     '#343434',
+  textDim:     '#8a8a8a',
+  inputBg:     '#f1f1f1',
+  inputText:   '#050505',
+  btnBg:       '#f4f4f4',
+  btnBorder:   'rgba(0,0,0,0.18)',
+  hoverBg:     '#ececec',
+  activeBg:    '#111',
+  sectionBg:   '#fff',
+  tagBg:       '#efefef',
+  tagText:     '#111',
+}
+
 /** Returns the appropriate theme based on the current simpleTheme setting. */
 export function useTheme(): UITheme {
   const simple = usePlanetStore(s => s.simParams.simpleTheme)
+  const monochrome = useCanvasSettingsStore(s => s.monochromeMode)
+  if (monochrome) return MONOCHROME_THEME
   return simple ? LIGHT_THEME : DARK_THEME
 }

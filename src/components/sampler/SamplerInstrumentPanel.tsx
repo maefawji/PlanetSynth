@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useProjectStore } from '../../store/projectStore'
 import { usePlanetStore } from '../../store/planetStore'
+import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { useControlSetStore, BUILTIN_CONTROL_SETS } from '../../store/controlSetStore'
 import type { PlanetSimParams } from '../../store/planetStore'
 import { getSamplerPlayhead, getSamplerRawDuration } from '../../audio/samplerPlayhead'
@@ -39,7 +40,9 @@ interface Props {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function SamplerInstrumentPanel({ bodyId, slotKey, onClose }: Props) {
-  const simple = usePlanetStore(s => s.simParams.simpleTheme)
+  const simpleTheme = usePlanetStore(s => s.simParams.simpleTheme)
+  const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
+  const simple = simpleTheme || monochromeMode
 
   // Param overrides for this slot
   const overrides       = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_OV)
