@@ -22,6 +22,8 @@ export interface PlanetBody {
   vx: number
   vy: number
   fixed: boolean
+  /** Manual facing angle used when this body becomes the standpoint listener. */
+  standpointFacingAngle?: number
   color: string
   sampleId: string | null  // assigned sample asset id
   /** Orbit-stretch loop ratio: sample loops = orbitLoopNumer per orbitLoopDenom orbits.
@@ -86,6 +88,9 @@ export interface PlanetSimParams {
   bodyOscilloscopeStrokeWidth: number
   bodyOscilloscopeHeight: number
   bodyOscilloscopeGap: number
+  showTriggerStars: boolean
+  triggerStarSize: number
+  triggerStarMaxCount: number
   rackBodyOscilloscopeStrokeWidth: number
   rackBodyOscilloscopeHeight: number
   rackBodyOscilloscopeGap: number
@@ -101,6 +106,16 @@ export interface PlanetSimParams {
   rendezvousTriggerMode: 'oneshot' | 'toggle'  // oneshot = one-shot play; toggle = loop on/off
   triggerPlaybackMode: 'restart' | 'layer'     // restart = retrigger same voice; layer = overlap one-shots
   showPredictedOrbit: boolean                   // show trajectory preview during drag placement
+  autoSpawnPlanets: boolean                      // automatically add planet bodies inside the standpoint range
+  autoSpawnIntervalSec: number                   // add one planet after this many seconds
+  autoSpawnMinPlanets: number                    // add planets when count falls below this
+  autoSpawnMaxPlanets: number                    // interval spawning stops at this many planets
+  autoSpawnRadiusMin: number                     // spawn radius around standpoint body
+  autoSpawnRadiusMax: number
+  autoSpawnMassMin: number
+  autoSpawnMassMax: number
+  autoSpawnSpeedMin: number
+  autoSpawnSpeedMax: number
   standpointMode: boolean       // enable standpoint distance volume control
   standpointBodyId: string | null  // which body is the "listener" standpoint
   standpointMaxDist: number     // world-units distance at which volume reaches standpointMinVol
@@ -342,6 +357,7 @@ export const DEFAULT_BODIES: PlanetBody[] = [
     id: 'sun', name: 'Sun', type: 'sun',
     mass: 1000, x: 0, y: 0, vx: 0, vy: 0,
     fixed: true, color: '#f59e0b', sampleId: null,
+    standpointFacingAngle: 270,
     orbitLoopNumer: 1, orbitLoopDenom: 1,
     ...BODY_EFFECTOR_DEFAULTS,
     ...BODY_DRONE_DEFAULTS,
@@ -374,11 +390,14 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   trailLength: 600,
   showTrails: true,
   showVelocityVectors: false,
-  showBodyOscilloscope: false,
+  showBodyOscilloscope: true,
   showRackBodyOscilloscope: true,
-  bodyOscilloscopeStrokeWidth: 1,
-  bodyOscilloscopeHeight: 7,
+  bodyOscilloscopeStrokeWidth: 0.5,
+  bodyOscilloscopeHeight: 30,
   bodyOscilloscopeGap: 10,
+  showTriggerStars: false,
+  triggerStarSize: 7,
+  triggerStarMaxCount: 160,
   rackBodyOscilloscopeStrokeWidth: 1,
   rackBodyOscilloscopeHeight: 30,
   rackBodyOscilloscopeGap: 13,
@@ -397,13 +416,23 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   rendezvousTriggerMode: 'oneshot',
   triggerPlaybackMode: 'restart',
   showPredictedOrbit: true,
+  autoSpawnPlanets: false,
+  autoSpawnIntervalSec: 8,
+  autoSpawnMinPlanets: 3,
+  autoSpawnMaxPlanets: 12,
+  autoSpawnRadiusMin: 80,
+  autoSpawnRadiusMax: 650,
+  autoSpawnMassMin: 1,
+  autoSpawnMassMax: 10,
+  autoSpawnSpeedMin: 0.4,
+  autoSpawnSpeedMax: 2.4,
   standpointMode: true,
   standpointBodyId: 'sun',
   standpointMaxDist: 700,
   standpointMinVol: 0,
   showStandpointVisual: true,
   standpointDirectional: true,
-  standpointFacing: 'manual',
+  standpointFacing: 'velocity',
   standpointFacingAngle: 271,
   standpointConeWidth: 270,
   standpointOuterVol: 0.7,

@@ -175,8 +175,8 @@ async function syncEngines(engines: EngineMap): Promise<void> {
       filterResonance: Number(ep.oscSynthFilterResonance ?? 0.3),
       level:           Number(ep.oscSynthLevel           ?? 0.5),
       lfoTarget:       (ep.oscSynthLfoTarget as LfoTarget) ?? 'filter',
-      lfoRate:  orbitVal(String(ep.oscSynthLfoRateSource  ?? 'eccentricity'), Number(ep.oscSynthLfoRate  ?? 2.0), orbitStats, Number(ep.oscSynthLfoRateRate  ?? 5.0), 0.01, 20),
-      lfoDepth: orbitVal(String(ep.oscSynthLfoDepthSource ?? 'eccentricity'), Number(ep.oscSynthLfoDepth ?? 0.5), orbitStats, Number(ep.oscSynthLfoDepthRate ?? 0.8), 0,    1),
+      lfoRate:  orbitVal(String(ep.oscSynthLfoRateSource  ?? 'period'),   Number(ep.oscSynthLfoRate  ?? 2.0), orbitStats, Number(ep.oscSynthLfoRateRate  ?? 0.12), 0.01, 20),
+      lfoDepth: orbitVal(String(ep.oscSynthLfoDepthSource ?? 'velocity'), Number(ep.oscSynthLfoDepth ?? 0.5), orbitStats, Number(ep.oscSynthLfoDepthRate ?? 0.18), 0,    1),
       lfoWaveform: (ep.oscSynthLfoWaveform as OscillatorType) ?? 'sine',
     }
 

@@ -218,6 +218,14 @@ interface DragPlaceState {
   tool: 'add-sun' | 'add-planet'
 }
 
+interface TriggerStarMarker {
+  id: string
+  bodyId: string
+  x: number
+  y: number
+  color: string
+}
+
 // ── Physics ───────────────────────────────────────────────────────────────────
 
 function computeAccels(bodies: LiveBody[], G: number, eps: number): void {
@@ -410,6 +418,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const arpStepRef      = useRef<Map<string, number>>(new Map())
   // Arpeggiator: last note fired per timerKey (for monophonic noteOff on next step)
   const arpPrevNoteRef  = useRef<Map<string, number[]>>(new Map())
+  const lastAutoSpawnMsRef = useRef(performance.now())
+  const triggerStarMarkersRef = useRef<TriggerStarMarker[]>([])
 
   // Sync storeBodiesRef + purge deleted bodies from live simulation
   useEffect(() => {
@@ -427,6 +437,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       for (const lb of removed) {
         trailsRef.current.delete(lb.id)
         bodyOscilloscopeRef.current.delete(lb.id)
+        triggerStarMarkersRef.current = triggerStarMarkersRef.current.filter(m => m.bodyId !== lb.id)
         prevAngleRef.current.delete(lb.id)
         lfoAccumRef.current.delete(lb.id)
         lastTriggerSimTimeRef.current.delete(lb.id)
@@ -496,6 +507,24 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const frameTimeRef    = useRef(16.67)
   const lastFrameMsRef  = useRef(performance.now())
   const lastRenderMsRef = useRef(0)   // throttle React re-renders to ~30fps
+
+  function markTriggeredOnCanvas(bodyId: string) {
+    markBodyTriggered(bodyId)
+    const sp = simParamsRef.current
+    if (!sp.showTriggerStars) return
+    const live = liveBodiesRef.current.find(b => b.id === bodyId)
+    if (!live) return
+    const storeBody = storeBodiesMapRef.current.get(bodyId)
+    const marker: TriggerStarMarker = {
+      id: `${bodyId}:${performance.now().toFixed(2)}:${triggerStarMarkersRef.current.length}`,
+      bodyId,
+      x: live.x,
+      y: live.y,
+      color: storeBody?.color ?? '#facc15',
+    }
+    const maxCount = Math.max(1, Math.floor(sp.triggerStarMaxCount || 1))
+    triggerStarMarkersRef.current = [...triggerStarMarkersRef.current, marker].slice(-maxCount)
+  }
 
   // ── Initialize / reinitialize ─────────────────────────────────────────────
   const initFromStore = useCallback(() => {
@@ -715,6 +744,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
               usePlanetStore.getState().removeBody(id)
               liveBodiesRef.current = liveBodiesRef.current.filter(b => b.id !== id)
               trailsRef.current.delete(id)
+              triggerStarMarkersRef.current = triggerStarMarkersRef.current.filter(m => m.bodyId !== id)
               prevAngleRef.current.delete(id)
               lfoAccumRef.current.delete(id)
               lastTriggerSimTimeRef.current.delete(id)
@@ -756,7 +786,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
             // ── Instrument engine path (oneshot etc.) ─────────────────────────
             // If the body's instrument rack consumed the trigger, skip legacy path.
             if (fireBodyInstrumentTrigger(bodyId)) {
-              markBodyTriggered(bodyId)
+              markTriggeredOnCanvas(bodyId)
               return
             }
 
@@ -783,7 +813,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
             if (effectiveMode === 'toggle') {
               const on = !(togSt.get(bodyId) ?? false)
               togSt.set(bodyId, on)
-              if (on) { startStandpointSound(sample, scaledVol, rate, adsr, spatial.pan); setPlayerDetune(sample.id, detuneCents); markBodyTriggered(bodyId) }
+              if (on) { startStandpointSound(sample, scaledVol, rate, adsr, spatial.pan); setPlayerDetune(sample.id, detuneCents); markTriggeredOnCanvas(bodyId) }
               else      { stopStandpointSound(sample.id); clearBodyOutputLevel(bodyId, 'sampler') }
             } else {
               triggerBodySound(sample, {
@@ -794,7 +824,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 pan: spatial.pan,
                 detuneCents,
               })
-              markBodyTriggered(bodyId)
+              markTriggeredOnCanvas(bodyId)
             }
           }
 
@@ -975,7 +1005,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                         }) ?? 1)
                       : 1
                     if (fireBodyInstrumentTrigger(b.id, instrRate)) {
-                      markBodyTriggered(b.id)
+                      markTriggeredOnCanvas(b.id)
                     } else {
                       const sample = resolveBodySamplerSample(b.id, sbi.sampleId, smpArr)
                       if (sample) {
@@ -1001,7 +1031,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                           detuneCents: detuneForRate(tRate, stretchM === 'time' || Boolean(bodyParams.samplePitchCorrection)),
                         })
                         setBodyOutputLevel(b.id, 'sampler', finalVol, 900)
-                        markBodyTriggered(b.id)
+                        markTriggeredOnCanvas(b.id)
                       }
                     }
                   }
@@ -1108,7 +1138,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                       consumed = fireBodyInstrumentTrigger(b.id, tpRate, arpMode ? fireNote : undefined) || consumed
                     }
                     if (consumed) {
-                      markBodyTriggered(b.id)
+                      markTriggeredOnCanvas(b.id)
                     } else {
                       const sample = resolveBodySamplerSample(b.id, sbi.sampleId, smpArr)
                       if (sample) {
@@ -1134,7 +1164,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                           detuneCents: detuneForRate(tRate, stretchM === 'time' || Boolean(bodyParams.samplePitchCorrection)),
                         })
                         setBodyOutputLevel(b.id, 'sampler', finalVol, 900)
-                        markBodyTriggered(b.id)
+                        markTriggeredOnCanvas(b.id)
                       }
                     }
                   }
@@ -1510,6 +1540,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       mass: resolvedMass,
       x: dp.bodyX, y: dp.bodyY, vx, vy,
       fixed: defs.fixed,
+      standpointFacingAngle: isSun ? 270 : undefined,
       color: resolvedColor,
       sampleId: resolvedSampleId,
       orbitLoopNumer: 1, orbitLoopDenom: 1,
@@ -1562,6 +1593,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           storeBodiesMapRef.current.delete(id)
           trailsRef.current.delete(id)
           _trailsSnap.delete(id)
+          triggerStarMarkersRef.current = triggerStarMarkersRef.current.filter(m => m.bodyId !== id)
           prevAngleRef.current.delete(id)
           lfoAccumRef.current.delete(id)
           lastTriggerSimTimeRef.current.delete(id)
@@ -1586,7 +1618,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       if (sbi?.muted) return
       sendMidiNote(sbi?.midiChannel ?? 1, sbi?.midiNote ?? 60, sbi?.midiVelocity ?? 100, 200)
       if (fireBodyInstrumentTrigger(_launchId)) {
-        markBodyTriggered(_launchId)
+        markTriggeredOnCanvas(_launchId)
         return
       }
       const sample = resolveBodySamplerSample(_launchId, sbi?.sampleId ?? null, projectSamplesRef.current)
@@ -1598,9 +1630,108 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
         triggerBodySound(sample, { playbackRate: 1, volume: finalVol, overlap: false, pan: spatial.pan, detuneCents: 0 })
         setBodyOutputLevel(_launchId, 'sampler', finalVol, 900)
       }
-      markBodyTriggered(_launchId)
+      markTriggeredOnCanvas(_launchId)
     }, mobileMode ? 300 : 150)
   }
+
+  function randBetween(min: number, max: number): number {
+    const lo = Number.isFinite(min) ? min : 0
+    const hi = Number.isFinite(max) ? max : lo
+    const a = Math.min(lo, hi)
+    const b = Math.max(lo, hi)
+    return a + Math.random() * (b - a)
+  }
+
+  function spawnAutoPlanet() {
+    const storeState = usePlanetStore.getState()
+    const sp = storeState.simParams
+    const planetCount = storeBodiesRef.current.filter(b => b.type === 'planet').length
+    const maxPlanets = Math.max(0, Math.floor(sp.autoSpawnMaxPlanets))
+    if (maxPlanets > 0 && planetCount >= maxPlanets) return false
+
+    const standpoint = sp.standpointBodyId
+      ? (storeBodiesMapRef.current.get(sp.standpointBodyId) ?? null)
+      : null
+    const centerX = standpoint?.x ?? 0
+    const centerY = standpoint?.y ?? 0
+    const standpointLimit = standpoint && sp.standpointMode
+      ? Math.max(0, sp.standpointMaxDist)
+      : Infinity
+    const radiusMin = Math.max(0, Math.min(sp.autoSpawnRadiusMin, standpointLimit))
+    const radiusMax = Math.max(radiusMin, Math.min(sp.autoSpawnRadiusMax, standpointLimit))
+    const angle = Math.random() * Math.PI * 2
+    const radius = Math.sqrt(randBetween(radiusMin * radiusMin, radiusMax * radiusMax))
+    const x = centerX + Math.cos(angle) * radius
+    const y = centerY + Math.sin(angle) * radius
+
+    const velocityAngle = Math.random() * Math.PI * 2
+    const speed = Math.max(0, randBetween(sp.autoSpawnSpeedMin, sp.autoSpawnSpeedMax))
+    const vx = Math.cos(velocityAngle) * speed
+    const vy = Math.sin(velocityAngle) * speed
+    const mass = Math.max(0.001, randBetween(sp.autoSpawnMassMin, sp.autoSpawnMassMax))
+    const defs = storeState.nextPlanetDefaults
+    const color = defs.randomColor
+      ? `hsl(${Math.floor(Math.random() * 360)},70%,62%)`
+      : defs.color
+    const allSamples = projectSamplesRef.current
+    const sampleId = defs.randomSample && allSamples.length > 0
+      ? allSamples[Math.floor(Math.random() * allSamples.length)].id
+      : null
+    const { ids, properNames, designations } = collectExistingIdentities(storeState.bodies)
+    const starId = generateStarIdentity(ids, properNames, designations)
+    const newBody: PlanetBody = {
+      id: `body_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`,
+      name:        starId.properName,
+      designation: starId.designation,
+      catalogId:   starId.id,
+      type: 'planet',
+      mass,
+      x, y, vx, vy,
+      fixed: false,
+      color,
+      sampleId,
+      orbitLoopNumer: 1, orbitLoopDenom: 1,
+      effectorType: 'none',
+      effectorDistance: 200, effectorMaxWet: 0.7, effectorDecay: 2.5,
+      effectorDelayDivision: 0.25, effectorFeedback: 0.4, effectorDistortion: 0.4,
+      effectorChorusFreq: 1.5, effectorChorusDepth: 0.5,
+      ...BODY_DRONE_DEFAULTS,
+      ...BODY_MIDI_DEFAULTS,
+      muted: false,
+      volume: 1,
+    }
+
+    storeState.addBody(newBody)
+    storeBodiesRef.current = [...storeBodiesRef.current, newBody]
+    storeBodiesMapRef.current.set(newBody.id, newBody)
+    liveBodiesRef.current.push({
+      id: newBody.id, mass: newBody.mass, x, y, vx, vy,
+      ax: 0, ay: 0, fixed: newBody.fixed,
+    })
+    const trail = makeTrail(simParamsRef.current.trailLength)
+    trailsRef.current.set(newBody.id, trail)
+    _trailsSnap.set(newBody.id, trail)
+    computeAccels(liveBodiesRef.current, simParamsRef.current.G, simParamsRef.current.epsilon)
+    return true
+  }
+
+  useEffect(() => {
+    if (mobileMode) return
+    const timer = window.setInterval(() => {
+      const sp = usePlanetStore.getState().simParams
+      if (!sp.autoSpawnPlanets) return
+      const now = performance.now()
+      const planetCount = storeBodiesRef.current.filter(b => b.type === 'planet').length
+      const minPlanets = Math.max(0, Math.floor(sp.autoSpawnMinPlanets))
+      const maxPlanets = Math.max(minPlanets, Math.floor(sp.autoSpawnMaxPlanets))
+      const belowMin = planetCount < minPlanets
+      const intervalDue = now - lastAutoSpawnMsRef.current >= Math.max(0.5, sp.autoSpawnIntervalSec) * 1000
+      if ((belowMin || (intervalDue && planetCount < maxPlanets)) && spawnAutoPlanet()) {
+        lastAutoSpawnMsRef.current = now
+      }
+    }, 500)
+    return () => window.clearInterval(timer)
+  }, [mobileMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Mobile touch handlers (non-passive, attached in useEffect) ────────────────
 
@@ -1789,6 +1920,16 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const hudColor     = simple ? 'rgba(0,0,0,0.38)'  : 'rgba(255,255,255,0.38)'
   const selStroke    = simple ? 'rgba(0,0,0,0.35)'  : 'rgba(255,255,255,0.45)'
   const trailOpacity = simple ? 0.45 : 0.30
+  const triggerStars = storeParams.showTriggerStars ? triggerStarMarkersRef.current : []
+  const triggerStarPath = (x: number, y: number, r: number) => {
+    const pts: string[] = []
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 5
+      const rr = i % 2 === 0 ? r : r * 0.42
+      pts.push(`${x + Math.cos(a) * rr},${y + Math.sin(a) * rr}`)
+    }
+    return `M ${pts.join(' L ')} Z`
+  }
 
   // Probe cursor params
   const probePos = tool === 'probe' ? mousePosWorldRef.current : null
@@ -1871,6 +2012,25 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 stroke={sb?.color ?? '#888'} strokeWidth={1.2 / zoom} strokeOpacity={trailOpacity} />
             )
           })}
+
+          {triggerStars.length > 0 && (
+            <g style={{ pointerEvents: 'none' }}>
+              {triggerStars.map(marker => {
+                const r = Math.max(1, storeParams.triggerStarSize) / zoom
+                return (
+                  <path
+                    key={marker.id}
+                    d={triggerStarPath(marker.x, marker.y, r)}
+                    fill={marker.color}
+                    fillOpacity={0.55}
+                    stroke="#fff7ed"
+                    strokeWidth={0.6 / zoom}
+                    strokeOpacity={0.72}
+                  />
+                )
+              })}
+            </g>
+          )}
 
           {/* Velocity vectors */}
           {storeParams.showVelocityVectors && bodies.map(b => {
@@ -1982,7 +2142,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   const r     = storeParams.standpointMaxDist
                   const dirOn = storeParams.standpointDirectional
                   // Facing angle for cone (from live velocity or manual)
-                  let facingRad = storeParams.standpointFacingAngle * Math.PI / 180
+                  let facingRad = ((b as PlanetBody).standpointFacingAngle ?? storeParams.standpointFacingAngle) * Math.PI / 180
                   if (dirOn && storeParams.standpointFacing === 'velocity') {
                     const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy)
                     if (speed > 0.001) facingRad = Math.atan2(b.vy, b.vx)

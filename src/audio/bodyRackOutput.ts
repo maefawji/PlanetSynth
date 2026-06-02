@@ -6,6 +6,7 @@ export interface BodyRackOutputBody {
   y: number
   vx: number
   vy: number
+  standpointFacingAngle?: number
 }
 
 export interface BodyRackOutputSpatial {
@@ -29,7 +30,7 @@ function standpointFacingRad(sp: BodyRackOutputBody, simParams: PlanetSimParams)
     const speed = Math.hypot(sp.vx, sp.vy)
     if (speed > 0.001) return Math.atan2(sp.vy, sp.vx)
   }
-  return simParams.standpointFacingAngle * Math.PI / 180
+  return (sp.standpointFacingAngle ?? simParams.standpointFacingAngle) * Math.PI / 180
 }
 
 /**

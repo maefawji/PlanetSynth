@@ -403,12 +403,12 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       // Cutoff  ← velocity  (v ~1.89 × 600 → ~1134 Hz)
       oscSynthCutoffSource:    'velocity',
       oscSynthCutoffRate:      600,
-      // LFO Rate ← eccentricity  (ε 0–0.95 × 5.0 → 0–4.75 Hz)
-      oscSynthLfoRateSource:   'eccentricity',
-      oscSynthLfoRateRate:     5.0,
-      // LFO Depth ← eccentricity  (ε 0–0.95 × 0.8 → depth 0–0.76)
-      oscSynthLfoDepthSource:  'eccentricity',
-      oscSynthLfoDepthRate:    0.8,
+      // LFO Rate ← period (T seconds × 0.12 → slow modulation)
+      oscSynthLfoRateSource:   'period',
+      oscSynthLfoRateRate:     0.12,
+      // LFO Depth ← velocity (v × 0.18 → restrained depth)
+      oscSynthLfoDepthSource:  'velocity',
+      oscSynthLfoDepthRate:    0.18,
     },
   },
   {
@@ -478,10 +478,10 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       oscSynthReleaseRate:     0.2,
       oscSynthCutoffSource:    'manual',
       oscSynthCutoffRate:      600,
-      oscSynthLfoRateSource:   'eccentricity',
-      oscSynthLfoRateRate:     5.0,
-      oscSynthLfoDepthSource:  'eccentricity',
-      oscSynthLfoDepthRate:    0.8,
+      oscSynthLfoRateSource:   'period',
+      oscSynthLfoRateRate:     0.12,
+      oscSynthLfoDepthSource:  'velocity',
+      oscSynthLfoDepthRate:    0.18,
     },
   },
 ]

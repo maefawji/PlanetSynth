@@ -244,8 +244,8 @@ const OSC_ORBIT_MAP_ENTRIES: OscOrbitEntry[] = [
   { key: 'oscSynthSustain',      label: 'S',   srcKey: 'oscSynthSustainSource',  rateKey: 'oscSynthSustainRate',  dfltSrc: 'distance',     dfltRate: 0.003, min: 0,     max: 1,     unit: '',   precision: 2 },
   { key: 'oscSynthRelease',      label: 'R',   srcKey: 'oscSynthReleaseSource',  rateKey: 'oscSynthReleaseRate',  dfltSrc: 'period',       dfltRate: 0.2,   min: 0.01,  max: 30,    unit: 's',  precision: 3 },
   { key: 'oscSynthFilterCutoff', label: 'cut', srcKey: 'oscSynthCutoffSource',   rateKey: 'oscSynthCutoffRate',   dfltSrc: 'velocity',     dfltRate: 600,   min: 80,    max: 12000, unit: 'Hz', precision: 0 },
-  { key: 'oscSynthLfoRate',      label: 'lfR', srcKey: 'oscSynthLfoRateSource',  rateKey: 'oscSynthLfoRateRate',  dfltSrc: 'eccentricity', dfltRate: 5.0,   min: 0.01,  max: 20,    unit: 'Hz', precision: 2 },
-  { key: 'oscSynthLfoDepth',     label: 'lfD', srcKey: 'oscSynthLfoDepthSource', rateKey: 'oscSynthLfoDepthRate', dfltSrc: 'eccentricity', dfltRate: 0.8,   min: 0,     max: 1,     unit: '',   precision: 2 },
+  { key: 'oscSynthLfoRate',      label: 'lfR', srcKey: 'oscSynthLfoRateSource',  rateKey: 'oscSynthLfoRateRate',  dfltSrc: 'period',       dfltRate: 0.12,  min: 0.01,  max: 20,    unit: 'Hz', precision: 2 },
+  { key: 'oscSynthLfoDepth',     label: 'lfD', srcKey: 'oscSynthLfoDepthSource', rateKey: 'oscSynthLfoDepthRate', dfltSrc: 'velocity',     dfltRate: 0.18,  min: 0,     max: 1,     unit: '',   precision: 2 },
 ]
 
 const OSC_SRC_ABBREV: Record<string, string> = {
@@ -2338,12 +2338,13 @@ function WLSliderRow({ label, paramKey, min, max, step, fmt, srcKey, rateKey, sh
 }
 
 function WaveLabInstrumentExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; slotKey: string; simple: boolean }) {
-  const { getBodyEffectiveParams, setSlotOverride } = useControlSetStore()
+  const { getBodyEffectiveParams, getControlSetById, globalRack, rackParamOverrides, setSlotOverride } = useControlSetStore()
   const bodies = usePlanetStore(s => s.bodies)
   const G = usePlanetStore(s => s.simParams.G)
+  const globalInstrument = globalRack.instrument ? getControlSetById(globalRack.instrument) : null
   const ep = (bodyId
     ? getBodyEffectiveParams(bodyId)
-    : useControlSetStore.getState().rackParamOverrides['g:instrument'] ?? {}
+    : { ...(globalInstrument?.params ?? {}), ...(rackParamOverrides[slotKey] ?? {}) }
   ) as Record<string, unknown>
 
   const [manualADSR, setManualADSR] = useState(false)

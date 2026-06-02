@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Waves, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Waves, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio, CircleHelp, Sparkles } from 'lucide-react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { usePlanetStore, type PlanetSimParams } from '../../store/planetStore'
 import {
@@ -44,9 +44,10 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
   const [activePanel, setActivePanel] = useState<
     | 'canvas' | 'universe-presets' | 'planet-presets' | 'planet-samples'
     | 'planet-triggers'
+    | 'planet-auto'
     | 'planet-controls-trigger' | 'planet-controls-instrument' | 'planet-controls-effect'
     | 'planet-playback' | 'planet-localization' | 'planet-adsr'
-    | 'midi'
+    | 'midi' | 'help'
   >('planet-samples')
   const [cachedLibrary, setCachedLibrary] = useState<CachedSampleLibrary | null>(() => loadCachedSampleLibrary())
   const addSampleAssets     = useProjectStore(s => s.addSampleAssets)
@@ -213,7 +214,9 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
       background: t.panelBg,
       borderRight: `0.5px solid ${t.panelBorder}`,
       display: 'flex',
-      overflow: 'hidden',
+      overflow: 'visible',
+      position: 'relative',
+      zIndex: 20,
     }}>
       <div style={{
         width: 34, flexShrink: 0,
@@ -255,6 +258,13 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
           onClick={() => { setActivePanel('planet-triggers'); if (collapsed) onToggleCollapsed() }}
         >
           <SlidersHorizontal size={14} />
+        </RailButton>
+        <RailButton
+          active={activePanel === 'planet-auto' && !collapsed}
+          title="Auto Spawn"
+          onClick={() => { setActivePanel('planet-auto'); if (collapsed) onToggleCollapsed() }}
+        >
+          <Sparkles size={14} />
         </RailButton>
         <RailButton
           active={activePanel === 'planet-playback' && !collapsed}
@@ -318,6 +328,13 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
           <Settings size={14} />
         </RailButton>
         <div style={{ flex: 1 }} />
+        <RailButton
+          active={activePanel === 'help' && !collapsed}
+          title="Help"
+          onClick={() => { setActivePanel('help'); if (collapsed) onToggleCollapsed() }}
+        >
+          <CircleHelp size={14} />
+        </RailButton>
       </div>
 
       {!collapsed && activePanel === 'planet-samples' && (
@@ -347,6 +364,9 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
       {!collapsed && activePanel === 'planet-triggers' && (
         <PlanetTriggersPanel />
       )}
+      {!collapsed && activePanel === 'planet-auto' && (
+        <PlanetAutoSpawnPanel />
+      )}
       {!collapsed && activePanel === 'planet-controls-trigger' && (
         <ControlSetsPanel category="trigger" />
       )}
@@ -371,6 +391,9 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
       )}
       {!collapsed && activePanel === 'midi' && (
         <MidiPanel />
+      )}
+      {!collapsed && activePanel === 'help' && (
+        <HelpPanel />
       )}
     </div>
   )
@@ -899,6 +922,62 @@ function PlanetTriggersPanel() {
   )
 }
 
+function PlanetAutoSpawnPanel() {
+  const t = useTheme()
+  const { simParams, updateSimParams } = usePlanetStore()
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <SectionHeader label="Auto Spawn" />
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+        <SettingsGroup label="Mode">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+            <input
+              type="checkbox"
+              checked={simParams.autoSpawnPlanets}
+              onChange={e => updateSimParams({ autoSpawnPlanets: e.target.checked })}
+            />
+            <span style={{ fontSize: 10, color: t.textMid }}>Enable auto planets</span>
+          </label>
+          <div style={{ fontSize: 9, color: t.textDim, lineHeight: 1.4, paddingLeft: 76 }}>
+            Adds planets at random positions inside the current standpoint range.
+          </div>
+        </SettingsGroup>
+
+        <SettingsGroup label="Trigger">
+          <NumberSetting label="Every sec" value={simParams.autoSpawnIntervalSec} min={0.5} step={0.5}
+            onChange={autoSpawnIntervalSec => updateSimParams({ autoSpawnIntervalSec })} />
+          <NumberSetting label="Min count" value={simParams.autoSpawnMinPlanets} min={0} step={1}
+            onChange={autoSpawnMinPlanets => updateSimParams({ autoSpawnMinPlanets })} />
+          <NumberSetting label="Max count" value={simParams.autoSpawnMaxPlanets} min={0} step={1}
+            onChange={autoSpawnMaxPlanets => updateSimParams({ autoSpawnMaxPlanets })} />
+        </SettingsGroup>
+
+        <SettingsGroup label="Spawn Range">
+          <NumberSetting label="Radius min" value={simParams.autoSpawnRadiusMin} min={0} step={10}
+            onChange={autoSpawnRadiusMin => updateSimParams({ autoSpawnRadiusMin })} />
+          <NumberSetting label="Radius max" value={simParams.autoSpawnRadiusMax} min={0} step={10}
+            onChange={autoSpawnRadiusMax => updateSimParams({ autoSpawnRadiusMax })} />
+          <div style={{ fontSize: 9, color: t.textDim, lineHeight: 1.4, paddingLeft: 76 }}>
+            Radius max is clamped to Standpoint max distance when a standpoint body exists.
+          </div>
+        </SettingsGroup>
+
+        <SettingsGroup label="Random Planet">
+          <NumberSetting label="m min" value={simParams.autoSpawnMassMin} min={0.1} step={0.5}
+            onChange={autoSpawnMassMin => updateSimParams({ autoSpawnMassMin })} />
+          <NumberSetting label="m max" value={simParams.autoSpawnMassMax} min={0.1} step={0.5}
+            onChange={autoSpawnMassMax => updateSimParams({ autoSpawnMassMax })} />
+          <NumberSetting label="v min" value={simParams.autoSpawnSpeedMin} min={0} step={0.1}
+            onChange={autoSpawnSpeedMin => updateSimParams({ autoSpawnSpeedMin })} />
+          <NumberSetting label="v max" value={simParams.autoSpawnSpeedMax} min={0} step={0.1}
+            onChange={autoSpawnSpeedMax => updateSimParams({ autoSpawnSpeedMax })} />
+        </SettingsGroup>
+      </div>
+    </div>
+  )
+}
+
 // ── Control Sets Panel ────────────────────────────────────────────────────────
 
 const CATEGORY_LABELS: Record<ControlSetCategory, string> = {
@@ -1294,21 +1373,50 @@ function RailButton({ active, title, onClick, children }: {
   children: React.ReactNode
 }) {
   const t = useTheme()
+  const [hovered, setHovered] = useState(false)
   return (
-    <button
-      title={title}
-      onClick={onClick}
-      style={{
-        width: 28, height: 28, marginTop: 4,
-        border: 'none', borderRadius: 5,
-        background: active ? 'rgba(37,99,235,0.12)' : 'transparent',
-        color: active ? '#2563eb' : t.textMid,
-        cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}
+    <div
+      style={{ position: 'relative', width: 28, height: 28, marginTop: 4, flexShrink: 0 }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      {children}
-    </button>
+      <button
+        title={title}
+        onClick={onClick}
+        style={{
+          width: 28, height: 28,
+          border: 'none', borderRadius: 5,
+          background: active ? 'rgba(37,99,235,0.12)' : 'transparent',
+          color: active ? '#2563eb' : t.textMid,
+          cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        {children}
+      </button>
+      {hovered && (
+        <div style={{
+          position: 'absolute',
+          left: 32,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          padding: '4px 7px',
+          borderRadius: 5,
+          border: `0.5px solid ${t.panelBorder}`,
+          background: t.panelBg,
+          color: t.text,
+          boxShadow: '0 6px 18px rgba(0,0,0,0.28)',
+          fontSize: 10,
+          fontWeight: 700,
+          lineHeight: 1,
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          zIndex: 50,
+        }}>
+          {title}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1325,13 +1433,94 @@ function RailDivider() {
   )
 }
 
+// ── Help Panel ────────────────────────────────────────────────────────────────
+
+function HelpPanel() {
+  const t = useTheme()
+  const sections = [
+    {
+      title: 'Canvas',
+      items: [
+        'Left drag: place the selected body tool.',
+        'Right drag / middle drag: pan.',
+        'Mouse wheel: zoom.',
+        'S / P: switch Sun / Planet placement.',
+      ],
+    },
+    {
+      title: 'Rack',
+      items: [
+        'Drag control sets from the left panel into rack slots.',
+        'Use UNIQUE to detach a gray inherited slot.',
+        'Expand a slot to edit its detailed parameters.',
+      ],
+    },
+    {
+      title: 'Wave Lab',
+      items: [
+        'Wave Lab instrument reads the body trail and resynthesizes it as a wavetable.',
+        'X / Y / r / theta / spd choose the orbit signals used for the waveform.',
+      ],
+    },
+  ]
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <SectionHeader label="Help" />
+      <div style={{ padding: 12, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{
+          padding: 10,
+          border: `0.5px solid ${t.panelBorder}`,
+          borderRadius: 6,
+          background: t.sectionBg,
+          color: t.textMid,
+          fontSize: 11,
+          lineHeight: 1.45,
+        }}>
+          Planet Synth quick reference.
+        </div>
+        {sections.map(section => (
+          <div key={section.title} style={{
+            border: `0.5px solid ${t.panelBorder}`,
+            borderRadius: 6,
+            background: t.sectionBg,
+            padding: 10,
+          }}>
+            <div style={{
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: t.text,
+              marginBottom: 7,
+            }}>
+              {section.title}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {section.items.map(item => (
+                <div key={item} style={{ display: 'flex', gap: 7, color: t.textMid, fontSize: 10.5, lineHeight: 1.35 }}>
+                  <span style={{ color: '#7c3aed', flexShrink: 0 }}>•</span>
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Universe Preset Panel ─────────────────────────────────────────────────────
 
 function UniversePresetPanel() {
   const t = useTheme()
+  const bodies                = usePlanetStore(s => s.bodies)
+  const simParams             = usePlanetStore(s => s.simParams)
   const applyPreset           = usePlanetStore(s => s.applyPreset)
   const resetBodyRacksToDefaults = useControlSetStore(s => s.resetBodyRacksToDefaults)
   const [userPresets, setUserPresets] = useState<UserUniversePreset[]>(() => loadUserUniversePresets())
+  const [saveName, setSaveName] = useState('')
 
   function handleApply(preset: { bodies: typeof UNIVERSE_PRESETS[0]['bodies']; simParams: typeof UNIVERSE_PRESETS[0]['simParams'] }) {
     applyPreset([...preset.bodies], preset.simParams)
@@ -1344,6 +1533,23 @@ function UniversePresetPanel() {
     saveUserUniversePresets(next)
   }
 
+  function handleSaveCurrent() {
+    const name = saveName.trim() || `Universe ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    const entry: UserUniversePreset = {
+      id: `universe-${Date.now()}`,
+      name,
+      description: `${bodies.length} bodies`,
+      icon: '✦',
+      bodies: bodies.map(b => ({ ...b })),
+      simParams: { ...simParams },
+      createdAt: Date.now(),
+    }
+    const next = [entry, ...userPresets]
+    setUserPresets(next)
+    saveUserUniversePresets(next)
+    setSaveName('')
+  }
+
   const btnBase: React.CSSProperties = {
     width: '100%', border: `0.5px solid ${t.panelBorder}`, borderRadius: 7,
     background: t.sectionBg, cursor: 'pointer', padding: '8px 10px',
@@ -1354,6 +1560,53 @@ function UniversePresetPanel() {
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <SectionHeader label="Universe Presets" />
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px' }}>
+        <div style={{
+          border: `0.5px solid ${t.panelBorder}`,
+          borderRadius: 7,
+          background: t.sectionBg,
+          padding: 8,
+          marginBottom: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+        }}>
+          <div style={{ fontSize: 8, fontWeight: 800, color: t.textDim, textTransform: 'uppercase', letterSpacing: '0.10em' }}>
+            Save Current
+          </div>
+          <input
+            value={saveName}
+            onChange={e => setSaveName(e.target.value)}
+            placeholder="Preset name"
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              border: `0.5px solid ${t.panelBorder}`,
+              borderRadius: 5,
+              background: t.inputBg,
+              color: t.inputText,
+              padding: '5px 7px',
+              fontSize: 10,
+              fontFamily: 'inherit',
+            }}
+          />
+          <button
+            onClick={handleSaveCurrent}
+            style={{
+              border: '0.5px solid rgba(139,92,246,0.75)',
+              borderRadius: 5,
+              background: 'rgba(124,58,237,0.82)',
+              color: '#ffffff',
+              cursor: 'pointer',
+              padding: '5px 7px',
+              fontSize: 10,
+              fontWeight: 800,
+              fontFamily: 'inherit',
+              boxShadow: '0 0 10px rgba(124,58,237,0.22)',
+            }}
+          >
+            Save Current Universe
+          </button>
+        </div>
 
         {/* ── Built-in (hardcoded) ─────────────────────────────────────────── */}
         <div style={{ fontSize: 8, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: 5 }}>
@@ -2375,6 +2628,18 @@ function CanvasSettingsPanel() {
               onChange={e => updateSimParams({ showSampleName: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Show sample name</span>
           </label>
+        </SettingsGroup>
+
+        <SettingsGroup label="Trigger Stars">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+            <input type="checkbox" checked={simParams.showTriggerStars}
+              onChange={e => updateSimParams({ showTriggerStars: e.target.checked })} />
+            <span style={{ fontSize: 10, color: t.textMid }}>Show trigger stars</span>
+          </label>
+          <NumberSetting label="Star size" value={simParams.triggerStarSize} min={1} step={1}
+            onChange={triggerStarSize => updateSimParams({ triggerStarSize })} />
+          <NumberSetting label="Max count" value={simParams.triggerStarMaxCount} min={1} step={10}
+            onChange={triggerStarMaxCount => updateSimParams({ triggerStarMaxCount })} />
         </SettingsGroup>
 
         <SettingsGroup label="Body Oscilloscope Rings">
