@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { usePlanetStore } from '../../store/planetStore'
 import {
   useControlSetStore,
-  BUILTIN_CONTROL_SETS,
   MAX_TRIGGERS,
   MAX_EFFECTS,
 } from '../../store/controlSetStore'
@@ -254,9 +253,9 @@ function TriggerCell({ bodyId, triggers, flash, selected, t }: {
   t: ReturnType<typeof useT>
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
-  const { addBodyTrigger, removeBodyTrigger } = useControlSetStore()
-  const available = BUILTIN_CONTROL_SETS.filter(cs => cs.category === 'trigger')
-  const list = triggers.map(id => BUILTIN_CONTROL_SETS.find(c => c.id === id) ?? null)
+  const { addBodyTrigger, removeBodyTrigger, getControlSetsByCategory, getControlSetById } = useControlSetStore()
+  const available = getControlSetsByCategory('trigger')
+  const list = triggers.map(id => getControlSetById(id))
 
   return (
     <Cell t={t} selected={selected} color={C.trigger}>
@@ -290,9 +289,9 @@ function InstrumentCell({ bodyId, instrument, outLevel, selected, t }: {
   t: ReturnType<typeof useT>
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
-  const { setBodySlot, clearBodySlot } = useControlSetStore()
-  const available = BUILTIN_CONTROL_SETS.filter(cs => cs.category === 'instrument')
-  const cs = instrument ? (BUILTIN_CONTROL_SETS.find(c => c.id === instrument) ?? null) : null
+  const { setBodySlot, clearBodySlot, getControlSetsByCategory, getControlSetById } = useControlSetStore()
+  const available = getControlSetsByCategory('instrument')
+  const cs = getControlSetById(instrument)
 
   return (
     <Cell t={t} selected={selected} color={C.instrument}>
@@ -329,9 +328,9 @@ function EffectCell({ bodyId, effects, outLevel, selected, t }: {
   t: ReturnType<typeof useT>
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
-  const { addBodyEffect, removeBodyEffect } = useControlSetStore()
-  const available = BUILTIN_CONTROL_SETS.filter(cs => cs.category === 'effect')
-  const list = effects.map(id => BUILTIN_CONTROL_SETS.find(c => c.id === id) ?? null)
+  const { addBodyEffect, removeBodyEffect, getControlSetsByCategory, getControlSetById } = useControlSetStore()
+  const available = getControlSetsByCategory('effect')
+  const list = effects.map(id => getControlSetById(id))
 
   return (
     <Cell t={t} selected={selected} color={C.effect}>
@@ -486,10 +485,10 @@ function MasterNode({ bodies, levels, t }: {
 // ── Global rack info bar ──────────────────────────────────────────────────────
 
 function GlobalRackBar({ t }: { t: ReturnType<typeof useT> }) {
-  const { globalRack } = useControlSetStore()
-  const trigNames = globalRack.triggers.map(id => BUILTIN_CONTROL_SETS.find(c => c.id === id)?.name ?? id)
-  const instName  = globalRack.instrument ? (BUILTIN_CONTROL_SETS.find(c => c.id === globalRack.instrument)?.name ?? globalRack.instrument) : '—'
-  const fxNames   = globalRack.effects.map(id => BUILTIN_CONTROL_SETS.find(c => c.id === id)?.name ?? id)
+  const { globalRack, getControlSetById } = useControlSetStore()
+  const trigNames = globalRack.triggers.map(id => getControlSetById(id)?.name ?? id)
+  const instName  = globalRack.instrument ? (getControlSetById(globalRack.instrument)?.name ?? globalRack.instrument) : '—'
+  const fxNames   = globalRack.effects.map(id => getControlSetById(id)?.name ?? id)
 
   return (
     <div style={{

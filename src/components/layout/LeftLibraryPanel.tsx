@@ -10,7 +10,7 @@ import { UNIVERSE_PRESETS, loadUserUniversePresets, saveUserUniversePresets } fr
 import { PLANET_PRESETS, loadUserPlanetPresets, saveUserPlanetPresets } from '../../presets/planet'
 import type { UserUniversePreset, UserPlanetPreset } from '../../presets/types'
 import { useProjectStore } from '../../store/projectStore'
-import { useControlSetStore, BUILTIN_CONTROL_SETS, type ControlSet, type ControlSetCategory } from '../../store/controlSetStore'
+import { useControlSetStore, type ControlSet, type ControlSetCategory } from '../../store/controlSetStore'
 import { setDraggingControlSetId } from '../../lib/dragControlSet'
 import type { SampleAsset } from '../../patch/types'
 import {
@@ -907,6 +907,20 @@ const CATEGORY_LABELS: Record<ControlSetCategory, string> = {
   effect:     'Effect',
 }
 
+type DirectoryPickerWindow = Window & {
+  showDirectoryPicker?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<{
+    getFileHandle: (name: string, options?: { create?: boolean }) => Promise<{
+      getFile: () => Promise<File>
+      createWritable: () => Promise<{
+        write: (data: string) => Promise<void>
+        close: () => Promise<void>
+      }>
+    }>
+  }>
+}
+
+const USER_CONTROL_SET_FILE = 'planet-synth-user-control-sets.json'
+
 function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import('../../store/controlSetStore').BodyRack }) {
   const inRack = globalRack.triggers.includes(cs.id)
     || globalRack.instrument === cs.id
@@ -918,6 +932,7 @@ function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import
   const setGlobalSlot   = useControlSetStore(s => s.setGlobalSlot)
   const addGlobalTrigger = useControlSetStore(s => s.addGlobalTrigger)
   const addGlobalEffect  = useControlSetStore(s => s.addGlobalEffect)
+  const deleteUserControlSet = useControlSetStore(s => s.deleteUserControlSet)
 
   function assignToRack(bodyId: string | null) {
     if (cs.category === 'trigger') {
@@ -1033,6 +1048,29 @@ function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import
             border: `0.5px solid ${cs.color}44`,
           }}>RACK</span>
         )}
+        {cs.source === 'user' && (
+          <button
+            title="Delete user preset"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => {
+              e.preventDefault()
+              e.stopPropagation()
+              if (window.confirm(`Delete user preset "${cs.name}"?`)) deleteUserControlSet(cs.id)
+            }}
+            style={{
+              fontSize: 10,
+              color: t.textDim,
+              background: 'transparent',
+              border: 'none',
+              padding: '1px 2px',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              flexShrink: 0,
+            }}
+          >
+            ×
+          </button>
+        )}
         <button
           title={selectedBodyId ? 'Add to selected body rack' : 'Add to global rack'}
           onMouseDown={e => e.stopPropagation()}
@@ -1073,7 +1111,142 @@ function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import
 function ControlSetsPanel({ category }: { category: ControlSetCategory }) {
   const t = useTheme()
   const globalRack = useControlSetStore(s => s.globalRack)
-  const sets = BUILTIN_CONTROL_SETS.filter(c => c.category === category)
+  const bodyRacks = useControlSetStore(s => s.bodyRacks)
+  const rackParamOverrides = useControlSetStore(s => s.rackParamOverrides)
+  const getControlSetById = useControlSetStore(s => s.getControlSetById)
+  const getControlSetsByCategory = useControlSetStore(s => s.getControlSetsByCategory)
+  const saveUserControlSet = useControlSetStore(s => s.saveUserControlSet)
+  const exportUserControlSets = useControlSetStore(s => s.exportUserControlSets)
+  const importUserControlSets = useControlSetStore(s => s.importUserControlSets)
+  const selectedBodyId = usePlanetStore(s => s.selectedBodyId)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const sets = getControlSetsByCategory(category)
+  const defaultSets = sets.filter(c => c.source !== 'user')
+  const userSets = sets.filter(c => c.source === 'user')
+
+  function activeSlot(): { cs: ControlSet; slotKey: string } | null {
+    const bodyRack = selectedBodyId ? bodyRacks[selectedBodyId] ?? {} : null
+    const bodyHasTrigger = !!(bodyRack?.triggers && bodyRack.triggers.length > 0)
+    const bodyHasEffect = !!(bodyRack?.effects && bodyRack.effects.length > 0)
+    const bodyHasInstrument = !!(bodyRack && bodyRack.instrument != null)
+
+    if (category === 'instrument') {
+      const id = selectedBodyId && bodyHasInstrument ? bodyRack!.instrument : globalRack.instrument
+      const cs = getControlSetById(id)
+      if (!cs) return null
+      return { cs, slotKey: selectedBodyId && bodyHasInstrument ? `b:${selectedBodyId}:instrument` : 'g:instrument' }
+    }
+    if (category === 'trigger') {
+      const list = selectedBodyId && bodyHasTrigger ? bodyRack!.triggers! : globalRack.triggers
+      const id = list[0]
+      const cs = getControlSetById(id)
+      if (!cs) return null
+      return { cs, slotKey: selectedBodyId && bodyHasTrigger ? `b:${selectedBodyId}:trigger:0` : 'g:trigger:0' }
+    }
+    const list = selectedBodyId && bodyHasEffect ? bodyRack!.effects! : globalRack.effects
+    const id = list[0]
+    const cs = getControlSetById(id)
+    if (!cs) return null
+    return { cs, slotKey: selectedBodyId && bodyHasEffect ? `b:${selectedBodyId}:effect:0` : 'g:effect:0' }
+  }
+
+  function saveCurrentAsUserPreset() {
+    const active = activeSlot()
+    if (!active) {
+      window.alert(`No active ${CATEGORY_LABELS[category].toLowerCase()} slot to save.`)
+      return
+    }
+    const name = window.prompt('User preset name', `${active.cs.name} Copy`)
+    if (!name?.trim()) return
+    const override = rackParamOverrides[active.slotKey] ?? {}
+    saveUserControlSet({
+      name: name.trim(),
+      icon: active.cs.icon,
+      color: active.cs.color,
+      category: active.cs.category,
+      description: `User preset saved from ${selectedBodyId ? 'body' : 'global'} rack.\nBase: ${active.cs.name}`,
+      params: { ...active.cs.params, ...override },
+    })
+  }
+
+  function exportPresets() {
+    const blob = new Blob([exportUserControlSets()], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'planet-synth-user-control-sets.json'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  async function importPresets(file: File | null | undefined) {
+    if (!file) return
+    try {
+      const count = importUserControlSets(await file.text())
+      window.alert(`Imported ${count} user preset${count === 1 ? '' : 's'}.`)
+    } catch (e) {
+      window.alert(`Import failed: ${String(e)}`)
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  async function savePresetsToFolder() {
+    const picker = (window as DirectoryPickerWindow).showDirectoryPicker
+    if (!picker) {
+      window.alert('Folder save is not supported in this browser. Use Export instead.')
+      return
+    }
+    try {
+      const dir = await picker({ mode: 'readwrite' })
+      const file = await dir.getFileHandle(USER_CONTROL_SET_FILE, { create: true })
+      const writable = await file.createWritable()
+      await writable.write(exportUserControlSets())
+      await writable.close()
+      window.alert(`Saved ${USER_CONTROL_SET_FILE}`)
+    } catch (e) {
+      if ((e as Error)?.name !== 'AbortError') window.alert(`Folder save failed: ${String(e)}`)
+    }
+  }
+
+  async function loadPresetsFromFolder() {
+    const picker = (window as DirectoryPickerWindow).showDirectoryPicker
+    if (!picker) {
+      window.alert('Folder load is not supported in this browser. Use Import instead.')
+      return
+    }
+    try {
+      const dir = await picker({ mode: 'read' })
+      const file = await dir.getFileHandle(USER_CONTROL_SET_FILE)
+      const count = importUserControlSets(await (await file.getFile()).text())
+      window.alert(`Loaded ${count} user preset${count === 1 ? '' : 's'} from folder.`)
+    } catch (e) {
+      if ((e as Error)?.name !== 'AbortError') window.alert(`Folder load failed: ${String(e)}`)
+    }
+  }
+
+  const groupLabelStyle: CSSProperties = {
+    fontSize: 8,
+    fontWeight: 800,
+    color: t.textDim,
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    marginTop: 4,
+    marginBottom: 1,
+  }
+  const actionBtn: CSSProperties = {
+    fontSize: 8,
+    fontWeight: 700,
+    color: t.textMid,
+    background: t.sectionBg,
+    border: `0.5px solid ${t.panelBorder}`,
+    borderRadius: 4,
+    padding: '3px 6px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  }
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -1082,7 +1255,31 @@ function ControlSetsPanel({ category }: { category: ControlSetCategory }) {
         <div style={{ fontSize: 9.5, color: t.textMid, lineHeight: 1.5 }}>
           ドラッグしてラックにアサイン。ダブルクリックで選択 body へ即追加。
         </div>
-        {sets.map(cs => (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          <button onClick={saveCurrentAsUserPreset} style={actionBtn}>Save current</button>
+          <button onClick={exportPresets} style={actionBtn}>Export</button>
+          <button onClick={() => fileInputRef.current?.click()} style={actionBtn}>Import</button>
+          <button onClick={() => { void savePresetsToFolder() }} style={actionBtn}>Save folder</button>
+          <button onClick={() => { void loadPresetsFromFolder() }} style={actionBtn}>Load folder</button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={e => { void importPresets(e.target.files?.[0]) }}
+            style={{ display: 'none' }}
+          />
+        </div>
+
+        <div style={groupLabelStyle}>Default</div>
+        {defaultSets.map(cs => (
+          <ControlSetCard key={cs.id} cs={cs} globalRack={globalRack} />
+        ))}
+        <div style={groupLabelStyle}>User Presets</div>
+        {userSets.length === 0 ? (
+          <div style={{ fontSize: 9, color: t.textDim, padding: '5px 2px 8px', lineHeight: 1.4 }}>
+            まだUser presetはありません。rackの現在値をSave currentで保存できます。
+          </div>
+        ) : userSets.map(cs => (
           <ControlSetCard key={cs.id} cs={cs} globalRack={globalRack} />
         ))}
       </div>

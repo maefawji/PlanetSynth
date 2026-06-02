@@ -161,8 +161,8 @@ function makeFallbackPts(wf: string, n = 512): TrailPoint[] {
   })
 }
 
-function SynthesisWaveform({ pts, signals, zoom, offset, dimColor, fallbackWaveform }: {
-  pts: TrailPoint[]; signals: Signal[]; zoom: number; offset: number; dimColor: string; fallbackWaveform?: string
+function SynthesisWaveform({ pts, signals, zoom, offset, dimColor, fallbackWaveformLeft, fallbackWaveformRight }: {
+  pts: TrailPoint[]; signals: Signal[]; zoom: number; offset: number; dimColor: string; fallbackWaveformLeft?: string; fallbackWaveformRight?: string
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
@@ -178,14 +178,23 @@ function SynthesisWaveform({ pts, signals, zoom, offset, dimColor, fallbackWavef
 
     // fallback: draw standard waveform when no trail
     if (pts.length < 2 || signals.length === 0) {
-      if (fallbackWaveform) {
-        const fbPts = makeFallbackPts(fallbackWaveform)
-        ctx.beginPath(); ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.6; ctx.lineJoin='round'
-        fbPts.forEach((p,i) => {
-          const px = (i/(fbPts.length-1))*W, py = ((1-p.y)/2)*H
-          i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py)
-        })
-        ctx.stroke(); ctx.globalAlpha = 1
+      if (fallbackWaveformLeft) {
+        const left = makeFallbackPts(fallbackWaveformLeft)
+        const right = makeFallbackPts(fallbackWaveformRight ?? fallbackWaveformLeft)
+        const drawFallback = (fbPts: TrailPoint[], color: string, alpha: number) => {
+          ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.globalAlpha = alpha; ctx.lineJoin='round'
+          fbPts.forEach((p,i) => {
+            const px = (i/(fbPts.length-1))*W, py = ((1-p.y)/2)*H
+            i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py)
+          })
+          ctx.stroke(); ctx.globalAlpha = 1
+        }
+        if (fallbackWaveformRight && fallbackWaveformRight !== fallbackWaveformLeft) {
+          drawFallback(left, '#60a5fa', 0.55)
+          drawFallback(right, '#34d399', 0.55)
+        } else {
+          drawFallback(left, '#a78bfa', 0.6)
+        }
       } else {
         ctx.fillStyle = dimColor; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'
         ctx.fillText('← paste trail JSON', W/2, H/2 + 4)
@@ -211,7 +220,7 @@ function SynthesisWaveform({ pts, signals, zoom, offset, dimColor, fallbackWavef
     ctx.beginPath(); ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 2; ctx.lineJoin='round'
     sum_norm.forEach((v,i)=>{const px=(i/(sum_norm.length-1))*W,py=((1-v)/2)*H;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py)})
     ctx.stroke()
-  }, [pts, signals, zoom, offset, dimColor])
+  }, [pts, signals, zoom, offset, dimColor, fallbackWaveformLeft, fallbackWaveformRight])
   return <canvas ref={canvasRef} width={1200} height={100} style={{width:'100%',height:100,display:'block',borderRadius:4}} />
 }
 
@@ -266,8 +275,9 @@ export function WaveLabView() {
   const analyserRef = useRef<AnalyserNode | null>(null)
   const [ready,     setReady]     = useState(false)
   const [heldNote,  setHeldNote]  = useState<number|null>(null)
+  const [waveformLinked, setWaveformLinked] = useState(true)
   const [params,    setParams]    = useState<AmbientOscillatorParams>({
-    waveform:'sine', attack:1.5, decay:0.5, sustain:0.8, release:3.0, filterCutoff:1200,
+    waveform:'sine', waveformLeft:'sine', waveformRight:'sine', attack:1.5, decay:0.5, sustain:0.8, release:3.0, filterCutoff:1200,
     filterResonance:0.3, level:0.5, lfoTarget:'off', lfoRate:0.5, lfoDepth:0.3, lfoWaveform:'sine',
   })
 
@@ -434,7 +444,15 @@ export function WaveLabView() {
                 ▶ use as wavetable
               </button>
             </div>
-            <SynthesisWaveform pts={trailPts} signals={signals} zoom={zoom} offset={offset} dimColor={dim} fallbackWaveform={params.waveform} />
+            <SynthesisWaveform
+              pts={trailPts}
+              signals={signals}
+              zoom={zoom}
+              offset={offset}
+              dimColor={dim}
+              fallbackWaveformLeft={params.waveformLeft ?? params.waveform}
+              fallbackWaveformRight={params.waveformRight ?? params.waveformLeft ?? params.waveform}
+            />
           </div>
 
           {/* Oscilloscope */}
@@ -467,17 +485,59 @@ export function WaveLabView() {
         <div style={{ width:240, flexShrink:0, borderLeft:`0.5px solid ${border}`, overflowY:'auto', padding:'10px 12px' }}>
 
           <div style={{ ...panelStyle }}>
-            <div style={{ fontSize:8, fontWeight:700, color:dim, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:8 }}>Waveform</div>
-            <div style={{ display:'flex', gap:3, flexWrap:'wrap' }}>
-              {(['sine','triangle','sawtooth','square'] as OscillatorType[]).map(w => (
-                <button key={w} onClick={() => { setOrbitWaveActive(false); updateParams({waveform:w}) }} style={{
-                  fontSize:8.5, fontWeight:600, padding:'3px 8px', borderRadius:4, fontFamily:'inherit', cursor:'pointer',
-                  border:`0.5px solid ${!orbitWaveActive && params.waveform===w?accent+'80':'rgba(255,255,255,0.1)'}`,
-                  background:!orbitWaveActive && params.waveform===w?`${accent}20`:'transparent',
-                  color:!orbitWaveActive && params.waveform===w?accent:'rgba(255,255,255,0.45)' }}>
-                  {w==='sine'?'Sine':w==='triangle'?'Tri':w==='sawtooth'?'Saw':'Sq'}
-                </button>
-              ))}
+            <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
+              <div style={{ fontSize:8, fontWeight:700, color:dim, textTransform:'uppercase', letterSpacing:'0.07em', flex:1 }}>Waveform</div>
+              <button
+                onClick={() => {
+                  setWaveformLinked(v => {
+                    const next = !v
+                    if (next) {
+                      const left = params.waveformLeft ?? params.waveform
+                      updateParams({ waveform:left, waveformLeft:left, waveformRight:left })
+                    }
+                    return next
+                  })
+                }}
+                style={{
+                  fontSize:7.5, fontWeight:700, padding:'2px 6px', borderRadius:3, fontFamily:'inherit', cursor:'pointer',
+                  border:`0.5px solid ${waveformLinked ? accent+'80' : 'rgba(255,255,255,0.1)'}`,
+                  background:waveformLinked ? `${accent}18` : 'transparent',
+                  color:waveformLinked ? accent : 'rgba(255,255,255,0.45)',
+                }}>
+                link
+              </button>
+            </div>
+            {([
+              { side:'L', key:'waveformLeft', color:'#60a5fa' },
+              { side:'R', key:'waveformRight', color:'#34d399' },
+            ] as const).map(row => (
+              <div key={row.side} style={{ display:'grid', gridTemplateColumns:'18px 1fr', gap:5, alignItems:'center', marginBottom:5 }}>
+                <span style={{ fontSize:8, fontWeight:800, color:row.color, textAlign:'right' }}>{row.side}</span>
+                <div style={{ display:'flex', gap:3, flexWrap:'wrap' }}>
+                  {(['sine','triangle','sawtooth','square'] as OscillatorType[]).map(w => {
+                    const current = params[row.key] ?? params.waveform
+                    const active = !orbitWaveActive && current === w
+                    return (
+                      <button key={w}
+                        onClick={() => {
+                          setOrbitWaveActive(false)
+                          if (waveformLinked) updateParams({ waveform:w, waveformLeft:w, waveformRight:w })
+                          else updateParams({ [row.key]:w, waveform: row.side === 'L' ? w : params.waveformLeft ?? params.waveform } as Partial<AmbientOscillatorParams>)
+                        }}
+                        style={{
+                          fontSize:8.5, fontWeight:600, padding:'3px 7px', borderRadius:4, fontFamily:'inherit', cursor:'pointer',
+                          border:`0.5px solid ${active ? row.color+'aa' : 'rgba(255,255,255,0.1)'}`,
+                          background:active ? `${row.color}20` : 'transparent',
+                          color:active ? row.color : 'rgba(255,255,255,0.45)',
+                        }}>
+                        {w==='sine'?'Sine':w==='triangle'?'Tri':w==='sawtooth'?'Saw':'Sq'}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+            <div style={{ display:'flex', gap:3, flexWrap:'wrap', marginTop:2 }}>
               {/* Orbit Trail wavetable */}
               <button
                 onClick={() => {

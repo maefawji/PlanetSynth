@@ -4,7 +4,6 @@ import type { PlanetSimParams } from '../../store/planetStore'
 import { useProjectStore } from '../../store/projectStore'
 import {
   useControlSetStore,
-  BUILTIN_CONTROL_SETS,
   MAX_EFFECTS,
   MAX_TRIGGERS,
   type ControlSet,
@@ -2685,11 +2684,9 @@ function InlineWaveLabContent({
 
 // ── Generic slot expanded panel ────────────────────────────────────────────────
 
-function GenericSlotExpanded({ slotKey, simple }: { slotKey: string; simple: boolean }) {
+function GenericSlotExpanded({ slotKey, cs, simple }: { slotKey: string; cs: ControlSet | null; simple: boolean }) {
   const { rackParamOverrides, setSlotOverride } = useControlSetStore()
   const overrides = rackParamOverrides[slotKey] ?? {}
-  const csId = BUILTIN_CONTROL_SETS.find(c => slotKey.includes(c.id.slice(0,8)))?.id
-  const cs   = csId ? BUILTIN_CONTROL_SETS.find(c => c.id === csId) : null
   const dim  = simple ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'
 
   if (!cs) return <div style={{ padding:16, fontSize:10, color:dim }}>No params</div>
@@ -3611,6 +3608,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
   const bodies         = usePlanetStore(s => s.bodies)
 
   const { globalRack, bodyRacks,
+    getControlSetById,
     setGlobalSlot, addGlobalEffect, removeGlobalEffect,
     addGlobalTrigger, removeGlobalTrigger,
     setBodySlot, clearBodySlot, addBodyEffect, removeBodyEffect,
@@ -3640,7 +3638,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
 
   // ── Assign helpers ────────────────────────────────────────────────────────
   function handleAssign(slot: 'trigger' | 'instrument' | 'effect', id: string) {
-    const cs = BUILTIN_CONTROL_SETS.find(c => c.id === id)
+    const cs = getControlSetById(id)
     if (!cs) return
     if (slot === 'trigger') {
       if (isBodyMode) addBodyTrigger(bodyId, id)
@@ -3739,7 +3737,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
       // During dragover, browsers often hide getData(), so the module tracker is
       // the reliable source.
       const dragCs = draggingControlSetId
-        ? BUILTIN_CONTROL_SETS.find(c => c.id === draggingControlSetId)
+        ? getControlSetById(draggingControlSetId)
         : null
       const newCat = dragCs?.category ?? null
       if (!rackOver)             setRackOver(true)
@@ -3761,7 +3759,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
         || ''
       resetRackDragState()
       if (!id) return
-      const cs = BUILTIN_CONTROL_SETS.find(c => c.id === id)
+      const cs = getControlSetById(id)
       if (!cs) return
       const slot: 'trigger' | 'instrument' | 'effect' =
         cs.category === 'trigger' ? 'trigger' :
@@ -3791,9 +3789,9 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
     : 'transparent'
 
   // Slot info getters
-  const triggerCsList = effectiveRack.triggers.map(id => BUILTIN_CONTROL_SETS.find(c => c.id === id) ?? null)
-  const instrumentCs  = effectiveRack.instrument ? BUILTIN_CONTROL_SETS.find(c => c.id === effectiveRack.instrument) : null
-  const effectCsList  = effectiveRack.effects.map(id => BUILTIN_CONTROL_SETS.find(c => c.id === id) ?? null)
+  const triggerCsList = effectiveRack.triggers.map(id => getControlSetById(id))
+  const instrumentCs  = effectiveRack.instrument ? getControlSetById(effectiveRack.instrument) : null
+  const effectCsList  = effectiveRack.effects.map(id => getControlSetById(id))
 
   // ── Collapsed bar ──────────────────────────────────────────────────────────
   if (collapsed) {
@@ -3926,7 +3924,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
             ) : expandedCs?.id === 'trigger-arpeggio' ? (
               <ArpeggioExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} />
             ) : (
-              <GenericSlotExpanded slotKey={expandedSlotKey} simple={simple} />
+              <GenericSlotExpanded slotKey={expandedSlotKey} cs={expandedCs} simple={simple} />
             )}
           </div>
         </div>

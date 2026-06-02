@@ -15,6 +15,47 @@ export interface ControlSet {
   category: ControlSetCategory
   /** PlanetSimParams keys this set sets when assigned to the rack */
   params: Partial<PlanetSimParams>
+  source?: 'builtin' | 'user'
+  createdAt?: string
+  updatedAt?: string
+}
+
+const USER_CONTROL_SETS_STORAGE_KEY = 'planetSynth.userControlSets.v1'
+
+function loadUserControlSets(): ControlSet[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(USER_CONTROL_SETS_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(cs =>
+      cs && typeof cs.id === 'string' && cs.id.startsWith('user:') &&
+      ['trigger', 'instrument', 'effect'].includes(cs.category) &&
+      typeof cs.name === 'string' && cs.params && typeof cs.params === 'object'
+    ) as ControlSet[]
+  } catch (_) {
+    return []
+  }
+}
+
+function persistUserControlSets(sets: ControlSet[]): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(USER_CONTROL_SETS_STORAGE_KEY, JSON.stringify(sets))
+  } catch (_) {}
+}
+
+function makeUserControlSetId(category: ControlSetCategory): string {
+  const rand = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  return `user:${category}:${rand}`
+}
+
+export function findBuiltinControlSet(id: string | null): ControlSet | null {
+  if (!id) return null
+  return BUILTIN_CONTROL_SETS.find(c => c.id === id) ?? null
 }
 
 // ── Built-in sets ─────────────────────────────────────────────────────────────
@@ -515,6 +556,16 @@ function bKey(bodyId: string, slot: SlotSuffix): string {
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 interface ControlSetState {
+  // ── Control set registry ────────────────────────────────────────────────
+  userControlSets: ControlSet[]
+  getAllControlSets: () => ControlSet[]
+  getControlSetById: (id: string | null) => ControlSet | null
+  getControlSetsByCategory: (category: ControlSetCategory) => ControlSet[]
+  saveUserControlSet: (input: Omit<ControlSet, 'id' | 'source' | 'createdAt' | 'updatedAt'> & { id?: string }) => string
+  deleteUserControlSet: (id: string) => void
+  importUserControlSets: (json: string) => number
+  exportUserControlSets: () => string
+
   // ── Global rack ─────────────────────────────────────────────────────────
   globalRack: BodyRack
 
@@ -560,9 +611,9 @@ interface ControlSetState {
 
 // ── Merge helpers ─────────────────────────────────────────────────────────────
 
-function csParams(id: string | null): Partial<PlanetSimParams> {
+function csParamsFromState(state: Pick<ControlSetState, 'userControlSets'>, id: string | null): Partial<PlanetSimParams> {
   if (!id) return {}
-  const cs = BUILTIN_CONTROL_SETS.find(c => c.id === id)
+  const cs = BUILTIN_CONTROL_SETS.find(c => c.id === id) ?? state.userControlSets.find(c => c.id === id)
   return cs?.params ?? {}
 }
 
@@ -578,6 +629,105 @@ function mergeWithOverride(
 // ── Store implementation ──────────────────────────────────────────────────────
 
 export const useControlSetStore = create<ControlSetState>((set, get) => ({
+  userControlSets: loadUserControlSets(),
+
+  getAllControlSets() {
+    return [
+      ...BUILTIN_CONTROL_SETS.map(cs => ({ ...cs, source: 'builtin' as const })),
+      ...get().userControlSets,
+    ]
+  },
+
+  getControlSetById(id) {
+    if (!id) return null
+    return get().getAllControlSets().find(c => c.id === id) ?? null
+  },
+
+  getControlSetsByCategory(category) {
+    return get().getAllControlSets().filter(c => c.category === category)
+  },
+
+  saveUserControlSet(input) {
+    const now = new Date().toISOString()
+    const id = input.id?.startsWith('user:') ? input.id : makeUserControlSetId(input.category)
+    const nextSet: ControlSet = {
+      ...input,
+      id,
+      source: 'user',
+      createdAt: get().userControlSets.find(c => c.id === id)?.createdAt ?? now,
+      updatedAt: now,
+    }
+    set(s => {
+      const next = [
+        ...s.userControlSets.filter(c => c.id !== id),
+        nextSet,
+      ].sort((a, b) => a.name.localeCompare(b.name))
+      persistUserControlSets(next)
+      return { userControlSets: next }
+    })
+    return id
+  },
+
+  deleteUserControlSet(id) {
+    if (!id.startsWith('user:')) return
+    set(s => {
+      const next = s.userControlSets.filter(c => c.id !== id)
+      persistUserControlSets(next)
+      const globalRack: BodyRack = {
+        triggers: s.globalRack.triggers.filter(csId => csId !== id),
+        instrument: s.globalRack.instrument === id ? null : s.globalRack.instrument,
+        effects: s.globalRack.effects.filter(csId => csId !== id),
+      }
+      const bodyRacks = Object.fromEntries(Object.entries(s.bodyRacks).map(([bodyId, rack]) => [bodyId, {
+        ...rack,
+        triggers: rack.triggers?.filter(csId => csId !== id),
+        instrument: rack.instrument === id ? null : rack.instrument,
+        effects: rack.effects?.filter(csId => csId !== id),
+      }]))
+      return { userControlSets: next, globalRack, bodyRacks }
+    })
+  },
+
+  importUserControlSets(json) {
+    const parsed = JSON.parse(json)
+    const incoming = Array.isArray(parsed) ? parsed : parsed?.controlSets
+    if (!Array.isArray(incoming)) throw new Error('controlSets array not found')
+    let count = 0
+    set(s => {
+      const byId = new Map(s.userControlSets.map(cs => [cs.id, cs]))
+      const now = new Date().toISOString()
+      for (const raw of incoming) {
+        if (!raw || typeof raw !== 'object') continue
+        if (!['trigger', 'instrument', 'effect'].includes(raw.category)) continue
+        if (!raw.params || typeof raw.params !== 'object') continue
+        const category = raw.category as ControlSetCategory
+        const id = typeof raw.id === 'string' && raw.id.startsWith('user:') ? raw.id : makeUserControlSetId(category)
+        const cs: ControlSet = {
+          id,
+          name: String(raw.name ?? 'User Preset'),
+          icon: String(raw.icon ?? '◇').slice(0, 4),
+          color: String(raw.color ?? '#818cf8'),
+          description: String(raw.description ?? ''),
+          category,
+          params: raw.params as Partial<PlanetSimParams>,
+          source: 'user',
+          createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now,
+          updatedAt: now,
+        }
+        byId.set(id, cs)
+        count++
+      }
+      const next = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
+      persistUserControlSets(next)
+      return { userControlSets: next }
+    })
+    return count
+  },
+
+  exportUserControlSets() {
+    return JSON.stringify({ version: 1, controlSets: get().userControlSets }, null, 2)
+  },
+
   globalRack: defaultGlobalRack(),
   bodyRacks: defaultBodyRacks(),
   rackParamOverrides: {},
@@ -884,7 +1034,7 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
       isBodySlot: boolean,
       slotSuffix: SlotSuffix,
     ) {
-      Object.assign(merged, mergeWithOverride(csParams(csId), effectiveKey, rackParamOverrides))
+      Object.assign(merged, mergeWithOverride(csParamsFromState(state, csId), effectiveKey, rackParamOverrides))
       if (!isBodySlot) {
         const bodyOv = rackParamOverrides[bKey(bodyId, slotSuffix)]
         if (bodyOv) Object.assign(merged, bodyOv)
@@ -922,7 +1072,7 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
 
     return rack.triggers.map((id, i) => {
       const effectiveKey = trigIsBody ? bKey(bodyId, `trigger:${i}`) : gKey(`trigger:${i}`)
-      const merged = { ...mergeWithOverride(csParams(id), effectiveKey, rackParamOverrides) }
+      const merged = { ...mergeWithOverride(csParamsFromState(state, id), effectiveKey, rackParamOverrides) }
       if (!trigIsBody) {
         const bodyOv = rackParamOverrides[bKey(bodyId, `trigger:${i}`)]
         if (bodyOv) Object.assign(merged, bodyOv)
@@ -935,13 +1085,13 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
     const { globalRack, rackParamOverrides } = get()
     const merged: Partial<PlanetSimParams> = {}
     globalRack.triggers.forEach((id, i) => {
-      Object.assign(merged, mergeWithOverride(csParams(id), gKey(`trigger:${i}`), rackParamOverrides))
+      Object.assign(merged, mergeWithOverride(csParamsFromState(get(), id), gKey(`trigger:${i}`), rackParamOverrides))
     })
     if (globalRack.instrument) {
-      Object.assign(merged, mergeWithOverride(csParams(globalRack.instrument), gKey('instrument'), rackParamOverrides))
+      Object.assign(merged, mergeWithOverride(csParamsFromState(get(), globalRack.instrument), gKey('instrument'), rackParamOverrides))
     }
     globalRack.effects.forEach((id, i) => {
-      Object.assign(merged, mergeWithOverride(csParams(id), gKey(`effect:${i}`), rackParamOverrides))
+      Object.assign(merged, mergeWithOverride(csParamsFromState(get(), id), gKey(`effect:${i}`), rackParamOverrides))
     })
     return merged
   },

@@ -26,6 +26,8 @@ export type LfoTarget = 'off' | 'pitch' | 'filter' | 'amplitude'
 
 export type AmbientOscillatorParams = {
   waveform:         OscillatorType  // 'sine' | 'triangle' | 'sawtooth' | 'square'
+  waveformLeft?:    OscillatorType
+  waveformRight?:   OscillatorType
   attack:           number          // A: time to reach peak (seconds)
   decay:            number          // D: time to fall from peak to sustain (seconds)
   sustain:          number          // S: sustain level relative to peak (0–1)
@@ -42,8 +44,12 @@ export type AmbientOscillatorParams = {
 
 interface Voice {
   osc:          OscillatorNode
+  oscRight?:    OscillatorNode
   amp:          GainNode
   filter:       BiquadFilterNode
+  filterRight?: BiquadFilterNode
+  panLeft?:     StereoPannerNode
+  panRight?:    StereoPannerNode
   targetLevel:  number   // peak gain (level × velocity)
   sustainLevel: number   // sustain gain (targetLevel × sustain)
 }
@@ -173,8 +179,14 @@ export class AmbientOscillatorEngine {
   /** Wire lfoDepthGain to a specific voice's AudioParam (pitch or filter). */
   private _connectLfoToVoice(voice: Voice): void {
     if (!this.lfoDepthGain || this._lfoTarget === 'off') return
-    if (this._lfoTarget === 'pitch')  this.lfoDepthGain.connect(voice.osc.detune)
-    if (this._lfoTarget === 'filter') this.lfoDepthGain.connect(voice.filter.frequency)
+    if (this._lfoTarget === 'pitch') {
+      this.lfoDepthGain.connect(voice.osc.detune)
+      if (voice.oscRight) this.lfoDepthGain.connect(voice.oscRight.detune)
+    }
+    if (this._lfoTarget === 'filter') {
+      this.lfoDepthGain.connect(voice.filter.frequency)
+      if (voice.filterRight) this.lfoDepthGain.connect(voice.filterRight.frequency)
+    }
   }
 
   // ── noteOn ─────────────────────────────────────────────────────────────────────
@@ -197,11 +209,15 @@ export class AmbientOscillatorEngine {
     const osc    = ctx.createOscillator()
     const amp    = ctx.createGain()
     const filter = ctx.createBiquadFilter()
+    const leftWave  = p.waveformLeft  ?? p.waveform
+    const rightWave = p.waveformRight ?? leftWave
+    const useStereoPair = !this._periodicWave && rightWave !== leftWave
+    const voiceLevel = targetLevel * (useStereoPair ? 0.62 : 1)
 
     if (this._periodicWave) {
       osc.setPeriodicWave(this._periodicWave)
     } else {
-      osc.type = p.waveform
+      osc.type = leftWave
     }
     osc.frequency.value = freq
 
@@ -209,25 +225,50 @@ export class AmbientOscillatorEngine {
     // Minimum 5 ms attack to avoid click transients at note-on.
     const attack       = Math.max(0.005, p.attack)
     const decay        = Math.max(0.001, p.decay)
-    const sustainLevel = Math.max(0.0001, targetLevel * Math.max(0, Math.min(1, p.sustain)))
+    const sustainLevel = Math.max(0.0001, voiceLevel * Math.max(0, Math.min(1, p.sustain)))
 
     // Exponential ramp (vs linear) gives a smoother perceptual onset and
     // eliminates the zipper click that occurs when the gain step at t=now
     // is audible through a very fast ramp.
     amp.gain.setValueAtTime(0.0001, now)
-    amp.gain.exponentialRampToValueAtTime(Math.max(0.0001, targetLevel), now + attack)  // Attack
+    amp.gain.exponentialRampToValueAtTime(Math.max(0.0001, voiceLevel), now + attack)   // Attack
     amp.gain.setTargetAtTime(sustainLevel, now + attack, decay / 3)                     // Decay → Sustain
 
     filter.type            = 'lowpass'
     filter.frequency.value = p.filterCutoff
     filter.Q.value         = p.filterResonance
 
-    osc.connect(amp)
-    amp.connect(filter)
-    filter.connect(this.panner)
-    osc.start(now)
+    let voice: Voice
+    if (useStereoPair) {
+      const oscRight = ctx.createOscillator()
+      const filterRight = ctx.createBiquadFilter()
+      const panLeft = ctx.createStereoPanner()
+      const panRight = ctx.createStereoPanner()
 
-    const voice: Voice = { osc, amp, filter, targetLevel, sustainLevel }
+      oscRight.type = rightWave
+      oscRight.frequency.value = freq
+      filterRight.type = 'lowpass'
+      filterRight.frequency.value = p.filterCutoff
+      filterRight.Q.value = p.filterResonance
+      panLeft.pan.value = -1
+      panRight.pan.value = 1
+
+      osc.connect(filter)
+      oscRight.connect(filterRight)
+      filter.connect(panLeft)
+      filterRight.connect(panRight)
+      panLeft.connect(amp)
+      panRight.connect(amp)
+      amp.connect(this.panner)
+      oscRight.start(now)
+      voice = { osc, oscRight, amp, filter, filterRight, panLeft, panRight, targetLevel: voiceLevel, sustainLevel }
+    } else {
+      osc.connect(amp)
+      amp.connect(filter)
+      filter.connect(this.panner)
+      voice = { osc, amp, filter, targetLevel: voiceLevel, sustainLevel }
+    }
+    osc.start(now)
     this.voices.set(note, voice)
 
     // Wire LFO to new voice if target is pitch or filter
@@ -253,7 +294,7 @@ export class AmbientOscillatorEngine {
 
     const ctx = this.ctx
     const now = ctx.currentTime
-    const { osc, amp, filter } = voice
+    const { osc, oscRight, amp, filter, filterRight, panLeft, panRight } = voice
 
     amp.gain.cancelScheduledValues(now)
     amp.gain.setValueAtTime(Math.max(amp.gain.value, 0.0001), now)
@@ -262,14 +303,22 @@ export class AmbientOscillatorEngine {
       amp.gain.setTargetAtTime(0.0001, now, Math.max(0.01, release / 3))
       const stopTime = now + release + 0.5
       try { osc.stop(stopTime) } catch (_) {}
+      try { oscRight?.stop(stopTime) } catch (_) {}
       setTimeout(() => {
-        try { osc.disconnect(); amp.disconnect(); filter.disconnect() } catch (_) {}
+        try {
+          osc.disconnect(); oscRight?.disconnect(); amp.disconnect(); filter.disconnect()
+          filterRight?.disconnect(); panLeft?.disconnect(); panRight?.disconnect()
+        } catch (_) {}
       }, (release + 0.8) * 1000)
     } else {
       amp.gain.setValueAtTime(0.0001, now)
       try { osc.stop(now + 0.01) } catch (_) {}
+      try { oscRight?.stop(now + 0.01) } catch (_) {}
       setTimeout(() => {
-        try { osc.disconnect(); amp.disconnect(); filter.disconnect() } catch (_) {}
+        try {
+          osc.disconnect(); oscRight?.disconnect(); amp.disconnect(); filter.disconnect()
+          filterRight?.disconnect(); panLeft?.disconnect(); panRight?.disconnect()
+        } catch (_) {}
       }, 50)
     }
   }
@@ -334,6 +383,7 @@ export class AmbientOscillatorEngine {
     this._periodicWave = null
     for (const voice of this.voices.values()) {
       voice.osc.type = this.params.waveform
+      if (voice.oscRight) voice.oscRight.type = this.params.waveformRight ?? this.params.waveform
     }
   }
 
@@ -347,18 +397,21 @@ export class AmbientOscillatorEngine {
     const p   = this.params
 
     for (const voice of this.voices.values()) {
-      if (patch.waveform !== undefined) {
+      if (patch.waveform !== undefined || patch.waveformLeft !== undefined || patch.waveformRight !== undefined) {
         if (this._periodicWave) {
           voice.osc.setPeriodicWave(this._periodicWave)
         } else {
-          voice.osc.type = p.waveform
+          voice.osc.type = p.waveformLeft ?? p.waveform
+          if (voice.oscRight) voice.oscRight.type = p.waveformRight ?? p.waveformLeft ?? p.waveform
         }
       }
       if (patch.filterCutoff !== undefined) {
         voice.filter.frequency.setTargetAtTime(p.filterCutoff, now, 0.05)
+        voice.filterRight?.frequency.setTargetAtTime(p.filterCutoff, now, 0.05)
       }
       if (patch.filterResonance !== undefined) {
         voice.filter.Q.setTargetAtTime(p.filterResonance, now, 0.05)
+        voice.filterRight?.Q.setTargetAtTime(p.filterResonance, now, 0.05)
       }
       if (patch.level !== undefined && prev.level !== p.level) {
         const ratio = p.level / Math.max(0.0001, prev.level)

@@ -68,11 +68,25 @@ export default function App() {
   const rackDragging = useRef(false)
   const rackStartY   = useRef(0)
   const rackStartH   = useRef(RACK_DEFAULT)
+  const audioUnlockStarted = useRef(false)
 
   useEffect(() => {
     loadBuiltinSamples()
     initMidi()
   }, [])
+
+  const unlockAudioOnce = useCallback(() => {
+    if (audioUnlockStarted.current) return
+    audioUnlockStarted.current = true
+    void unlockMobileAudio().catch(() => {
+      audioUnlockStarted.current = false
+    })
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('keydown', unlockAudioOnce)
+    return () => window.removeEventListener('keydown', unlockAudioOnce)
+  }, [unlockAudioOnce])
 
   useEffect(() => {
     if (appMode !== 'planet') return
@@ -136,7 +150,10 @@ export default function App() {
     <div style={{
       width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
       filter: monochromeMode ? 'grayscale(1)' : undefined,
-    }}>
+    }}
+      onPointerDown={unlockAudioOnce}
+      onTouchStart={unlockAudioOnce}
+    >
       <TopBar appMode={appMode} onSetAppMode={setAppMode} />
       <DroneLayer />
       <GranularLayer />
