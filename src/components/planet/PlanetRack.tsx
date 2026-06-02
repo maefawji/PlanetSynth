@@ -23,6 +23,7 @@ import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import type { OneShotState } from '../../audio/OneShotSamplerEngine'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
+import { getBusOscilloscopeData } from '../../audio/rackBusMixer'
 
 // ── Param editor config ───────────────────────────────────────────────────────
 
@@ -712,9 +713,11 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
             if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
           }
           const pad = 6, bw = maxX - minX || 1, bh = maxY - minY || 1
-          const scale = Math.min(152 / (bw + pad * 2), 80 / (bh + pad * 2))
-          const ox = -(minX - pad) * scale, oy = -(minY - pad) * scale
-          const svgW = (bw + pad * 2) * scale, svgH = (bh + pad * 2) * scale
+          const svgW = 156, svgH = 84
+          const scale = Math.min((svgW - pad * 2) / bw, (svgH - pad * 2) / bh)
+          const drawW = bw * scale, drawH = bh * scale
+          const ox = (svgW - drawW) / 2 - minX * scale
+          const oy = (svgH - drawH) / 2 - minY * scale
           const pts = trailPts.map(p => `${(p.x * scale + ox).toFixed(1)},${(p.y * scale + oy).toFixed(1)}`).join(' ')
           const cur = trailPts[trailPts.length - 1]
           const cx = cur.x * scale + ox, cy = cur.y * scale + oy
@@ -734,10 +737,10 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
 
           return (
             <div style={{ margin: '2px 0', position: 'relative' }}>
-              <svg width={Math.min(156, svgW)} height={Math.min(84, svgH)}
+              <svg width={svgW} height={svgH}
                 viewBox={`0 0 ${svgW.toFixed(1)} ${svgH.toFixed(1)}`}
                 onClick={copyTrail}
-                style={{ display: 'block', borderRadius: 3, background: simple ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', cursor: 'copy' }}
+                style={{ display: 'block', borderRadius: 3, background: 'transparent', cursor: 'copy' }}
               >
                 <polyline points={pts} fill="none" stroke={body.color} strokeOpacity={0.7} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
                 <circle cx={cx.toFixed(1)} cy={cy.toFixed(1)} r={2.5} fill={body.color} opacity={0.9} />
@@ -2129,12 +2132,40 @@ function WaveLabOscillo({ analyser }: { analyser: AnalyserNode | null }) {
   return <canvas ref={canvasRef} width={360} height={120} style={{width:'100%',height:'100%',display:'block'}} />
 }
 
-const ORBIT_SOURCES = ['manual','period','eccentricity','distance','velocity','bound'] as const
-const ORBIT_SRC_LABELS: Record<string,string> = { manual:'man', period:'T', eccentricity:'ecc', distance:'r', velocity:'v', bound:'B' }
+const ORBIT_SOURCES = ['manual','period','eccentricity','distance','velocity','speed','acceleration','bound'] as const
+const ORBIT_SRC_LABELS: Record<string,string> = { manual:'man', period:'T', eccentricity:'ecc', distance:'r', velocity:'v', speed:'spd', acceleration:'acc', bound:'B' }
 const LFO_TARGETS = ['off','pitch','filter','amplitude'] as const
 const LFO_TARGET_LABELS: Record<string,string> = { off:'Off', pitch:'Pitch', filter:'Filt', amplitude:'Amp' }
 const LFO_WAVES = ['sine','triangle','sawtooth','square'] as const
 const LFO_WAVE_LABELS: Record<string,string> = { sine:'Sine', triangle:'Tri', sawtooth:'Saw', square:'Sq' }
+
+function circularRackOscilloscopePath(cx: number, cy: number, radius: number, amp: number, data: Float32Array): string {
+  if (data.length < 2) return ''
+  const total = 64
+  const values = Array.from({ length: total }, (_, i) => {
+    const idx = Math.floor((i / total) * data.length)
+    return Math.max(-1, Math.min(1, data[idx] || 0))
+  })
+  let seam = 0
+  let bestJump = Infinity
+  for (let i = 0; i < total; i++) {
+    const jump = Math.abs(values[i] - values[(i + 1) % total])
+    if (jump < bestJump) {
+      bestJump = jump
+      seam = i
+    }
+  }
+  let d = ''
+  for (let i = 0; i <= total; i++) {
+    const a = (i / total) * Math.PI * 2 - Math.PI / 2
+    const v = values[(seam + 1 + i) % total]
+    const r = radius + v * amp
+    const x = cx + Math.cos(a) * r
+    const y = cy + Math.sin(a) * r
+    d += i === 0 ? `M ${x.toFixed(2)} ${y.toFixed(2)}` : ` L ${x.toFixed(2)} ${y.toFixed(2)}`
+  }
+  return d
+}
 
 function waveLabOrbitValue(
   src: string,
@@ -2150,7 +2181,9 @@ function waveLabOrbitValue(
     case 'period':       raw = stats.T_real * rate; break
     case 'eccentricity': raw = stats.ecc    * rate; break
     case 'distance':     raw = stats.r      * rate; break
-    case 'velocity':     raw = stats.speed  * rate; break
+    case 'velocity':
+    case 'speed':        raw = stats.speed  * rate; break
+    case 'acceleration': raw = stats.acc    * rate; break
     case 'bound':        raw = (stats.bound ? 1 : 0) * rate; break
     default: return manual
   }
@@ -2348,7 +2381,7 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple }: { bodyId: string
     const liveById = new Map(liveBodies.map(b => [b.id, b]))
     const effective = bodies.map(b => {
       const live = liveById.get(b.id)
-      return live ? { ...b, x: live.x, y: live.y, vx: live.vx, vy: live.vy } : b
+      return live ? { ...b, x: live.x, y: live.y, vx: live.vx, vy: live.vy, ax: live.ax, ay: live.ay } : b
     })
     const body = effective.find(b => b.id === bodyId)
     return body ? computeOrbitStats(body, effective, G) : null
@@ -2756,7 +2789,7 @@ function SlotCard({
       const { bodies: bs, simParams: sp } = usePlanetStore.getState()
       const liveBodies = getPlanetLiveBodySnapshot()
       const liveById   = new Map(liveBodies.map(b => [b.id, b]))
-      const eff = bs.map(b => { const l = liveById.get(b.id); return l ? { ...b, x: l.x, y: l.y, vx: l.vx, vy: l.vy } : b })
+      const eff = bs.map(b => { const l = liveById.get(b.id); return l ? { ...b, x: l.x, y: l.y, vx: l.vx, vy: l.vy, ax: l.ax, ay: l.ay } : b })
       const lb  = eff.find(b => b.id === bodyId)
       setOscOrbitStats(lb ? computeOrbitStats(lb, eff, sp.G) : null)
     }
@@ -2779,7 +2812,9 @@ function SlotCard({
       case 'period':       raw = oscOrbitStats.T_real * rate; break
       case 'eccentricity': raw = oscOrbitStats.ecc    * rate; break
       case 'distance':     raw = oscOrbitStats.r      * rate; break
-      case 'velocity':     raw = oscOrbitStats.speed  * rate; break
+      case 'velocity':
+      case 'speed':        raw = oscOrbitStats.speed  * rate; break
+      case 'acceleration': raw = oscOrbitStats.acc    * rate; break
       case 'bound':        raw = (oscOrbitStats.bound ? 1 : 0) * rate; break
       default: return null
     }
@@ -2806,12 +2841,12 @@ function SlotCard({
       background: ghost ? `${accent}07` : `${accent}10`,
       display: 'flex', flexDirection: 'column', padding: '5px 10px 5px 7px', gap: 3,
       opacity: ghost ? 0.58 : 1,
-      pointerEvents: ghost ? 'none' : 'auto',
+      pointerEvents: 'auto',
     }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 1 }}>
         {/* Ableton-style expand triangle — top-left */}
-        {!ghost && onToggleExpand && (
+        {onToggleExpand && (
           <button
             title={expandedSlotKey === slotKey ? 'Collapse' : 'Expand'}
             onClick={e => { e.stopPropagation(); onToggleExpand(slotKey) }}
@@ -3347,13 +3382,23 @@ function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }
   const btnBg     = simple ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.07)'
 
   const [level, setLevel] = useState(0)
+  const [oscData, setOscData] = useState<Float32Array | null>(null)
   const rafRef = useRef<number>(0)
   useEffect(() => {
-    if (!body) { setLevel(0); return }
-    const poll = () => { setLevel(getBodyOutputLevel(body.id)); rafRef.current = requestAnimationFrame(poll) }
+    if (!body) { setLevel(0); setOscData(null); return }
+    const poll = () => {
+      setLevel(getBodyOutputLevel(body.id))
+      if (simParams.showRackBodyOscilloscope) {
+        const data = getBusOscilloscopeData(body.id)
+        setOscData(data ? new Float32Array(data) : null)
+      } else {
+        setOscData(null)
+      }
+      rafRef.current = requestAnimationFrame(poll)
+    }
     rafRef.current = requestAnimationFrame(poll)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [body?.id])
+  }, [body?.id, simParams.showRackBodyOscilloscope])
 
   const isSP        = body ? simParams.standpointBodyId === body.id : false
   const isFollowing = body ? cameraFollowBodyId === body.id : false
@@ -3387,15 +3432,35 @@ function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }
             padding: '12px 6px', gap: 8, minWidth: 0,
           }}>
             {/* Large color dot */}
-            <div style={{
-              width: 36, height: 36, borderRadius: '50%',
-              background: body.color,
-              boxShadow: `0 0 16px ${body.color}66`,
-              flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 18, lineHeight: 1,
-            }}>
-              {body.type === 'sun' ? '☀' : ''}
+            <div style={{ width: 54, height: 54, flexShrink: 0, position: 'relative' }}>
+              <svg viewBox="0 0 54 54" width="54" height="54" style={{ display: 'block', overflow: 'visible' }}>
+                {simParams.showRackBodyOscilloscope && oscData && (
+                  <path
+                    d={circularRackOscilloscopePath(
+                      27,
+                      27,
+                      18 + Math.max(0, simParams.rackBodyOscilloscopeGap) * 0.6,
+                      Math.max(0, simParams.rackBodyOscilloscopeHeight) * 0.7,
+                      oscData,
+                    )}
+                    fill="none"
+                    stroke={body.color}
+                    strokeWidth={Math.max(0.2, simParams.rackBodyOscilloscopeStrokeWidth)}
+                    strokeOpacity={simple ? 0.45 : 0.72}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                )}
+                <circle
+                  cx="27"
+                  cy="27"
+                  r="18"
+                  fill={body.color}
+                  style={{ filter: `drop-shadow(0 0 8px ${body.color}88)` }}
+                />
+                {body.type === 'sun' && (
+                  <text x="27" y="33" textAnchor="middle" fontSize="18" fill="rgba(255,255,255,0.85)">☀</text>
+                )}
+              </svg>
             </div>
 
             {/* Name */}
@@ -3805,9 +3870,15 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
     ? (() => {
         const instrumentActualKey = isBodyMode && hasInstrumentOv ? instrumentKey() : 'g:instrument'
         const allSlots = [
-          ...triggerCsList.map((cs, i) => ({ cs, key: isBodyMode ? `b:trigger:${i}:${bodyId}` : `g:trigger:${i}` })),
+          ...triggerCsList.map((cs, i) => ({
+            cs,
+            key: isBodyMode && hasTriggerOv ? triggerKey(i) : `g:trigger:${i}`,
+          })),
           instrumentCs ? { cs: instrumentCs, key: instrumentActualKey } : null,
-          ...effectCsList.map((cs, i) => ({ cs, key: isBodyMode ? `b:effect:${i}:${bodyId}` : `g:effect:${i}` })),
+          ...effectCsList.map((cs, i) => ({
+            cs,
+            key: isBodyMode && hasEffectsOv ? effectKey(i) : `g:effect:${i}`,
+          })),
         ].filter(Boolean) as {cs: typeof instrumentCs; key: string}[]
         return allSlots.find(s => s.key === expandedSlotKey)?.cs ?? null
       })()

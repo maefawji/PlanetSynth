@@ -81,6 +81,14 @@ export interface PlanetSimParams {
   trailLength: number  // number of trail samples stored per body
   showTrails: boolean
   showVelocityVectors: boolean
+  showBodyOscilloscope: boolean
+  showRackBodyOscilloscope: boolean
+  bodyOscilloscopeStrokeWidth: number
+  bodyOscilloscopeHeight: number
+  bodyOscilloscopeGap: number
+  rackBodyOscilloscopeStrokeWidth: number
+  rackBodyOscilloscopeHeight: number
+  rackBodyOscilloscopeGap: number
   paused: boolean
   simpleTheme: boolean       // light-background canvas look
   rendezvousDistance: number // world-units threshold that triggers body sounds
@@ -273,7 +281,7 @@ export interface NextBodyDefaults {
 }
 
 export const DEFAULT_NEXT_SUN: NextBodyDefaults = {
-  mass: 500, color: '#f59e0b', fixed: true, randomColor: true, randomSample: true,
+  mass: 1000, color: '#f59e0b', fixed: true, randomColor: true, randomSample: true,
 }
 export const DEFAULT_NEXT_PLANET: NextBodyDefaults = {
   mass: 1, color: '#60a5fa', fixed: false, randomColor: true, randomSample: true,
@@ -284,7 +292,7 @@ export const DEFAULT_NEXT_PLANET: NextBodyDefaults = {
 export type DroneMode = 'manual' | 'orbit'
 
 /** Which orbit metric drives an OscSynth param when not 'manual'. */
-export type OscOrbitSource = 'manual' | 'period' | 'eccentricity' | 'distance' | 'velocity' | 'bound'
+export type OscOrbitSource = 'manual' | 'period' | 'eccentricity' | 'distance' | 'velocity' | 'speed' | 'acceleration' | 'bound'
 
 export const BODY_DRONE_DEFAULTS = {
   droneType: 'none' as DroneType,
@@ -366,6 +374,14 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   trailLength: 600,
   showTrails: true,
   showVelocityVectors: false,
+  showBodyOscilloscope: false,
+  showRackBodyOscilloscope: false,
+  bodyOscilloscopeStrokeWidth: 1,
+  bodyOscilloscopeHeight: 7,
+  bodyOscilloscopeGap: 10,
+  rackBodyOscilloscopeStrokeWidth: 1,
+  rackBodyOscilloscopeHeight: 5,
+  rackBodyOscilloscopeGap: 10,
   paused: false,
   simpleTheme: false,
   // ── Trigger defaults: OFF ─────────────────────────────────────────────────
@@ -383,18 +399,18 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   showPredictedOrbit: true,
   standpointMode: true,
   standpointBodyId: 'sun',
-  standpointMaxDist: 1000,
+  standpointMaxDist: 700,
   standpointMinVol: 0,
-  showStandpointVisual: false,
-  standpointDirectional: false,
-  standpointFacing: 'velocity',
-  standpointFacingAngle: 0,
+  showStandpointVisual: true,
+  standpointDirectional: true,
+  standpointFacing: 'manual',
+  standpointFacingAngle: 271,
   standpointConeWidth: 270,
-  standpointOuterVol: 0.25,
+  standpointOuterVol: 0.7,
   standpointStereo: false,
   standpointStereoWidth: 1.0,
-  standpointFrontBack: false,
-  standpointRearVol: 0.45,
+  standpointFrontBack: true,
+  standpointRearVol: 0.7,
   effectorType: 'none',
   effectorDistance: 200,
   effectorMaxWet: 0.7,

@@ -2179,6 +2179,31 @@ function CanvasSettingsPanel() {
             <span style={{ fontSize: 10, color: t.textMid }}>Show sample name</span>
           </label>
         </SettingsGroup>
+
+        <SettingsGroup label="Body Oscilloscope Rings">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+            <input type="checkbox" checked={simParams.showBodyOscilloscope}
+              onChange={e => updateSimParams({ showBodyOscilloscope: e.target.checked })} />
+            <span style={{ fontSize: 10, color: t.textMid }}>Show canvas rings</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 76 }}>
+            <input type="checkbox" checked={simParams.showRackBodyOscilloscope}
+              onChange={e => updateSimParams({ showRackBodyOscilloscope: e.target.checked })} />
+            <span style={{ fontSize: 10, color: t.textMid }}>Show rack rings</span>
+          </label>
+          <NumberSetting label="Canvas w" value={simParams.bodyOscilloscopeStrokeWidth} min={0.2} step={0.1}
+            onChange={bodyOscilloscopeStrokeWidth => updateSimParams({ bodyOscilloscopeStrokeWidth })} />
+          <NumberSetting label="Canvas h" value={simParams.bodyOscilloscopeHeight} min={0} step={1}
+            onChange={bodyOscilloscopeHeight => updateSimParams({ bodyOscilloscopeHeight })} />
+          <NumberSetting label="Canvas gap" value={simParams.bodyOscilloscopeGap} min={0} step={1}
+            onChange={bodyOscilloscopeGap => updateSimParams({ bodyOscilloscopeGap })} />
+          <NumberSetting label="Rack w" value={simParams.rackBodyOscilloscopeStrokeWidth} min={0.2} step={0.1}
+            onChange={rackBodyOscilloscopeStrokeWidth => updateSimParams({ rackBodyOscilloscopeStrokeWidth })} />
+          <NumberSetting label="Rack h" value={simParams.rackBodyOscilloscopeHeight} min={0} step={1}
+            onChange={rackBodyOscilloscopeHeight => updateSimParams({ rackBodyOscilloscopeHeight })} />
+          <NumberSetting label="Rack gap" value={simParams.rackBodyOscilloscopeGap} min={0} step={1}
+            onChange={rackBodyOscilloscopeGap => updateSimParams({ rackBodyOscilloscopeGap })} />
+        </SettingsGroup>
       </div>
     </div>
   )

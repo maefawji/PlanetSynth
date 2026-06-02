@@ -236,9 +236,11 @@ export default function App() {
                     type="number"
                     value={planetTool === 'add-sun' ? nextSunDefaults.mass : nextPlanetDefaults.mass}
                     min={1}
+                    max={planetTool === 'add-sun' ? 1000 : undefined}
                     step={1}
                     onChange={e => {
-                      const v = Math.max(1, Math.round(Number(e.target.value)))
+                      const raw = Math.max(1, Math.round(Number(e.target.value)))
+                      const v = planetTool === 'add-sun' ? Math.min(1000, raw) : raw
                       if (planetTool === 'add-sun') updateNextSunDefaults({ mass: v })
                       else updateNextPlanetDefaults({ mass: v })
                     }}

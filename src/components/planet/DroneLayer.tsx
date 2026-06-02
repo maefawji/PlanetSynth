@@ -47,6 +47,8 @@ export type OrbitStats = {
   r: number
   /** Current speed magnitude */
   speed: number
+  /** Current acceleration magnitude */
+  acc: number
   /** True when specific orbital energy < 0 (gravitationally bound) */
   bound: boolean
   /** Name of the body acting as the gravitational centre */
@@ -71,6 +73,8 @@ export function computeOrbitStats(
   const dy    = body.y - center.y
   const r     = Math.max(1, Math.hypot(dx, dy))
   const speed = Math.hypot(body.vx, body.vy)
+  const motion = body as PlanetBody & { ax?: number; ay?: number }
+  const acc   = Math.hypot(motion.ax ?? 0, motion.ay ?? 0)
   const mu    = G * (center.mass + body.mass)
 
   // Specific orbital energy (negative = bound)
@@ -97,7 +101,7 @@ export function computeOrbitStats(
     ecc = _clamp(Math.abs(speed / Math.max(0.01, vCirc) - 1) * 0.8, 0, 0.95)
   }
 
-  return { T_real, ecc, r, speed, bound, centerName: center.name }
+  return { T_real, ecc, r, speed, acc, bound, centerName: center.name }
 }
 
 /**

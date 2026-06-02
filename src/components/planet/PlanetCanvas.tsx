@@ -27,7 +27,7 @@ import { ADSR_OFF, computeOrbitAdsr } from '../../audio/orbitAdsr'
 import type { SampleAsset } from '../../patch/types'
 import { setBodyOutputLevel, clearBodyOutputLevel } from '../../audio/bodyOutputMeter'
 import { computeBodyRackOutputSpatial } from '../../audio/bodyRackOutput'
-import { setBusStandpointSpatial } from '../../audio/rackBusMixer'
+import { clearBusOscilloscopeAnalysers, getBusOscilloscopeData, setBusStandpointSpatial } from '../../audio/rackBusMixer'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
 import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
@@ -334,6 +334,41 @@ function computePredictedOrbit(
   return pts.join(' ')
 }
 
+function circularOscilloscopePath(
+  cx: number,
+  cy: number,
+  radius: number,
+  amp: number,
+  data: Float32Array,
+): string {
+  if (data.length < 2) return ''
+  const total = 72
+  const values = Array.from({ length: total }, (_, i) => {
+    const idx = Math.floor((i / total) * data.length)
+    return Math.max(-1, Math.min(1, data[idx] || 0))
+  })
+  let seam = 0
+  let bestJump = Infinity
+  for (let i = 0; i < total; i++) {
+    const jump = Math.abs(values[i] - values[(i + 1) % total])
+    if (jump < bestJump) {
+      bestJump = jump
+      seam = i
+    }
+  }
+  let d = ''
+  for (let i = 0; i <= total; i++) {
+    const phase = i / total
+    const a = phase * Math.PI * 2 - Math.PI / 2
+    const v = values[(seam + 1 + i) % total]
+    const r = radius + v * amp
+    const x = cx + Math.cos(a) * r
+    const y = cy + Math.sin(a) * r
+    d += i === 0 ? `M ${x.toFixed(2)} ${y.toFixed(2)}` : ` L ${x.toFixed(2)} ${y.toFixed(2)}`
+  }
+  return d
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false }: { tool?: PlanetTool; onSelectTool?: () => void; mobileMode?: boolean }) {
@@ -354,6 +389,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const rackCacheRef       = useRef<Map<string, { triggers: string[]; instrument: string | null; effects: string[] }>>(new Map())
   const liveBodiesRef   = useRef<LiveBody[]>([])
   const trailsRef       = useRef<Map<string, TrailRing>>(new Map())
+  const bodyOscilloscopeRef = useRef<Map<string, Float32Array>>(new Map())
   const simParamsRef    = useRef<PlanetSimParams>(storeParams)
   const trailStepRef    = useRef(0)
   const prevInRef       = useRef<Map<string, boolean>>(new Map())
@@ -390,6 +426,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       liveBodiesRef.current = liveBodiesRef.current.filter(lb => newIds.has(lb.id))
       for (const lb of removed) {
         trailsRef.current.delete(lb.id)
+        bodyOscilloscopeRef.current.delete(lb.id)
         prevAngleRef.current.delete(lb.id)
         lfoAccumRef.current.delete(lb.id)
         lastTriggerSimTimeRef.current.delete(lb.id)
@@ -427,6 +464,11 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   useEffect(() => {
     simParamsRef.current = { ...storeParams, ...useControlSetStore.getState().getEffectiveParams() }
   }, [storeParams])
+  useEffect(() => {
+    if (storeParams.showBodyOscilloscope || storeParams.showRackBodyOscilloscope) return
+    bodyOscilloscopeRef.current.clear()
+    clearBusOscilloscopeAnalysers()
+  }, [storeParams.showBodyOscilloscope, storeParams.showRackBodyOscilloscope])
   useEffect(() => {
     return useControlSetStore.subscribe(() => {
       simParamsRef.current = { ...usePlanetStore.getState().simParams, ...useControlSetStore.getState().getEffectiveParams() }
@@ -1296,6 +1338,18 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       }
 
       if (nowMs - lastRenderMsRef.current >= 33) {
+        if (simParamsRef.current.showBodyOscilloscope) {
+          const nextOsc = bodyOscilloscopeRef.current
+          const liveIds = new Set(liveBodiesRef.current.map(b => b.id))
+          for (const id of Array.from(nextOsc.keys())) {
+            if (!liveIds.has(id)) nextOsc.delete(id)
+          }
+          for (const b of liveBodiesRef.current) {
+            const data = getBusOscilloscopeData(b.id)
+            if (data) nextOsc.set(b.id, new Float32Array(data))
+            else nextOsc.delete(b.id)
+          }
+        }
         lastRenderMsRef.current = nowMs
         setTick(t => t + 1)
       }
@@ -1854,6 +1908,25 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                     <circle cx={b.x} cy={b.y} r={wr * 1.6} fill={color} opacity={0.12} />
                   )
                 )}
+                {storeParams.showBodyOscilloscope && (() => {
+                  const data = bodyOscilloscopeRef.current.get(b.id)
+                  if (!data) return null
+                  const oscHeight = Math.max(0, storeParams.bodyOscilloscopeHeight) / zoom
+                  const oscGap = Math.max(0, storeParams.bodyOscilloscopeGap) / zoom
+                  const path = circularOscilloscopePath(b.x, b.y, wr + oscGap, oscHeight, data)
+                  if (!path) return null
+                  return (
+                    <path
+                      d={path}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={Math.max(0.1, storeParams.bodyOscilloscopeStrokeWidth)}
+                      strokeOpacity={simple ? 0.42 : 0.62}
+                      vectorEffect="non-scaling-stroke"
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  )
+                })()}
                 {isSel && (
                   <circle cx={b.x} cy={b.y} r={wr + 5 / zoom} fill="none"
                     stroke={selStroke} strokeWidth={1 / zoom}

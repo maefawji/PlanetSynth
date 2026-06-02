@@ -22,6 +22,8 @@ interface BodyBus {
   standpointGain:  GainNode          // standpoint volume attenuation
   standpointPanner: StereoPannerNode // standpoint stereo pan
   toneGain:        Tone.Gain         // bridge into the Tone.js master chain
+  analyser:        AnalyserNode | null
+  analyserBuf:     Float32Array | null
 }
 
 const _buses     = new Map<string, BodyBus>()
@@ -89,6 +91,7 @@ export function destroyBus(bodyId: string): void {
   try { bus.faderGain.disconnect()       } catch (_) {}
   try { bus.standpointGain.disconnect()  } catch (_) {}
   try { bus.standpointPanner.disconnect()} catch (_) {}
+  try { bus.analyser?.disconnect()       } catch (_) {}
   try { bus.toneGain.dispose()           } catch (_) {}
   _buses.delete(bodyId)
 }
@@ -106,6 +109,30 @@ export function hasBus(bodyId: string): boolean {
  */
 export function getBusPostFaderNode(bodyId: string): GainNode | null {
   return _buses.get(bodyId)?.faderGain ?? null
+}
+
+export function getBusOscilloscopeData(bodyId: string): Float32Array | null {
+  const bus = _buses.get(bodyId)
+  if (!bus) return null
+  if (!bus.analyser) {
+    const analyser = ctx().createAnalyser()
+    analyser.fftSize = 128
+    analyser.smoothingTimeConstant = 0.15
+    bus.standpointGain.connect(analyser)
+    bus.analyser = analyser
+    bus.analyserBuf = new Float32Array(analyser.fftSize)
+  }
+  if (!bus.analyserBuf) bus.analyserBuf = new Float32Array(bus.analyser.fftSize)
+  bus.analyser.getFloatTimeDomainData(bus.analyserBuf)
+  return bus.analyserBuf
+}
+
+export function clearBusOscilloscopeAnalysers(): void {
+  for (const bus of _buses.values()) {
+    try { bus.analyser?.disconnect() } catch (_) {}
+    bus.analyser = null
+    bus.analyserBuf = null
+  }
 }
 
 // ── Internal ──────────────────────────────────────────────────────────────────
@@ -134,7 +161,7 @@ function _ensureBus(bodyId: string): BodyBus {
   standpointGain.connect(standpointPanner)
   standpointPanner.connect(toneGain.input as unknown as AudioNode)
 
-  const bus: BodyBus = { inputGain, faderGain, standpointGain, standpointPanner, toneGain }
+  const bus: BodyBus = { inputGain, faderGain, standpointGain, standpointPanner, toneGain, analyser: null, analyserBuf: null }
   _buses.set(bodyId, bus)
   return bus
 }
