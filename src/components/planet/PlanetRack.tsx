@@ -2158,6 +2158,95 @@ function waveLabOrbitValue(
   return Math.max(min, Math.min(max, raw))
 }
 
+function lfoWaveValue(waveform: string, phase: number): number {
+  const p = ((phase % 1) + 1) % 1
+  switch (waveform) {
+    case 'triangle':
+      return 1 - 4 * Math.abs(p - 0.5)
+    case 'sawtooth':
+      return 2 * p - 1
+    case 'square':
+      return p < 0.5 ? 1 : -1
+    case 'sine':
+    default:
+      return Math.sin(p * Math.PI * 2)
+  }
+}
+
+function WaveLabLfoPreview({
+  waveform, rate, depth, active, simple,
+}: {
+  waveform: string
+  rate: number
+  depth: number
+  active: boolean
+  simple: boolean
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const W = canvas.width, H = canvas.height
+    const accent = '#a78bfa'
+    const grid = simple ? 'rgba(0,0,0,0.09)' : 'rgba(255,255,255,0.08)'
+    const bg = simple ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.035)'
+    ctx.clearRect(0, 0, W, H)
+    ctx.fillStyle = bg
+    ctx.fillRect(0, 0, W, H)
+
+    ctx.strokeStyle = grid
+    ctx.lineWidth = 0.5
+    ctx.beginPath()
+    ctx.moveTo(0, H / 2)
+    ctx.lineTo(W, H / 2)
+    for (let i = 1; i < 4; i++) {
+      const x = (i / 4) * W
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, H)
+    }
+    ctx.stroke()
+
+    const amp = Math.max(0.02, Math.min(1, depth)) * 0.42
+    ctx.beginPath()
+    ctx.strokeStyle = active ? accent : (simple ? 'rgba(0,0,0,0.22)' : 'rgba(255,255,255,0.22)')
+    ctx.lineWidth = active ? 1.6 : 1
+    ctx.lineJoin = 'round'
+    for (let i = 0; i < W; i++) {
+      const ph = i / Math.max(1, W - 1)
+      const y = (0.5 - lfoWaveValue(waveform, ph) * amp) * H
+      i === 0 ? ctx.moveTo(i, y) : ctx.lineTo(i, y)
+    }
+    ctx.stroke()
+  }, [waveform, rate, depth, active, simple])
+
+  const safeRate = Number.isFinite(rate) && rate > 0 ? rate : 0
+  const period = safeRate > 0 ? 1 / safeRate : 0
+  const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.42)'
+  const label = safeRate > 0
+    ? `1 cycle  ·  ${period >= 1 ? period.toFixed(2) : period.toFixed(3)}s  ·  ${safeRate.toFixed(2)}Hz`
+    : '1 cycle'
+
+  return (
+    <div style={{ marginTop: 5 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:3 }}>
+        <span style={{ fontSize:7.5, color:dim, textTransform:'uppercase', letterSpacing:'0.06em' }}>LFO Period</span>
+        <span style={{ fontSize:7.5, color:active ? '#a78bfa' : dim, fontFamily:'monospace' }}>{label}</span>
+      </div>
+      <div style={{
+        height: 54,
+        borderRadius: 3,
+        overflow: 'hidden',
+        border: `0.5px solid ${active ? 'rgba(167,139,250,0.30)' : (simple ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)')}`,
+        opacity: active ? 1 : 0.45,
+      }}>
+        <canvas ref={canvasRef} width={360} height={72} style={{ width:'100%', height:'100%', display:'block' }} />
+      </div>
+    </div>
+  )
+}
+
 // Standalone slider row — must be module-level to avoid remount on every parent render
 function WLSliderRow({ label, paramKey, min, max, step, fmt, srcKey, rateKey, showSrc,
   ep, dim, dim2, accent, liveValue, onSetNum, onSetStr }: {
@@ -2280,6 +2369,8 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple }: { bodyId: string
     )
   }
 
+  const lfoRateLive = liveFor('oscSynthLfoRate', 'oscSynthLfoRateSource', 'oscSynthLfoRateRate', 0.01, 20)
+  const lfoDepthLive = liveFor('oscSynthLfoDepth', 'oscSynthLfoDepthSource', 'oscSynthLfoDepthRate', 0, 1)
   const sliderProps = { ep, dim, dim2, accent, showSrc: !manualADSR, onSetNum: setNum, onSetStr: setStr }
 
   const secLabel = (label: string) => (
@@ -2375,8 +2466,15 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple }: { bodyId: string
           ))}
         </div>
         <div style={{ opacity: lfoOn ? 1 : 0.4 }}>
-          <WLSliderRow label="Rate"  paramKey="oscSynthLfoRate"  min={0.01} max={20} step={0.01} fmt={v=>`${v.toFixed(2)}Hz`} srcKey="oscSynthLfoRateSource"  rateKey="oscSynthLfoRateRate"  liveValue={liveFor('oscSynthLfoRate', 'oscSynthLfoRateSource', 'oscSynthLfoRateRate', 0.01, 20)} {...sliderProps} />
-          <WLSliderRow label="Depth" paramKey="oscSynthLfoDepth" min={0}    max={1}  step={0.01} fmt={v=>v.toFixed(2)}        srcKey="oscSynthLfoDepthSource" rateKey="oscSynthLfoDepthRate" liveValue={liveFor('oscSynthLfoDepth', 'oscSynthLfoDepthSource', 'oscSynthLfoDepthRate', 0, 1)} {...sliderProps} />
+          <WLSliderRow label="Rate"  paramKey="oscSynthLfoRate"  min={0.01} max={20} step={0.01} fmt={v=>`${v.toFixed(2)}Hz`} srcKey="oscSynthLfoRateSource"  rateKey="oscSynthLfoRateRate"  liveValue={lfoRateLive} {...sliderProps} />
+          <WLSliderRow label="Depth" paramKey="oscSynthLfoDepth" min={0}    max={1}  step={0.01} fmt={v=>v.toFixed(2)}        srcKey="oscSynthLfoDepthSource" rateKey="oscSynthLfoDepthRate" liveValue={lfoDepthLive} {...sliderProps} />
+          <WaveLabLfoPreview
+            waveform={lfoWave}
+            rate={lfoRateLive ?? Number(ep.oscSynthLfoRate ?? 0.5)}
+            depth={lfoDepthLive ?? Number(ep.oscSynthLfoDepth ?? 0.3)}
+            active={lfoOn}
+            simple={simple}
+          />
         </div>
       </div>
     </div>
@@ -3452,6 +3550,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
     addGlobalTrigger, removeGlobalTrigger,
     setBodySlot, clearBodySlot, addBodyEffect, removeBodyEffect,
     addBodyTrigger, removeBodyTrigger, clearBodyTriggers,
+    makeBodyRackUnique,
   } = useControlSetStore()
 
   const selectedBody = selectedBodyId ? (bodies.find(b => b.id === selectedBodyId) ?? null) : null
@@ -3507,6 +3606,48 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
     } else {
       setGlobalSlot(slot, null)
     }
+  }
+
+  function MakeUniqueButton({ slot }: { slot: 'triggers' | 'instrument' | 'effects' }) {
+    return (
+      <button
+        title="Make this global rack slot unique for this body"
+        onClick={e => {
+          e.stopPropagation()
+          makeBodyRackUnique(bodyId, slot)
+        }}
+        style={{
+          position: 'absolute',
+          top: 3,
+          right: 4,
+          zIndex: 3,
+          height: 14,
+          padding: '0 5px',
+          borderRadius: 3,
+          border: `0.5px solid ${simple ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.18)'}`,
+          background: simple ? 'rgba(255,255,255,0.86)' : 'rgba(13,13,22,0.88)',
+          color: simple ? 'rgba(0,0,0,0.62)' : 'rgba(255,255,255,0.68)',
+          fontSize: 6.5,
+          fontWeight: 800,
+          letterSpacing: '0.05em',
+          textTransform: 'uppercase',
+          lineHeight: 1,
+          fontFamily: 'inherit',
+          cursor: 'pointer',
+          boxShadow: simple ? '0 1px 4px rgba(0,0,0,0.10)' : '0 1px 6px rgba(0,0,0,0.35)',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.color = simple ? '#111827' : '#fff'
+          e.currentTarget.style.borderColor = simple ? 'rgba(0,0,0,0.34)' : 'rgba(255,255,255,0.36)'
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.color = simple ? 'rgba(0,0,0,0.62)' : 'rgba(255,255,255,0.68)'
+          e.currentTarget.style.borderColor = simple ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.18)'
+        }}
+      >
+        unique
+      </button>
+    )
   }
 
   // ── Rack-level drag state (whole rack is one drop target) ─────────────────
@@ -3792,7 +3933,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
             <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
               {triggerCsList.length > 0 ? triggerCsList.map((cs, i) =>
                 cs ? (
-                  <div key={i} style={{ flexShrink: 0, width: 148 }}>
+                  <div key={i} style={{ flexShrink: 0, width: 148, position: 'relative' }}>
                     <SlotCard cs={cs}
                       slotKey={isBodyMode && !hasTriggerOv ? `g:trigger:${i}` : triggerKey(i)}
                       simple={simple}
@@ -3801,6 +3942,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
                       onClear={() => handleClearTrigger(i)}
                       expandedSlotKey={expandedSlotKey}
                       onToggleExpand={key => setExpandedSlotKey(prev => prev === key ? null : key)} />
+                    {isBodyMode && !hasTriggerOv && <MakeUniqueButton slot="triggers" />}
                   </div>
                 ) : null
               ) : (
@@ -3827,19 +3969,22 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
             <div style={{ width: 1, background: divCol, margin: '6px 0' }} />
             <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 4, minWidth: (instrumentCs?.id === 'instrument-oneshot' || instrumentCs?.id === 'instrument-oneshot-stretch') ? 220 : instrumentCs?.id === 'instrument-wave-lab' ? 230 : instrumentCs?.id === 'instrument-osc-synth' ? 210 : 160 }}>
               {instrumentCs ? (
-                <SlotCard cs={instrumentCs}
-                  slotKey={isBodyMode && !hasInstrumentOv ? 'g:instrument' : instrumentKey()}
-                  simple={simple}
-                  bodyId={isBodyMode ? bodyId : null}
-                  ghost={isBodyMode && !hasInstrumentOv}
-                  onClear={() => handleClear('instrument', hasInstrumentOv)}
-                  onExtend={
-                    instrumentCs.id === 'instrument-sampler'
-                      ? () => onExtendSampler?.(isBodyMode ? bodyId : '', instrumentKey())
-                      : undefined
-                  }
-                  expandedSlotKey={expandedSlotKey}
-                  onToggleExpand={key => setExpandedSlotKey(prev => prev === key ? null : key)} />
+                <div style={{ position: 'relative' }}>
+                  <SlotCard cs={instrumentCs}
+                    slotKey={isBodyMode && !hasInstrumentOv ? 'g:instrument' : instrumentKey()}
+                    simple={simple}
+                    bodyId={isBodyMode ? bodyId : null}
+                    ghost={isBodyMode && !hasInstrumentOv}
+                    onClear={() => handleClear('instrument', hasInstrumentOv)}
+                    onExtend={
+                      instrumentCs.id === 'instrument-sampler'
+                        ? () => onExtendSampler?.(isBodyMode ? bodyId : '', instrumentKey())
+                        : undefined
+                    }
+                    expandedSlotKey={expandedSlotKey}
+                    onToggleExpand={key => setExpandedSlotKey(prev => prev === key ? null : key)} />
+                  {isBodyMode && !hasInstrumentOv && <MakeUniqueButton slot="instrument" />}
+                </div>
               ) : (
                 <EmptySlot simple={simple} highlighted={rackDragCat === 'instrument'} />
               )}
@@ -3862,7 +4007,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
             <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'row', gap: 6, alignItems: 'flex-start', flex: 1 }}>
               {effectCsList.map((cs, i) =>
                 cs ? (
-                  <div key={i} style={{ flexShrink: 0, width: 148 }}>
+                  <div key={i} style={{ flexShrink: 0, width: 148, position: 'relative' }}>
                     <SlotCard cs={cs}
                       slotKey={isBodyMode && !hasEffectsOv ? `g:effect:${i}` : effectKey(i)}
                       simple={simple}
@@ -3871,6 +4016,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
                       onClear={() => handleClearEffect(i)}
                       expandedSlotKey={expandedSlotKey}
                       onToggleExpand={key => setExpandedSlotKey(prev => prev === key ? null : key)} />
+                    {isBodyMode && !hasEffectsOv && <MakeUniqueButton slot="effects" />}
                   </div>
                 ) : null
               )}

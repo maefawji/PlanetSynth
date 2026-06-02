@@ -558,14 +558,17 @@ export const usePlanetStore = create<PlanetState>(set => ({
 
   addBody: body => set(state => ({ bodies: [...state.bodies, body] })),
 
-  removeBody: id => set(state => ({
-    bodies: state.bodies.filter(b => b.id !== id),
-    selectedBodyId: state.selectedBodyId === id ? null : state.selectedBodyId,
-    selectedBodyIds: state.selectedBodyIds.filter(i => i !== id),
-    simParams: state.simParams.standpointBodyId === id
-      ? { ...state.simParams, standpointBodyId: null }
-      : state.simParams,
-  })),
+  removeBody: id => set(state => {
+    const nextBodies = state.bodies.filter(b => b.id !== id)
+    return {
+      bodies: nextBodies,
+      selectedBodyId: state.selectedBodyId === id ? null : state.selectedBodyId,
+      selectedBodyIds: state.selectedBodyIds.filter(i => i !== id),
+      simParams: state.simParams.standpointBodyId === id
+        ? { ...state.simParams, standpointBodyId: nextBodies[0]?.id ?? null }
+        : state.simParams,
+    }
+  }),
 
   clearBodies: () => set({ bodies: [], selectedBodyId: null, selectedBodyIds: [], cameraFollowBodyId: null }),
 

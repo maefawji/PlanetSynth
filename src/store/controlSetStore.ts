@@ -538,6 +538,7 @@ interface ControlSetState {
   clearBodyTriggers:(bodyId: string) => void
   addBodyEffect:    (bodyId: string, id: string) => void
   removeBodyEffect: (bodyId: string, index: number) => void
+  makeBodyRackUnique:(bodyId: string, slot: 'triggers' | 'instrument' | 'effects') => void
   clearBodyRack:    (bodyId: string) => void
   resetBodyRacksToDefaults: () => void
 
@@ -752,6 +753,48 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
           ...s.bodyRacks,
           [bodyId]: { ...(s.bodyRacks[bodyId] ?? {}), effects: next },
         },
+        rackParamOverrides: overrides,
+      }
+    })
+  },
+
+  makeBodyRackUnique(bodyId, slot) {
+    set(s => {
+      const prev = s.bodyRacks[bodyId] ?? {}
+      const next: BodyRackOverride = { ...prev }
+      const overrides: Record<string, Partial<PlanetSimParams>> = { ...s.rackParamOverrides }
+
+      if (slot === 'triggers') {
+        next.triggers = [...s.globalRack.triggers]
+        for (const key of Object.keys(overrides)) {
+          if (key.startsWith(`b:${bodyId}:trigger:`)) delete overrides[key]
+        }
+        s.globalRack.triggers.forEach((_, i) => {
+          const globalKey = gKey(`trigger:${i}`)
+          const bodyKey = bKey(bodyId, `trigger:${i}`)
+          if (s.rackParamOverrides[globalKey]) overrides[bodyKey] = { ...s.rackParamOverrides[globalKey] }
+        })
+      } else if (slot === 'instrument') {
+        next.instrument = s.globalRack.instrument
+        delete overrides[bKey(bodyId, 'instrument')]
+        const globalKey = gKey('instrument')
+        if (s.rackParamOverrides[globalKey]) {
+          overrides[bKey(bodyId, 'instrument')] = { ...s.rackParamOverrides[globalKey] }
+        }
+      } else {
+        next.effects = [...s.globalRack.effects]
+        for (const key of Object.keys(overrides)) {
+          if (key.startsWith(`b:${bodyId}:effect:`)) delete overrides[key]
+        }
+        s.globalRack.effects.forEach((_, i) => {
+          const globalKey = gKey(`effect:${i}`)
+          const bodyKey = bKey(bodyId, `effect:${i}`)
+          if (s.rackParamOverrides[globalKey]) overrides[bodyKey] = { ...s.rackParamOverrides[globalKey] }
+        })
+      }
+
+      return {
+        bodyRacks: { ...s.bodyRacks, [bodyId]: next },
         rackParamOverrides: overrides,
       }
     })

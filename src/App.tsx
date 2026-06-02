@@ -52,7 +52,6 @@ export default function App() {
   const [planetTool, setPlanetTool] = useState<PlanetTool>('add-planet')
   const simpleTheme        = usePlanetStore(s => s.simParams.simpleTheme)
   const setSelectedBodyId  = usePlanetStore(s => s.setSelectedBodyId)
-  const bodies             = usePlanetStore(s => s.bodies)
   const probeMass    = usePlanetStore(s => s.simParams.probeMass)
   const updateSimParams = usePlanetStore(s => s.updateSimParams)
   const nextPlanetDefaults = usePlanetStore(s => s.nextPlanetDefaults)
@@ -74,12 +73,6 @@ export default function App() {
     loadBuiltinSamples()
     initMidi()
   }, [])
-
-  useEffect(() => {
-    if (!IS_MOBILE) return
-    const sun = bodies.find(b => b.type === 'sun')
-    if (sun) updateSimParams({ standpointMode: true, standpointBodyId: sun.id })
-  }, [bodies, updateSimParams])
 
   useEffect(() => {
     if (appMode !== 'planet') return
