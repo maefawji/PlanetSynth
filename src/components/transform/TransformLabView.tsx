@@ -1,4 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  Background,
+  Controls,
+  Handle,
+  MarkerType,
+  Position,
+  ReactFlow,
+  type Connection,
+  type Edge,
+  type EdgeChange,
+  type Node,
+  type NodeProps,
+} from '@xyflow/react'
 import { RotateCcw } from 'lucide-react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { useOrbitTransformStore, type OrbitTransformCurve, type OrbitTransformOutput } from '../../store/orbitTransformStore'
@@ -10,6 +23,17 @@ import { WHOLE_ORBIT_SOURCES } from '../../lib/wholeOrbitSources'
 import { getPlanetLiveBodySnapshot } from '../planet/PlanetCanvas'
 
 type LivePlanetBody = PlanetBody & { ax?: number; ay?: number }
+type TransformPatchKind = 'source' | 'transform' | 'destination'
+type TransformPatchNode = Node<{
+  kind: TransformPatchKind
+  label: string
+  sub: string
+  value: number
+  color: string
+  selected?: boolean
+}, 'transformPatchNode'>
+
+const patchNodeTypes = { transformPatchNode: TransformPatchNodeView }
 
 const CURVES: OrbitTransformCurve[] = ['linear', 'ease-in', 'ease-out', 'smooth', 'invert']
 
@@ -22,6 +46,42 @@ const DESTINATIONS: Record<OrbitTransformOutput, string> = {
   root: 'root/register',
   width: 'stereo width',
   tension: 'resonance / chord color',
+}
+
+function sourceNodeId(source: string): string { return `source:${source}` }
+function transformNodeId(id: string): string { return `transform:${id}` }
+function destinationNodeId(id: string): string { return `destination:${id}` }
+function sourceEdgeId(source: string, id: string): string { return `source-edge:${source}:${id}` }
+function destinationEdgeId(id: string): string { return `destination-edge:${id}` }
+
+function TransformPatchNodeView({ data }: NodeProps<TransformPatchNode>) {
+  const canReceive = data.kind === 'transform' || data.kind === 'destination'
+  const canSend = data.kind === 'source' || data.kind === 'transform'
+  return (
+    <div style={{
+      width: data.kind === 'transform' ? 118 : 132,
+      minHeight: data.kind === 'transform' ? 74 : 62,
+      border: `0.5px solid ${data.selected ? data.color : `${data.color}66`}`,
+      borderRadius: 7,
+      background: data.selected ? `${data.color}22` : '#080a12',
+      boxShadow: data.selected ? `0 0 0 1px ${data.color}77, 0 8px 22px rgba(0,0,0,0.28)` : '0 5px 14px rgba(0,0,0,0.22)',
+      padding: 10,
+      color: '#e5e7eb',
+      fontFamily: 'inherit',
+    }}>
+      {canReceive && <Handle type="target" position={Position.Left} style={{ width: 8, height: 8, background: data.color, border: 'none' }} />}
+      {canSend && <Handle type="source" position={Position.Right} style={{ width: 8, height: 8, background: data.color, border: 'none' }} />}
+      <div style={{ fontSize: 7.5, fontWeight: 800, color: data.color, letterSpacing: '0.09em', textTransform: 'uppercase', marginBottom: 6 }}>{data.kind}</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
+        <span style={{ fontSize: 11, fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{data.label}</span>
+        <span style={{ fontSize: 9, fontFamily: 'monospace', color: data.color }}>{data.value.toFixed(2)}</span>
+      </div>
+      <div style={{ height: 4, borderRadius: 3, background: 'rgba(148,163,184,0.16)', overflow: 'hidden', marginTop: 7 }}>
+        <div style={{ width: `${Math.round(clamp(data.value, 0, 1) * 100)}%`, height: '100%', background: data.color }} />
+      </div>
+      <div style={{ marginTop: 6, fontSize: 8, color: 'rgba(229,231,235,0.45)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{data.sub}</div>
+    </div>
+  )
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -85,14 +145,18 @@ export function TransformLabView() {
 
   useEffect(() => {
     let raf = 0
-    function frame() {
-      const live = getPlanetLiveBodySnapshot()
-      const byId = new Map(storeBodies.map(b => [b.id, b]))
-      setLiveBodies(live.length > 0
-        ? live.map(b => ({ ...(byId.get(b.id) ?? {
-            id: b.id, name: b.id, type: 'planet' as const, color: '#888', sampleId: null,
-          }), ...b, z: byId.get(b.id)?.z ?? b.z ?? 0 }))
-        : storeBodies)
+    let last = 0
+    function frame(ts: number) {
+      if (ts - last > 140) {
+        last = ts
+        const live = getPlanetLiveBodySnapshot()
+        const byId = new Map(storeBodies.map(b => [b.id, b]))
+        setLiveBodies(live.length > 0
+          ? live.map(b => ({ ...(byId.get(b.id) ?? {
+              id: b.id, name: b.id, type: 'planet' as const, color: '#888', sampleId: null,
+            }), ...b, z: byId.get(b.id)?.z ?? b.z ?? 0 }))
+          : storeBodies)
+      }
       raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
@@ -103,6 +167,99 @@ export function TransformLabView() {
   const sourceValues = useMemo(() => wholeFeatureValues(telemetry), [telemetry])
   const transformValues = useMemo(() => evaluateOrbitTransform(nodes, sourceValues), [nodes, sourceValues])
   const selectedNode = nodes[selectedNodeId]
+  const accent = '#a78bfa'
+  const patchNodes = useMemo<TransformPatchNode[]>(() => {
+    const transformIds = Object.keys(nodes) as OrbitTransformOutput[]
+    return [
+      ...WHOLE_ORBIT_SOURCES.map((source, index) => ({
+        id: sourceNodeId(source.key),
+        type: 'transformPatchNode' as const,
+        position: { x: 24, y: 22 + index * 82 },
+        data: {
+          kind: 'source' as const,
+          label: source.label,
+          sub: source.key,
+          value: sourceValues[source.key],
+          color: source.color,
+        },
+      })),
+      ...transformIds.map((id, index) => ({
+        id: transformNodeId(id),
+        type: 'transformPatchNode' as const,
+        position: { x: 292 + (index % 2) * 142, y: 52 + Math.floor(index / 2) * 120 },
+        data: {
+          kind: 'transform' as const,
+          label: nodes[id].label,
+          sub: nodes[id].curve,
+          value: transformValues[id],
+          color: accent,
+          selected: id === selectedNodeId,
+        },
+      })),
+      ...transformIds.map((id, index) => ({
+        id: destinationNodeId(id),
+        type: 'transformPatchNode' as const,
+        position: { x: 632, y: 52 + index * 82 },
+        data: {
+          kind: 'destination' as const,
+          label: DESTINATIONS[id],
+          sub: id,
+          value: transformValues[id],
+          color: '#22d3ee',
+        },
+      })),
+    ]
+  }, [accent, nodes, selectedNodeId, sourceValues, transformValues])
+
+  const patchEdges = useMemo<Edge[]>(() => {
+    const transformIds = Object.keys(nodes) as OrbitTransformOutput[]
+    const sourceEdges = transformIds.flatMap(id => (
+      WHOLE_ORBIT_SOURCES
+        .map(source => ({ source, weight: nodes[id].weights[source.key] ?? 0 }))
+        .filter(({ weight }) => weight !== 0)
+        .map(({ source, weight }) => ({
+          id: sourceEdgeId(source.key, id),
+          source: sourceNodeId(source.key),
+          target: transformNodeId(id),
+          animated: false,
+          label: weight.toFixed(2),
+          style: { stroke: weight < 0 ? '#fb7185' : source.color, strokeWidth: Math.max(1, Math.min(4, Math.abs(weight) * 3)) },
+          labelStyle: { fill: weight < 0 ? '#fb7185' : source.color, fontSize: 9, fontFamily: 'monospace' },
+          markerEnd: { type: MarkerType.ArrowClosed, color: weight < 0 ? '#fb7185' : source.color, width: 12, height: 12 },
+        } satisfies Edge))
+    ))
+    const destinationEdges = transformIds.map(id => ({
+      id: destinationEdgeId(id),
+      source: transformNodeId(id),
+      target: destinationNodeId(id),
+      animated: false,
+      style: { stroke: '#a78bfa', strokeWidth: 1.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#a78bfa', width: 12, height: 12 },
+    } satisfies Edge))
+    return [...sourceEdges, ...destinationEdges]
+  }, [nodes])
+
+  const handlePatchConnect = useCallback((connection: Connection) => {
+    if (!connection.source || !connection.target) return
+    if (connection.source.startsWith('source:') && connection.target.startsWith('transform:')) {
+      const source = connection.source.replace('source:', '') as typeof WHOLE_ORBIT_SOURCES[number]['key']
+      const id = connection.target.replace('transform:', '') as OrbitTransformOutput
+      setWeight(id, source, 1)
+      selectNode(id)
+    }
+  }, [selectNode, setWeight])
+
+  const handlePatchEdgesChange = useCallback((changes: EdgeChange[]) => {
+    for (const change of changes) {
+      if (change.type !== 'remove' || !change.id.startsWith('source-edge:')) continue
+      const [, source, id] = change.id.split(':')
+      setWeight(id as OrbitTransformOutput, source as typeof WHOLE_ORBIT_SOURCES[number]['key'], 0)
+    }
+  }, [setWeight])
+
+  const handlePatchNodeClick = useCallback((_event: React.MouseEvent, node: TransformPatchNode) => {
+    if (node.id.startsWith('transform:')) selectNode(node.id.replace('transform:', '') as OrbitTransformOutput)
+  }, [selectNode])
 
   const bg = mono ? (inverted ? '#050505' : '#fff') : '#080a12'
   const fg = mono ? (inverted ? '#f7f7f7' : '#050505') : '#e5e7eb'
@@ -110,7 +267,6 @@ export function TransformLabView() {
   const panel = mono ? (inverted ? '#0d0d0d' : '#f7f7f7') : '#0d111c'
   const border = mono ? (inverted ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)') : 'rgba(148,163,184,0.18)'
   const input = mono ? (inverted ? '#171717' : '#ececec') : '#172033'
-  const accent = '#a78bfa'
 
   return (
     <div
@@ -151,51 +307,26 @@ export function TransformLabView() {
         </section>
 
         <section style={{ minHeight: 0, border: `0.5px solid ${border}`, background: panel, borderRadius: mono ? 1 : 8, overflow: 'hidden', position: 'relative' }}>
-          <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-            <line x1="10%" y1="50%" x2="29%" y2="50%" stroke="#22d3ee" strokeOpacity="0.45" strokeWidth="2" />
-            <line x1="70%" y1="50%" x2="91%" y2="50%" stroke="#a78bfa" strokeOpacity="0.45" strokeWidth="2" />
-          </svg>
-          <div style={{ position: 'absolute', left: '5%', top: '50%', transform: 'translateY(-50%)', width: 120, border: `0.5px solid #22d3ee88`, borderRadius: mono ? 1 : 7, background: bg, padding: 10 }}>
-            <div style={{ fontSize: 8, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800 }}>source</div>
-            <div style={{ marginTop: 6, fontSize: 13, color: '#22d3ee', fontWeight: 800 }}>Orbit Hub</div>
-            <div style={{ marginTop: 4, fontSize: 9, color: dim, fontFamily: 'monospace' }}>{WHOLE_ORBIT_SOURCES.length} signals</div>
-          </div>
-
-          <div style={{ position: 'absolute', left: '31%', top: '8%', bottom: '8%', width: '38%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
-            {(Object.keys(nodes) as OrbitTransformOutput[]).map(id => {
-              const node = nodes[id]
-              const selected = id === selectedNodeId
-              const value = transformValues[id]
-              return (
-                <button
-                  key={id}
-                  onClick={() => selectNode(id)}
-                  style={{
-                    textAlign: 'left',
-                    border: `0.5px solid ${selected ? accent : border}`,
-                    borderRadius: mono ? 1 : 7,
-                    background: selected ? 'rgba(167,139,250,0.18)' : bg,
-                    color: fg,
-                    cursor: 'pointer',
-                    padding: 10,
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
-                    <span style={{ fontSize: 11, fontWeight: 800 }}>{node.label}</span>
-                    <span style={{ fontSize: 10, fontFamily: 'monospace', color: selected ? accent : dim }}>{value.toFixed(2)}</span>
-                  </div>
-                  <div style={{ marginTop: 7 }}><Meter value={value} color={selected ? accent : '#64748b'} /></div>
-                  <div style={{ marginTop: 5, fontSize: 8, color: dim, fontFamily: 'monospace' }}>{node.curve}</div>
-                </button>
-              )
-            })}
-          </div>
-
-          <div style={{ position: 'absolute', right: '5%', top: '50%', transform: 'translateY(-50%)', width: 140, border: `0.5px solid #a78bfa88`, borderRadius: mono ? 1 : 7, background: bg, padding: 10 }}>
-            <div style={{ fontSize: 8, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800 }}>destination</div>
-            <div style={{ marginTop: 6, fontSize: 13, color: accent, fontWeight: 800 }}>Instrument</div>
-            <div style={{ marginTop: 4, fontSize: 9, color: dim, fontFamily: 'monospace' }}>whole params</div>
+          <ReactFlow<TransformPatchNode, Edge>
+            nodes={patchNodes}
+            edges={patchEdges}
+            nodeTypes={patchNodeTypes}
+            onConnect={handlePatchConnect}
+            onEdgesChange={handlePatchEdgesChange}
+            onNodeClick={handlePatchNodeClick}
+            nodesDraggable={false}
+            fitView
+            fitViewOptions={{ padding: 0.18 }}
+            minZoom={0.25}
+            maxZoom={1.6}
+            deleteKeyCode="Backspace"
+            style={{ background: mono ? bg : '#080a12' }}
+          >
+            <Background gap={24} size={1} color={mono ? border : 'rgba(148,163,184,0.08)'} />
+            <Controls showInteractive={false} />
+          </ReactFlow>
+          <div style={{ position: 'absolute', left: 10, top: 10, zIndex: 4, fontSize: 8, color: dim, fontFamily: 'monospace', background: panel, border: `0.5px solid ${border}`, borderRadius: mono ? 1 : 5, padding: '4px 7px' }}>
+            connect source → transform to add weight · delete edge to clear
           </div>
         </section>
 

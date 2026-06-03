@@ -275,21 +275,6 @@ function pushTrail(ring: TrailRing, x: number, y: number): void {
   if (ring.count < ring.capacity) ring.count++
 }
 
-function seedLaunchTrail(ring: TrailRing, dp: DragPlaceState): void {
-  const dx = dp.bodyX - dp.dragX
-  const dy = dp.bodyY - dp.dragY
-  const fallback = Math.abs(dx) + Math.abs(dy) < 0.001
-  for (let i = 0; i < 8; i++) {
-    const t = i / 7
-    const wobble = Math.sin(t * Math.PI * 2) * 0.5
-    pushTrail(
-      ring,
-      dp.dragX + dx * t + (fallback ? i * 0.25 : -dy * 0.02 * wobble),
-      dp.dragY + dy * t + (fallback ? Math.sin(i) * 0.25 : dx * 0.02 * wobble),
-    )
-  }
-}
-
 function launchVelocityFromDrag(dp: DragPlaceState): { vx: number; vy: number } {
   return {
     vx: (dp.bodyX - dp.dragX) * VELOCITY_SCALE,
@@ -1622,7 +1607,6 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       vx, vy, ax: 0, ay: 0, fixed: newBody.fixed,
     })
     const launchTrail = makeTrail(simParamsRef.current.trailLength)
-    if (!isSun) seedLaunchTrail(launchTrail, dp)
     trailsRef.current.set(newBody.id, launchTrail)
     _trailsSnap.set(newBody.id, launchTrail)
     computeAccels(liveBodiesRef.current, simParamsRef.current.G, simParamsRef.current.epsilon)

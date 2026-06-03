@@ -6,6 +6,8 @@ import { registerRealtimeSync, unregisterRealtimeSync } from '../../audio/realti
 import { usePlanetStore, type PlanetBody } from '../../store/planetStore'
 import { useWholeInstrumentStore } from '../../store/wholeInstrumentStore'
 import { useProjectStore } from '../../store/projectStore'
+import { getBusInputNode, releaseBus, retainBus, setBusVolume, WHOLE_INSTRUMENT_BUS_ID } from '../../audio/rackBusMixer'
+import { clearBodyOutputLevel, setBodyOutputLevel } from '../../audio/bodyOutputMeter'
 import { computeOrbitTelemetry } from '../../lib/orbitTelemetry'
 import { mapWholeInstrument, wholeFeatureValues, type WholeInstrumentFeatureValues } from '../../lib/wholeInstrumentMapping'
 import { evaluateOrbitTransform } from '../../lib/orbitTransform'
@@ -49,7 +51,8 @@ async function ensureWholeEngine(stateRef: MutableRefObject<WholeEngineState | n
   const engine = new AmbientOscillatorEngine()
   await engine.init()
   const output = new Tone.Gain(1)
-  output.toDestination()
+  retainBus(WHOLE_INSTRUMENT_BUS_ID)
+  output.connect(getBusInputNode(WHOLE_INSTRUMENT_BUS_ID))
   engine.getOutputNode().connect(output.input as unknown as AudioNode)
   stateRef.current = { engine, output, notes: [] }
   return stateRef.current
@@ -66,7 +69,8 @@ async function ensureWholeSampler(stateRef: MutableRefObject<WholeSamplerState |
   const engine = new OneShotSamplerEngine()
   await engine.init()
   const output = new Tone.Gain(1)
-  output.toDestination()
+  retainBus(WHOLE_INSTRUMENT_BUS_ID)
+  output.connect(getBusInputNode(WHOLE_INSTRUMENT_BUS_ID))
   engine.getOutputNode().connect(output.input as unknown as AudioNode)
   stateRef.current = { engine, output, loadedSampleId: null, nextTriggerMs: 0 }
   return stateRef.current
@@ -84,12 +88,15 @@ async function syncWholeInstrument(
   if (settings.type === 'off' || settings.volume <= 0) {
     stopWholeEngine(droneRef.current)
     stopWholeSampler(samplerRef.current)
+    clearBodyOutputLevel(WHOLE_INSTRUMENT_BUS_ID, 'whole')
     return
   }
 
   const features = universeFeatures()
   const transform = evaluateOrbitTransform(useOrbitTransformStore.getState().nodes, features)
   const mapped = mapWholeInstrument(settings, features, transform)
+  setBusVolume(WHOLE_INSTRUMENT_BUS_ID, 1)
+  setBodyOutputLevel(WHOLE_INSTRUMENT_BUS_ID, 'whole', mapped.level, 220)
 
   if (settings.type === 'sampler') {
     stopWholeEngine(droneRef.current)
@@ -171,10 +178,14 @@ export function WholeInstrumentLayer() {
       stopWholeEngine(state)
       state.engine.dispose()
       state.output.dispose()
+      releaseBus(WHOLE_INSTRUMENT_BUS_ID)
+      clearBodyOutputLevel(WHOLE_INSTRUMENT_BUS_ID, 'whole')
       stateRef.current = null
       if (samplerRef.current) {
         samplerRef.current.engine.dispose()
         samplerRef.current.output.dispose()
+        releaseBus(WHOLE_INSTRUMENT_BUS_ID)
+        clearBodyOutputLevel(WHOLE_INSTRUMENT_BUS_ID, 'whole')
         samplerRef.current = null
       }
     }

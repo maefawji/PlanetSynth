@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Upload } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Trash2, Upload } from 'lucide-react'
 import { useProjectStore } from '../../store/projectStore'
 import { useSelectionStore } from '../../store/selectionStore'
 import { useAudioStore } from '../../store/audioStore'
@@ -167,10 +167,10 @@ function MasterVolumeBar() {
   )
 }
 
-function MixerBodyRow({ b, selected, onSelect, onRemove, onToggleMute, onVolumeChange }: {
-  b: PlanetBody; selected: boolean
+function MixerBodyRow({ b, selected, soloed, onSelect, onRemove, onToggleMute, onToggleSolo, onVolumeChange }: {
+  b: PlanetBody; selected: boolean; soloed: boolean
   onSelect: () => void; onRemove: () => void
-  onToggleMute: () => void; onVolumeChange: (v: number) => void
+  onToggleMute: () => void; onToggleSolo: () => void; onVolumeChange: (v: number) => void
 }) {
   const t = useTheme()
   const [level, setLevel] = useState(0)
@@ -196,12 +196,17 @@ function MixerBodyRow({ b, selected, onSelect, onRemove, onToggleMute, onVolumeC
 
   return (
     <div style={{ borderRadius: 4, background: selected ? t.activeBg : 'transparent', marginBottom: 1 }}>
-      {/* Row 1: icon · mute · name · dot · delete */}
+      {/* Row 1: icon · mute/solo · name · dot · delete */}
       <div onClick={onSelect} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 6px 1px', cursor: 'pointer' }}>
         <span style={{ fontSize: 8, color: b.color, flexShrink: 0 }}>{b.type === 'sun' ? '☀' : '●'}</span>
         <button onClick={e => { e.stopPropagation(); onToggleMute() }}
-          style={{ border: 'none', borderRadius: 2, cursor: 'pointer', fontSize: 7, fontWeight: 700, lineHeight: 1, padding: '1px 3px', flexShrink: 0,
+          title={isMuted ? 'Unmute' : 'Mute'}
+          style={{ border: 'none', borderRadius: 3, cursor: 'pointer', fontSize: 7, fontWeight: 800, lineHeight: 1, padding: '3px 5px', flexShrink: 0,
             background: isMuted ? 'rgba(239,68,68,0.15)' : t.btnBg, color: isMuted ? '#ef4444' : t.textDim }}>M</button>
+        <button onClick={e => { e.stopPropagation(); onToggleSolo() }}
+          title={soloed ? 'Unsolo all' : 'Solo this body'}
+          style={{ border: 'none', borderRadius: 3, cursor: 'pointer', fontSize: 7, fontWeight: 800, lineHeight: 1, padding: '3px 5px', flexShrink: 0,
+            background: soloed ? 'rgba(245,158,11,0.18)' : t.btnBg, color: soloed ? '#f59e0b' : t.textDim }}>S</button>
         <span style={{ fontSize: 10, color: isMuted ? t.textDim : t.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {b.name}
         </span>
@@ -212,9 +217,12 @@ function MixerBodyRow({ b, selected, onSelect, onRemove, onToggleMute, onVolumeC
             transition: triggered ? 'none' : 'background 120ms, box-shadow 120ms' }} />
         )}
         <button onClick={e => { e.stopPropagation(); onRemove() }}
-          style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 12, color: t.textDim, padding: '0 1px', lineHeight: 1, flexShrink: 0 }}
-          onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
-          onMouseLeave={e => (e.currentTarget.style.color = t.textDim)}>×</button>
+          title={`Delete ${b.name}`}
+          style={{ border: 'none', borderRadius: 4, background: 'rgba(239,68,68,0.09)', cursor: 'pointer', color: '#ef4444', padding: '4px 6px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239,68,68,0.18)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(239,68,68,0.09)')}>
+          <Trash2 size={12} strokeWidth={2.2} />
+        </button>
       </div>
       {/* Row 2: fader · level bars · dB */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 6px 3px' }}>
@@ -244,6 +252,14 @@ function PlanetMixerSection() {
   const { bodies, simParams, selectedBodyId, removeBody, clearBodies, updateBody, updateSimParams, setSelectedBodyId, resetToDefaults, restartSim } = usePlanetStore()
   const resetBodyRacksToDefaults = useControlSetStore(s => s.resetBodyRacksToDefaults)
   const samples = useProjectStore(s => s.project.samples)
+  const unmutedBodyIds = bodies.filter(b => !(b.muted ?? false)).map(b => b.id)
+
+  function toggleSolo(bodyId: string) {
+    const isSoloed = unmutedBodyIds.length === 1 && unmutedBodyIds[0] === bodyId
+    for (const body of usePlanetStore.getState().bodies) {
+      updateBody(body.id, { muted: isSoloed ? false : body.id !== bodyId })
+    }
+  }
 
   function retriggerAll() {
     const csStore = useControlSetStore.getState()
@@ -292,9 +308,11 @@ function PlanetMixerSection() {
             {bodies.map(b => (
               <MixerBodyRow key={b.id} b={b}
                 selected={b.id === selectedBodyId}
+                soloed={unmutedBodyIds.length === 1 && unmutedBodyIds[0] === b.id}
                 onSelect={() => setSelectedBodyId(b.id === selectedBodyId ? null : b.id)}
                 onRemove={() => removeBody(b.id)}
                 onToggleMute={() => updateBody(b.id, { muted: !(b.muted ?? false) })}
+                onToggleSolo={() => toggleSolo(b.id)}
                 onVolumeChange={v => updateBody(b.id, { volume: v })}
               />
             ))}

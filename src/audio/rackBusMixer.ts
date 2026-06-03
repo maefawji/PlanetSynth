@@ -29,6 +29,8 @@ interface BodyBus {
 const _buses     = new Map<string, BodyBus>()
 const _refCounts = new Map<string, number>()
 
+export const WHOLE_INSTRUMENT_BUS_ID = '__whole_instrument__'
+
 function ctx(): AudioContext {
   return Tone.getContext().rawContext as AudioContext
 }

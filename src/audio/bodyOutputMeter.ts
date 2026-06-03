@@ -1,4 +1,4 @@
-type BodyOutputSource = 'sampler' | 'oneshot' | 'drone' | 'fmdrone' | 'noisepad' | 'granular' | 'effect' | 'ambient-osc' | 'osc-synth'
+type BodyOutputSource = 'sampler' | 'oneshot' | 'drone' | 'fmdrone' | 'noisepad' | 'granular' | 'effect' | 'ambient-osc' | 'osc-synth' | 'whole'
 
 interface BodyOutputEntry {
   level: number

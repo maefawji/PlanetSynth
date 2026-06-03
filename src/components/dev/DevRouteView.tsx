@@ -10,6 +10,7 @@ import { getBodyTriggerAge } from '../../audio/intersectionSynth'
 import { useWholeInstrumentStore } from '../../store/wholeInstrumentStore'
 import { useOrbitTransformStore, type OrbitTransformOutput } from '../../store/orbitTransformStore'
 import { useProjectStore } from '../../store/projectStore'
+import { WHOLE_INSTRUMENT_BUS_ID } from '../../audio/rackBusMixer'
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -576,11 +577,61 @@ function WholeRouteBar({ t }: { t: ReturnType<typeof useT> }) {
       <span style={{ color: t.dim }}>›</span>
       <RouteChip label="instrument" value={instrumentDetail} color={C.whole} t={t} />
       <span style={{ color: t.dim }}>›</span>
-      <RouteChip label="output" value="master destination" color={C.master} t={t} />
+      <RouteChip label="mixer" value="whole instrument bus" color={C.mixer} t={t} />
+      <span style={{ color: t.dim }}>›</span>
+      <RouteChip label="output" value="master" color={C.master} t={t} />
       <span style={{ flex: 1 }} />
       <span style={{ color: t.dim, fontStyle: 'italic' }}>
-        Transform Lab controls how Orbit Hub data reaches Whole Instrument.
+        Whole Instrument is mixed as a rack source, not a direct master bypass.
       </span>
+    </div>
+  )
+}
+
+function WholeMixerChannel({ level, t }: { level: number; t: ReturnType<typeof useT> }) {
+  const whole = useWholeInstrumentStore()
+  const samples = useProjectStore(s => s.project.samples)
+  const sampleName = whole.samplerSampleId
+    ? samples.find(s => s.id === whole.samplerSampleId)?.name ?? 'missing sample'
+    : samples[0]?.name ?? 'auto sample'
+  const inst = whole.type === 'sampler'
+    ? `sampler · ${sampleName}`
+    : whole.type === 'wave-drone'
+      ? 'wave drone'
+      : 'off'
+  const active = whole.type !== 'off' && whole.volume > 0
+
+  return (
+    <div style={{
+      flexShrink: 0,
+      display: 'grid',
+      gridTemplateColumns: '126px 1fr 160px 170px',
+      alignItems: 'center',
+      gap: 10,
+      padding: '7px 14px',
+      background: t.hdrBg,
+      borderBottom: `0.5px solid ${t.border}`,
+      fontSize: 8,
+    }}>
+      <span style={{ fontWeight: 800, color: C.whole, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+        ∿ Whole mixer
+      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: active ? C.whole : t.dim, boxShadow: active ? `0 0 6px ${C.whole}` : 'none', flexShrink: 0 }} />
+        <span style={{ color: t.text, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inst}</span>
+        <span style={{ color: t.dim }}>›</span>
+        <span style={{ color: C.mixer, fontWeight: 700 }}>mixer bus</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        <span style={{ color: t.dim, fontSize: 7, minWidth: 28 }}>level</span>
+        <VuBar level={active ? level : 0} color={C.whole} h={4} />
+        <span style={{ color: C.whole, fontFamily: 'monospace', fontSize: 7, minWidth: 24, textAlign: 'right' }}>{Math.round((active ? level : 0) * 100)}</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        <span style={{ color: t.dim, fontSize: 7 }}>volume</span>
+        <VuBar level={whole.volume} color={C.mixer} h={3} />
+        <span style={{ color: C.mixer, fontFamily: 'monospace', fontSize: 7, minWidth: 28, textAlign: 'right' }}>{whole.volume.toFixed(2)}</span>
+      </div>
     </div>
   )
 }
@@ -596,6 +647,7 @@ export function DevRouteView() {
   const { getBodyEffectiveRack } = useControlSetStore()
 
   const [levels,     setLevels]     = useState<Record<string, number>>({})
+  const [wholeLevel, setWholeLevel] = useState(0)
   const [trigFlashes, setTrigFlashes] = useState<Record<string, number>>({})
 
   useEffect(() => {
@@ -608,6 +660,7 @@ export function DevRouteView() {
         tf[b.id] = isFinite(age) ? Math.max(0, 1 - age / FLASH_MS) : 0
       }
       setLevels(lv)
+      setWholeLevel(getBodyOutputLevel(WHOLE_INSTRUMENT_BUS_ID))
       setTrigFlashes(tf)
     }, 50)
     return () => clearInterval(id)
@@ -660,6 +713,7 @@ export function DevRouteView() {
       {/* ── Global rack info ── */}
       <GlobalRackBar t={t} />
       <WholeRouteBar t={t} />
+      <WholeMixerChannel level={wholeLevel} t={t} />
 
       {/* ── Pipeline ── */}
       <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px 40px' }}>
