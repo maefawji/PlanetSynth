@@ -24,6 +24,7 @@ interface ProjectState {
   removeGeometryObject: (id: string) => void
   addSampleAsset: (sample: SampleAsset) => void
   addSampleAssets: (samples: SampleAsset[]) => void
+  removeSampleAsset: (sampleId: string) => void
   setSampleObjectUrl: (sampleId: string, objectUrl: string) => void
   clearSamples: () => void
   randomAssignSamples: () => void
@@ -206,6 +207,19 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (!changed) return s
       return { project: { ...s.project, samples: list }, isDirty: true }
     })
+  },
+
+  removeSampleAsset(sampleId) {
+    set(s => ({
+      project: {
+        ...s.project,
+        samples: s.project.samples.filter(sample => sample.id !== sampleId),
+        geometry: s.project.geometry.map(g =>
+          g.sampleId === sampleId ? { ...g, sampleId: null } : g
+        ),
+      },
+      isDirty: true,
+    }))
   },
 
   setSampleObjectUrl(sampleId, objectUrl) {

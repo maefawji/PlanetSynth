@@ -24,6 +24,7 @@ import { WaveLabView } from './components/wave/WaveLabView'
 import { WholeInstrumentDevView } from './components/whole/WholeInstrumentDevView'
 import { OrbitHubView } from './components/orbit/OrbitHubView'
 import { TransformLabView } from './components/transform/TransformLabView'
+import { SampleModeView } from './components/sample/SampleModeView'
 import type { PlanetTool } from './components/planet/PlanetCanvas'
 import { MobileHud } from './components/layout/MobileHud'
 import { usePlanetStore } from './store/planetStore'
@@ -49,7 +50,7 @@ import { initToneContext } from './audio/audioLatencySettings'
 // Apply saved audio latency setting before any Tone.start() call
 initToneContext()
 
-type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub' | 'transform-lab'
+type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub' | 'transform-lab' | 'sample'
 
 const RACK_MIN = 120
 const RACK_MAX = 340
@@ -237,6 +238,9 @@ export default function App() {
             <TransformLabView />
           </div>
         </div>
+      ) : appMode === 'sample' ? (
+        /* ── Sample Mode ─────────────────────────────────────────────────── */
+        <SampleModeView />
       ) : (
         /* ── Planet mode ────────────────────────────────────────────────── */
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
