@@ -18,12 +18,13 @@ import { draggingControlSetId, setDraggingControlSetId } from '../../lib/dragCon
 import { getBodyOutputLevel } from '../../audio/bodyOutputMeter'
 import { computeBodyRackOutputSpatial } from '../../audio/bodyRackOutput'
 import { getBodyTriggerAge, markBodyTriggered } from '../../audio/intersectionSynth'
-import { sendMidiNote, getMidiSendAge, getMidiReceiveAge, isMidiReady } from '../../audio/midiManager'
+import { sendMidiNote, getMidiSendAge, getMidiReceiveAge, getLastMidiSendInfo, getLastMidiReceiveInfo, isMidiReady } from '../../audio/midiManager'
 import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import type { OneShotState } from '../../audio/OneShotSamplerEngine'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
 import { getBusOscilloscopeData } from '../../audio/rackBusMixer'
+import { useArpProgressionStore } from '../../store/arpProgressionStore'
 
 // ── Param editor config ───────────────────────────────────────────────────────
 
@@ -1234,6 +1235,7 @@ function InlineArpContent({
   bodyId, slotKey, simple, accent,
 }: { bodyId: string | null; slotKey: string; simple: boolean; accent: string }) {
   const overrides       = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
+  const liveState       = useArpProgressionStore(s => s.liveBySlot[slotKey] ?? null)
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
   const resetSlotParam  = useControlSetStore(s => s.resetSlotParam)
   const dimText = simple ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.35)'
@@ -1241,6 +1243,12 @@ function InlineArpContent({
   const progressionEnabled = Boolean(getArpParam(overrides, 'arpChordProgressionEnabled', false))
   const chordNotes = progressionEnabled ? buildRackProgressionChordNotes(overrides, 0) : buildRackChordNotes(overrides)
   const chordLabel = chordNotes.map(midiToNoteName).join(' ')
+  const liveAge = liveState ? performance.now() - liveState.updatedAt : Infinity
+  const liveActive = progressionEnabled && liveState && liveAge < 6000
+  const liveNotes = liveState?.notes?.length ? liveState.notes : chordNotes
+  const liveLabel = liveState
+    ? `${liveState.degreeIndex + 1}/${liveState.degreeCount} · ${liveState.label} · ${liveNotes.map(midiToNoteName).join(' ')}`
+    : progressionLabel(overrides)
   const division = Number(getArpParam(overrides, 'orbitTriggerDivision', 0.25))
   const divisionLabel = division === 1 ? '1/1' : division === 0.5 ? '1/2' : division === 0.25 ? '1/4' : division === 0.125 ? '1/8' : '1/16'
 
@@ -1306,6 +1314,24 @@ function InlineArpContent({
           >{mode}</button>
         ))}
       </div>
+      {progressionEnabled && (
+        <div style={{
+          marginBottom: 4,
+          padding: '3px 5px',
+          borderRadius: 4,
+          border: `0.5px solid ${liveActive ? accent + '88' : accent + '33'}`,
+          background: liveActive ? `${accent}1c` : `${accent}0c`,
+          color: liveActive ? accent : dimText,
+          fontSize: 7.5,
+          fontWeight: liveActive ? 800 : 700,
+          lineHeight: 1.15,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}>
+          {liveActive ? 'now ' : 'next '}{liveLabel}
+        </div>
+      )}
       {/* Step grid: 4 note cells */}
       {playMode === 'chord' ? (
         <div
@@ -2030,6 +2056,8 @@ function TriggerSignalBridge({ bodyId, simple }: { bodyId: string | null; simple
   const [trigOp,  setTrigOp]  = useState(0)
   const [midiOut, setMidiOut] = useState(0)
   const [midiIn,  setMidiIn]  = useState(0)
+  const [midiOutLabel, setMidiOutLabel] = useState('')
+  const [midiInLabel,  setMidiInLabel]  = useState('')
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -2044,6 +2072,10 @@ function TriggerSignalBridge({ bodyId, simple }: { bodyId: string | null; simple
       setMidiOut(Math.max(0, 1 - getMidiSendAge()   / MIDI_FADE_MS))
       // MIDI IN flash (global — any MIDI note received)
       setMidiIn( Math.max(0, 1 - getMidiReceiveAge() / MIDI_FADE_MS))
+      const out = getLastMidiSendInfo()
+      const input = getLastMidiReceiveInfo()
+      setMidiOutLabel(out ? `${out.name} ch${out.ch} v${out.vel}` : '')
+      setMidiInLabel(input ? `${input.name} ch${input.ch} v${input.vel}` : '')
     }, 16)
     return () => window.clearInterval(id)
   }, [bodyId])
@@ -2058,6 +2090,8 @@ function TriggerSignalBridge({ bodyId, simple }: { bodyId: string | null; simple
   const isTrig    = trigOp  > 0.04
   const isOut     = midiOut > 0.04
   const isIn      = midiIn  > 0.04
+  const activeMidiLabel = isOut && midiOutLabel ? `OUT ${midiOutLabel}` : isIn && midiInLabel ? `IN ${midiInLabel}` : midiOutLabel ? `last OUT ${midiOutLabel}` : midiInLabel ? `last IN ${midiInLabel}` : 'No MIDI signal yet'
+  const bridgeTitle = `Trigger signal\n${activeMidiLabel}`
 
   return (
     <>
@@ -2071,7 +2105,9 @@ function TriggerSignalBridge({ bodyId, simple }: { bodyId: string | null; simple
         gap: 3, padding: '6px 2px',
         background: isTrig ? `rgba(245,158,11,${(0.015 + trigOp * 0.05).toFixed(3)})` : 'transparent',
         transition: 'background 0.08s',
-      }}>
+      }}
+        title={bridgeTitle}
+      >
         {/* Signal arrow */}
         <span style={{
           fontSize: 7, lineHeight: 1, color: isTrig ? trigCol : dimText,
@@ -2104,6 +2140,22 @@ function TriggerSignalBridge({ bodyId, simple }: { bodyId: string | null; simple
             transition: 'all 0.04s',
           }} />
         </div>
+        {midiOutLabel && (
+          <div style={{
+            maxWidth: 38,
+            fontSize: 5.5,
+            lineHeight: 1,
+            fontWeight: 800,
+            color: isOut ? outCol : outCol + '66',
+            opacity: isOut ? 0.95 : 0.45,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            textAlign: 'center',
+          }}>
+            {midiOutLabel.split(' ')[0]}
+          </div>
+        )}
 
         {/* MIDI IN row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -2117,6 +2169,22 @@ function TriggerSignalBridge({ bodyId, simple }: { bodyId: string | null; simple
             transition: 'all 0.04s',
           }} />
         </div>
+        {midiInLabel && (
+          <div style={{
+            maxWidth: 38,
+            fontSize: 5.5,
+            lineHeight: 1,
+            fontWeight: 800,
+            color: isIn ? inCol : inCol + '66',
+            opacity: isIn ? 0.95 : 0.45,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            textAlign: 'center',
+          }}>
+            {midiInLabel.split(' ')[0]}
+          </div>
+        )}
 
         {/* Arrow */}
         <span style={{

@@ -36,6 +36,7 @@ import { getBodyWaveLabEngine } from './WaveLabInstrumentLayer'
 import { sendMidiNote } from '../../audio/midiManager'
 import { unlockMobileAudio } from '../../audio/mobileAudioUnlock'
 import { generateStarIdentity, collectExistingIdentities } from '../../lib/starNaming'
+import { useArpProgressionStore } from '../../store/arpProgressionStore'
 
 export type PlanetTool = 'select' | 'add-sun' | 'add-planet' | 'probe'
 
@@ -95,6 +96,14 @@ function parseArpProgression(raw: unknown): number[] {
   return degrees.length ? degrees : [1]
 }
 
+function degreeRoman(degree: number, mode: 'major' | 'minor'): string {
+  const major = ['I', 'ii', 'iii', 'IV', 'V7', 'vi', 'vii°']
+  const minor = ['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII']
+  const table = mode === 'minor' ? minor : major
+  const normalized = ((Math.round(degree) - 1) % 7 + 7) % 7
+  return table[normalized] ?? `${degree}`
+}
+
 function buildArpChordNotesFrom(rootPc: number, octave: number, quality: string, inversion: number): number[] {
   const intervals = ARP_CHORD_INTERVALS[quality] ?? ARP_CHORD_INTERVALS.Maj7
   const safeInversion = Math.max(0, Math.min(intervals.length - 1, Math.round(inversion)))
@@ -125,6 +134,24 @@ function buildArpProgressionChordNotes(tp: Record<string, unknown>, index: numbe
   const spec = table[degreeIndex] ?? table[0]
   const chordRoot = (keyPc + spec.pc) % 12
   return buildArpChordNotesFrom(chordRoot, Math.max(0, Math.min(8, octave + octaveShift)), spec.quality, inversion)
+}
+
+function updateArpProgressionLiveState(bodyId: string, triggerIndex: number, tp: Record<string, unknown>, progressionIndex: number, notes: number[]): void {
+  const degrees = parseArpProgression(tp.arpChordProgression)
+  const degreeIndex = ((progressionIndex % degrees.length) + degrees.length) % degrees.length
+  const degree = degrees[degreeIndex] ?? 1
+  const mode = String(tp.arpChordScaleMode ?? 'major') === 'minor' ? 'minor' : 'major'
+  const payload = {
+    degreeIndex,
+    degreeCount: degrees.length,
+    degree,
+    label: degreeRoman(degree, mode),
+    notes,
+    updatedAt: performance.now(),
+  }
+  const setLiveState = useArpProgressionStore.getState().setLiveState
+  setLiveState({ ...payload, slotKey: `g:trigger:${triggerIndex}` })
+  setLiveState({ ...payload, slotKey: `b:${bodyId}:trigger:${triggerIndex}` })
 }
 
 // Reusable acceleration buffers for verletStep — eliminates per-step heap allocation
@@ -1194,10 +1221,12 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                       const chordNotes = buildArpProgressionChordNotes(tpRecord, chordStep)
                       if (arpPlayMode === 'chord') {
                         fireNotes = chordNotes
+                        updateArpProgressionLiveState(b.id, ti, tpRecord, chordStep, fireNotes)
                         arpChordStepRef.current.set(timerKey, chordStep + 1)
                       } else {
                         const step = arpStepRef.current.get(timerKey) ?? 0
                         fireNotes = [chordNotes[step % Math.max(1, chordNotes.length)] ?? 60]
+                        updateArpProgressionLiveState(b.id, ti, tpRecord, chordStep, chordNotes)
                         const nextStep = (step + 1) % Math.max(1, chordNotes.length)
                         arpStepRef.current.set(timerKey, nextStep)
                         if (nextStep === 0) arpChordStepRef.current.set(timerKey, chordStep + 1)

@@ -17,6 +17,15 @@ export type NoteOnCallback = (ch: number, note: number, vel: number) => void
 
 export type MidiPortInfo = { id: string; name: string }
 
+export type MidiSignalInfo = {
+  direction: 'out' | 'in'
+  ch: number
+  note: number
+  vel: number
+  name: string
+  time: number
+}
+
 // ── Module state ──────────────────────────────────────────────────────────────
 
 let _access: MIDIAccess | null = null
@@ -28,6 +37,8 @@ let _initPromise: Promise<void> | null = null
 let _lastSendTime   = -Infinity
 /** Timestamp of the last MIDI note-on RECEIVED (IN). */
 let _lastReceiveTime = -Infinity
+let _lastSendInfo: MidiSignalInfo | null = null
+let _lastReceiveInfo: MidiSignalInfo | null = null
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -78,6 +89,7 @@ function _handleMessage(e: MIDIMessageEvent) {
   // Note-on with velocity > 0
   if (type === 0x90 && vel > 0) {
     _lastReceiveTime = performance.now()
+    _lastReceiveInfo = { direction: 'in', ch, note, vel, name: midiNoteToName(note), time: _lastReceiveTime }
     for (const cb of _noteOnListeners) cb(ch, note, vel)
   }
   // Note-on with velocity 0 = note-off (running status convention) — ignored for now
@@ -91,6 +103,8 @@ export function isMidiReady(): boolean { return _access !== null }
 export function getMidiSendAge(): number  { return performance.now() - _lastSendTime }
 /** ms since the last MIDI note-on was RECEIVED (IN). Infinity if never received. */
 export function getMidiReceiveAge(): number { return performance.now() - _lastReceiveTime }
+export function getLastMidiSendInfo(): MidiSignalInfo | null { return _lastSendInfo }
+export function getLastMidiReceiveInfo(): MidiSignalInfo | null { return _lastReceiveInfo }
 
 // ── Port lists ────────────────────────────────────────────────────────────────
 
@@ -126,6 +140,7 @@ function _getTargetOutputs(): MIDIOutput[] {
 /** Send MIDI note-on. ch = 1–16, note/vel = 0–127. */
 export function sendMidiNoteOn(ch: number, note: number, vel: number): void {
   _lastSendTime = performance.now()
+  _lastSendInfo = { direction: 'out', ch, note, vel, name: midiNoteToName(note), time: _lastSendTime }
   const status  = 0x90 | ((ch - 1) & 0x0f)
   const msg     = [status, note & 0x7f, vel & 0x7f]
   for (const out of _getTargetOutputs()) out.send(msg)
