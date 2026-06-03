@@ -4,6 +4,8 @@ import { LeftLibraryPanel } from './components/layout/LeftLibraryPanel'
 import { RightInspector } from './components/layout/RightInspector'
 import { PlanetCanvas } from './components/planet/PlanetCanvas'
 import { PlanetRack } from './components/planet/PlanetRack'
+import { WholeInstrumentPanel } from './components/planet/WholeInstrumentPanel'
+import { OrbitHubPanel } from './components/planet/OrbitHubPanel'
 import { DroneLayer } from './components/planet/DroneLayer'
 import { GranularLayer } from './components/planet/GranularLayer'
 import { FMDroneLayer } from './components/planet/FMDroneLayer'
@@ -12,16 +14,21 @@ import { SamplerLayer } from './components/planet/SamplerLayer'
 import { OneShotLayer } from './components/planet/OneShotLayer'
 import { OscSynthLayer } from './components/planet/OscSynthLayer'
 import { WaveLabInstrumentLayer } from './components/planet/WaveLabInstrumentLayer'
+import { WholeInstrumentLayer } from './components/planet/WholeInstrumentLayer'
 import { SamplerInstrumentPanel } from './components/sampler/SamplerInstrumentPanel'
 import { OneShotSamplerPanel } from './components/sampler/OneShotSamplerPanel'
 import { ChordGeometryLab } from './components/chord/ChordGeometryLab'
 import { DevRouteView } from './components/dev/DevRouteView'
 import { OscView } from './components/osc/OscView'
 import { WaveLabView } from './components/wave/WaveLabView'
+import { WholeInstrumentDevView } from './components/whole/WholeInstrumentDevView'
+import { OrbitHubView } from './components/orbit/OrbitHubView'
 import type { PlanetTool } from './components/planet/PlanetCanvas'
 import { MobileHud } from './components/layout/MobileHud'
 import { usePlanetStore } from './store/planetStore'
 import { useCanvasSettingsStore } from './store/canvasSettingsStore'
+import { useWholeInstrumentStore } from './store/wholeInstrumentStore'
+import { useOrbitHubStore } from './store/orbitHubStore'
 import { loadBuiltinSamples } from './lib/loadBuiltinSamples'
 import { initMidi } from './audio/midiManager'
 import { unlockMobileAudio } from './audio/mobileAudioUnlock'
@@ -41,7 +48,7 @@ import { initToneContext } from './audio/audioLatencySettings'
 // Apply saved audio latency setting before any Tone.start() call
 initToneContext()
 
-type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev' | 'wave-lab'
+type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub'
 
 const RACK_MIN = 120
 const RACK_MAX = 340
@@ -60,6 +67,9 @@ export default function App() {
   const updateNextSunDefaults    = usePlanetStore(s => s.updateNextSunDefaults)
   const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
   const monochromeInverted = useCanvasSettingsStore(s => s.monochromeInverted)
+  const wholeInstrumentPanelOpen = useWholeInstrumentStore(s => s.panelOpen)
+  const setWholeInstrumentPanelOpen = useWholeInstrumentStore(s => s.setPanelOpen)
+  const orbitHubPanelOpen = useOrbitHubStore(s => s.panelOpen)
   const [leftCollapsed, setLeftCollapsed] = useState(true)
   const [rightCollapsed, setRightCollapsed] = useState(true)
   const [rackCollapsed, setRackCollapsed] = useState(false)
@@ -149,6 +159,7 @@ export default function App() {
         <SamplerLayer /><OneShotLayer />
         <OscSynthLayer />
         <WaveLabInstrumentLayer />
+        <WholeInstrumentLayer />
         {/* Full-screen canvas */}
         <div style={{ position: 'absolute', inset: 0 }}>
           <PlanetCanvas tool={planetTool} onSelectTool={() => {}} mobileMode />
@@ -181,6 +192,7 @@ export default function App() {
       <OneShotLayer />
       <OscSynthLayer />
       <WaveLabInstrumentLayer />
+      <WholeInstrumentLayer />
 
       {appMode === 'chord-lab' ? (
         /* ── Chord Geometry Lab ─────────────────────────────────────────── */
@@ -194,6 +206,26 @@ export default function App() {
       ) : appMode === 'wave-lab' ? (
         /* ── Wave Lab ────────────────────────────────────────────────────── */
         <WaveLabView />
+      ) : appMode === 'whole-lab' ? (
+        /* ── Whole Instrument Lab ────────────────────────────────────────── */
+        <div style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', inset: 0, opacity: 0, pointerEvents: 'none' }}>
+            <PlanetCanvas tool="select" onSelectTool={() => {}} />
+          </div>
+          <div style={{ position: 'absolute', inset: 0 }}>
+            <WholeInstrumentDevView />
+          </div>
+        </div>
+      ) : appMode === 'orbit-hub' ? (
+        /* ── Orbit Hub ───────────────────────────────────────────────────── */
+        <div style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', inset: 0, opacity: 0, pointerEvents: 'none' }}>
+            <PlanetCanvas tool="select" onSelectTool={() => {}} />
+          </div>
+          <div style={{ position: 'absolute', inset: 0 }}>
+            <OrbitHubView />
+          </div>
+        </div>
       ) : (
         /* ── Planet mode ────────────────────────────────────────────────── */
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
@@ -368,14 +400,20 @@ export default function App() {
           )}
 
           {/* Planet Rack — full width at bottom */}
-          <PlanetRack
-            height={rackH}
-            collapsed={rackCollapsed}
-            onToggleCollapsed={() => setRackCollapsed(v => !v)}
-            onExtendSampler={(bId, sk) => setSamplerPanel({ bodyId: bId, slotKey: sk })}
-            onExtendOneShot={(bId, sk) => setOneShotPanel({ bodyId: bId, slotKey: sk })}
-            planetTool={planetTool}
-          />
+          {wholeInstrumentPanelOpen ? (
+            <WholeInstrumentPanel height={rackH} />
+          ) : orbitHubPanelOpen ? (
+            <OrbitHubPanel height={rackH} />
+          ) : (
+            <PlanetRack
+              height={rackH}
+              collapsed={rackCollapsed}
+              onToggleCollapsed={() => setRackCollapsed(v => !v)}
+              onExtendSampler={(bId, sk) => setSamplerPanel({ bodyId: bId, slotKey: sk })}
+              onExtendOneShot={(bId, sk) => setOneShotPanel({ bodyId: bId, slotKey: sk })}
+              planetTool={planetTool}
+            />
+          )}
         </div>
       )}
     </div>

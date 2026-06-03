@@ -17,6 +17,9 @@ interface CanvasSettingsState {
   paperCanvasTrailOpacity: number
   paperCanvasLabelOpacity: number
   paperCanvasKeepBodyColors: boolean
+  orbitTrailStrokeWidth: number
+  orbitTrailOpacity: number
+  orbitTrailDash: number
   canvasBackgroundImageUrl: string
   canvasBackgroundImageOpacity: number
   canvasBackgroundImageFit: 'cover' | 'contain' | 'stretch'
@@ -43,6 +46,9 @@ export const useCanvasSettingsStore = create<CanvasSettingsState>(set => ({
   paperCanvasTrailOpacity: 0.24,
   paperCanvasLabelOpacity: 0.50,
   paperCanvasKeepBodyColors: false,
+  orbitTrailStrokeWidth: 1.2,
+  orbitTrailOpacity: 0.30,
+  orbitTrailDash: 0,
   canvasBackgroundImageUrl: '',
   canvasBackgroundImageOpacity: 0.35,
   canvasBackgroundImageFit: 'cover',

@@ -41,7 +41,7 @@ function planet(
   const speed = Math.sqrt(sunMass * (1 + eccentricity) / Math.max(1, perihelion))
   return {
     id, name, type: 'planet', mass,
-    x: perihelion, y: 0,
+    x: perihelion, y: 0, z: 0,
     vx: 0, vy: speed,
     fixed: false, color, sampleId: null,
     ...PRESET_BODY_DEFAULTS,
@@ -58,7 +58,7 @@ export const solarSystem: UniversePreset = {
   bodies: [
     {
       id: 'sun', name: 'Sun', type: 'sun', mass: 1000,
-      x: 0, y: 0, vx: 0, vy: 0, fixed: true,
+      x: 0, y: 0, z: 0, vx: 0, vy: 0, fixed: true,
       color: '#f59e0b', sampleId: null,
       ...PRESET_BODY_DEFAULTS,
     },

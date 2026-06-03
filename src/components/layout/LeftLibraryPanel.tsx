@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio, CircleHelp, Sparkles } from 'lucide-react'
+import { Atom, ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio, CircleHelp, Sparkles, Radar } from 'lucide-react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { usePlanetStore, type PlanetSimParams } from '../../store/planetStore'
+import { useWholeInstrumentStore } from '../../store/wholeInstrumentStore'
+import { useOrbitHubStore } from '../../store/orbitHubStore'
 import {
   getMidiOutputs, getMidiInputs, getSelectedOutputId, setSelectedOutputId,
   isMidiReady, sendMidiNote, type MidiPortInfo,
@@ -44,11 +46,15 @@ type LeftPanelId =
   | 'planet-auto'
   | 'planet-controls-trigger' | 'planet-controls-instrument' | 'planet-controls-effect'
   | 'planet-localization' | 'planet-adsr'
-  | 'midi' | 'help'
+  | 'whole-instrument' | 'orbit-hub' | 'midi' | 'help'
 
 export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPanelProps) {
   const t = useTheme()
   const [activePanel, setActivePanel] = useState<LeftPanelId>('planet-samples')
+  const wholeInstrumentPanelOpen = useWholeInstrumentStore(s => s.panelOpen)
+  const setWholeInstrumentPanelOpen = useWholeInstrumentStore(s => s.setPanelOpen)
+  const orbitHubPanelOpen = useOrbitHubStore(s => s.panelOpen)
+  const setOrbitHubPanelOpen = useOrbitHubStore(s => s.setPanelOpen)
   const [cachedLibrary, setCachedLibrary] = useState<CachedSampleLibrary | null>(() => loadCachedSampleLibrary())
   const addSampleAssets     = useProjectStore(s => s.addSampleAssets)
   const setSampleObjectUrl  = useProjectStore(s => s.setSampleObjectUrl)
@@ -175,6 +181,22 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
   }
 
   function handleSelectPanel(panel: LeftPanelId) {
+    if (panel === 'whole-instrument') {
+      setActivePanel(panel)
+      setWholeInstrumentPanelOpen(true)
+      setOrbitHubPanelOpen(false)
+      if (!collapsed) onToggleCollapsed()
+      return
+    }
+    if (panel === 'orbit-hub') {
+      setActivePanel(panel)
+      setWholeInstrumentPanelOpen(false)
+      setOrbitHubPanelOpen(true)
+      if (!collapsed) onToggleCollapsed()
+      return
+    }
+    setWholeInstrumentPanelOpen(false)
+    setOrbitHubPanelOpen(false)
     if (!collapsed && activePanel === panel) {
       onToggleCollapsed()
       return
@@ -281,6 +303,20 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         </RailButton>
         <RailDivider />
 
+        <RailButton
+          active={wholeInstrumentPanelOpen}
+          title="Whole Instrument"
+          onClick={() => handleSelectPanel('whole-instrument')}
+        >
+          <Atom size={14} />
+        </RailButton>
+        <RailButton
+          active={orbitHubPanelOpen}
+          title="Orbit Hub"
+          onClick={() => handleSelectPanel('orbit-hub')}
+        >
+          <Radar size={14} />
+        </RailButton>
         <RailButton
           active={activePanel === 'midi' && !collapsed}
           title="MIDI"
@@ -2366,8 +2402,6 @@ function MidiPanel() {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 function CanvasSettingsPanel() {
   const t = useTheme()
   const settings = useCanvasSettingsStore()
@@ -2440,8 +2474,6 @@ function CanvasSettingsPanel() {
             onChange={paperCanvasInk => update({ paperCanvasInk })} />
           <NumberSetting label="Tone" value={settings.paperCanvasTone} min={0} max={1} step={0.05}
             onChange={paperCanvasTone => update({ paperCanvasTone })} />
-          <NumberSetting label="Trails" value={settings.paperCanvasTrailOpacity} min={0} max={1} step={0.05}
-            onChange={paperCanvasTrailOpacity => update({ paperCanvasTrailOpacity })} />
           <NumberSetting label="Labels" value={settings.paperCanvasLabelOpacity} min={0} max={1} step={0.05}
             onChange={paperCanvasLabelOpacity => update({ paperCanvasLabelOpacity })} />
           <label style={checkboxRowStyle}>
@@ -2507,6 +2539,14 @@ function CanvasSettingsPanel() {
           <TextSetting label="Stroke" value={settings.stroke} onChange={stroke => update({ stroke })} />
           <TextSetting label="Fill" value={settings.fill} onChange={fill => update({ fill })} />
           <NumberSetting label="Point r" value={settings.pointSize} min={1} step={1} onChange={pointSize => update({ pointSize })} />
+        </SettingsGroup>
+        <SettingsGroup label="Orbit Lines">
+          <NumberSetting label="Trail w" value={settings.orbitTrailStrokeWidth} min={0} step={0.1}
+            onChange={orbitTrailStrokeWidth => update({ orbitTrailStrokeWidth })} />
+          <NumberSetting label="Opacity" value={settings.orbitTrailOpacity} min={0} max={1} step={0.05}
+            onChange={orbitTrailOpacity => update({ orbitTrailOpacity })} />
+          <NumberSetting label="Dash" value={settings.orbitTrailDash} min={0} step={1}
+            onChange={orbitTrailDash => update({ orbitTrailDash })} />
         </SettingsGroup>
         <SettingsGroup label="Placement">
           <NumberSetting label="Path span" value={settings.pathSpan} min={20} step={10} onChange={pathSpan => update({ pathSpan })} />

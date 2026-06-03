@@ -43,7 +43,7 @@ export type PlanetTool = 'select' | 'add-sun' | 'add-planet' | 'probe'
 // Lets RightInspector compute next-orbit prediction without coupling to the
 // component internals.
 
-interface LiveBodySnap { id: string; mass: number; x: number; y: number; vx: number; vy: number; ax: number; ay: number; fixed: boolean }
+interface LiveBodySnap { id: string; mass: number; x: number; y: number; z: number; vx: number; vy: number; ax: number; ay: number; fixed: boolean }
 let _liveBodiesSnap: LiveBodySnap[] = []
 let _simParamsSnap: Pick<PlanetSimParams, 'G' | 'epsilon' | 'dt'> = { G: 1, epsilon: 5, dt: 0.2 }
 const _trailsSnap = new Map<string, TrailRing>()
@@ -205,7 +205,7 @@ function resolveBodySamplerSample(bodyId: string, _legacyBodySampleId: string | 
 
 interface LiveBody {
   id: string; mass: number; x: number; y: number
-  vx: number; vy: number; ax: number; ay: number; fixed: boolean
+  z: number; vx: number; vy: number; ax: number; ay: number; fixed: boolean
 }
 
 interface TrailRing {
@@ -215,16 +215,6 @@ interface TrailRing {
 interface DragPlaceState {
   bodyX: number; bodyY: number; dragX: number; dragY: number
   tool: 'add-sun' | 'add-planet'
-  phase: 'mass' | 'velocity'
-  mass?: number
-  color?: string
-}
-
-interface PendingPlanetPlacement {
-  bodyX: number
-  bodyY: number
-  mass: number
-  color: string
 }
 
 interface TriggerStarMarker {
@@ -300,6 +290,13 @@ function seedLaunchTrail(ring: TrailRing, dp: DragPlaceState): void {
   }
 }
 
+function launchVelocityFromDrag(dp: DragPlaceState): { vx: number; vy: number } {
+  return {
+    vx: (dp.bodyX - dp.dragX) * VELOCITY_SCALE,
+    vy: (dp.bodyY - dp.dragY) * VELOCITY_SCALE,
+  }
+}
+
 const MOBILE_MAX_PLANETS = 10
 
 function trailToPoints(ring: TrailRing): string {
@@ -328,6 +325,22 @@ function bodyScreenR(
   }
   const base = Math.max(4, Math.cbrt(mass) * 2)
   return type === 'sun' ? base * 1.25 : base
+}
+
+function depthScaleFromZ(z: number | null | undefined): number {
+  const raw = 1 + (Number.isFinite(z) ? Number(z) : 0) / 500
+  return Math.max(0.25, Math.min(3, raw))
+}
+
+function projectedBodyScreenR(
+  mass: number,
+  type: PlanetBody['type'] = 'planet',
+  z = 0,
+  fromMass = false,
+  planetMassScale = 0.1,
+  sunMassScale = 0.125,
+): number {
+  return bodyScreenR(mass, type, fromMass, planetMassScale, sunMassScale) * depthScaleFromZ(z)
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -411,6 +424,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const paperCanvasTrailOpacity = useCanvasSettingsStore(s => s.paperCanvasTrailOpacity)
   const paperCanvasLabelOpacity = useCanvasSettingsStore(s => s.paperCanvasLabelOpacity)
   const paperCanvasKeepBodyColors = useCanvasSettingsStore(s => s.paperCanvasKeepBodyColors)
+  const canvasStrokeWidth = useCanvasSettingsStore(s => s.strokeWidth)
+  const orbitTrailStrokeWidth = useCanvasSettingsStore(s => s.orbitTrailStrokeWidth)
+  const orbitTrailOpacity = useCanvasSettingsStore(s => s.orbitTrailOpacity)
+  const orbitTrailDash = useCanvasSettingsStore(s => s.orbitTrailDash)
   const canvasBackgroundImageUrl = useCanvasSettingsStore(s => s.canvasBackgroundImageUrl)
   const canvasBackgroundImageOpacity = useCanvasSettingsStore(s => s.canvasBackgroundImageOpacity)
   const canvasBackgroundImageFit = useCanvasSettingsStore(s => s.canvasBackgroundImageFit)
@@ -490,9 +507,14 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
         stopStandpointSound(oldBody.sampleId)
       }
     }
+    const bodyById = new Map(storeBodies.map(b => [b.id, b]))
+    for (const liveBody of liveBodiesRef.current) {
+      const storeBody = bodyById.get(liveBody.id)
+      if (storeBody) liveBody.z = storeBody.z ?? 0
+    }
 
     storeBodiesRef.current    = storeBodies
-    storeBodiesMapRef.current = new Map(storeBodies.map(b => [b.id, b]))
+    storeBodiesMapRef.current = bodyById
   }, [storeBodies])
 
   const projectSamplesRef = useRef(useProjectStore.getState().project.samples)
@@ -561,7 +583,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const initFromStore = useCallback(() => {
     const { bodies: sb, simParams: sp } = usePlanetStore.getState()
     const live: LiveBody[] = sb.map(b => ({
-      id: b.id, mass: b.mass, x: b.x, y: b.y, vx: b.vx, vy: b.vy, ax: 0, ay: 0, fixed: b.fixed,
+      id: b.id, mass: b.mass, x: b.x, y: b.y, z: b.z ?? 0, vx: b.vx, vy: b.vy, ax: 0, ay: 0, fixed: b.fixed,
     }))
     computeAccels(live, sp.G, sp.epsilon)
     liveBodiesRef.current = live
@@ -651,11 +673,9 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const [draggingBodyId, setDraggingBodyId] = useState<string | null>(null)
   const [isPanning, setIsPanning]           = useState(false)
   const [dragPlace, setDragPlace]           = useState<DragPlaceState | null>(null)
-  const [pendingPlanet, setPendingPlanet]   = useState<PendingPlanetPlacement | null>(null)
   const dragOffRef   = useRef({ dx: 0, dy: 0 })
   const panStartRef  = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
   const dragPlaceRef = useRef<DragPlaceState | null>(null)
-  const pendingPlanetRef = useRef<PendingPlanetPlacement | null>(null)
   const [, setTick]  = useState(0)
 
   // ── Drag-rect multi-select ────────────────────────────────────────────────
@@ -670,8 +690,6 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       if (e.key === 'Escape') {
         dragPlaceRef.current = null
         setDragPlace(null)
-        pendingPlanetRef.current = null
-        setPendingPlanet(null)
         setDraggingBodyId(null)
         panStartRef.current = null
         setIsPanning(false)
@@ -736,7 +754,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           if (probeMode && params.probeMass > 0 && mp) {
             bodies.push({
               id: '__probe__', mass: params.probeMass,
-              x: mp.x, y: mp.y, vx: 0, vy: 0, ax: 0, ay: 0, fixed: true,
+              x: mp.x, y: mp.y, z: 0, vx: 0, vy: 0, ax: 0, ay: 0, fixed: true,
             })
           }
           verletStep(bodies, params)
@@ -1451,19 +1469,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     const { wx, wy } = screenToWorld(sx, sy)
 
     if (tool === 'add-sun' || tool === 'add-planet') {
-      const pending = tool === 'add-planet' ? pendingPlanetRef.current : null
-      const dp: DragPlaceState = pending
-        ? {
-            bodyX: pending.bodyX,
-            bodyY: pending.bodyY,
-            dragX: wx,
-            dragY: wy,
-            tool: 'add-planet',
-            phase: 'velocity',
-            mass: pending.mass,
-            color: pending.color,
-          }
-        : { bodyX: wx, bodyY: wy, dragX: wx, dragY: wy, tool, phase: 'mass' }
+      const dp: DragPlaceState = { bodyX: wx, bodyY: wy, dragX: wx, dragY: wy, tool }
       dragPlaceRef.current = dp
       setDragPlace(dp)
       return
@@ -1474,9 +1480,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     let hit: LiveBody | null = null
     for (const b of bodies) {
       const sb = storeBodiesRef.current.find(s => s.id === b.id)
-      const wr = (bodyScreenR(
+      const wr = (projectedBodyScreenR(
         b.mass,
         sb?.type,
+        sb?.z ?? b.z ?? 0,
         simParamsRef.current.bodyRadiusFromMass,
         simParamsRef.current.bodyRadiusMassScalePlanet,
         simParamsRef.current.bodyRadiusMassScaleSun,
@@ -1570,25 +1577,16 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     const defs = dp.tool === 'add-sun'
       ? storeState.nextSunDefaults
       : storeState.nextPlanetDefaults
-    if (!isSun && dp.phase === 'mass') {
-      const mass = planetMassFromDrag(dp)
-      const color = defs.randomColor
-        ? `hsl(${Math.floor(Math.random() * 360)},70%,62%)`
-        : defs.color
-      const pending = { bodyX: dp.bodyX, bodyY: dp.bodyY, mass, color }
-      pendingPlanetRef.current = pending
-      setPendingPlanet(pending)
-      return
-    }
-    const vx = isSun ? 0 : (dp.dragX - dp.bodyX) * VELOCITY_SCALE
-    const vy = isSun ? 0 : (dp.dragY - dp.bodyY) * VELOCITY_SCALE
+    const launchVelocity = launchVelocityFromDrag(dp)
+    const vx = isSun ? 0 : launchVelocity.vx
+    const vy = isSun ? 0 : launchVelocity.vy
     const resolvedMass = isSun
       ? sunMassFromDrag(dp)
-      : dp.mass ?? defs.mass
+      : planetMassFromDrag(dp)
     const resolvedColor = defs.randomColor
-      ? (dp.color ?? (dp.tool === 'add-sun'
+      ? (dp.tool === 'add-sun'
           ? `hsl(${35 + Math.floor(Math.random() * 25)},90%,55%)`
-          : `hsl(${Math.floor(Math.random() * 360)},70%,62%)`))
+          : `hsl(${Math.floor(Math.random() * 360)},70%,62%)`)
       : defs.color
     // Generate star identity (properName / designation / catalogId)
     const { ids, properNames, designations } = collectExistingIdentities(storeState.bodies)
@@ -1601,7 +1599,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       catalogId:   starId.id,
       type: dp.tool === 'add-sun' ? 'sun' : 'planet',
       mass: resolvedMass,
-      x: dp.bodyX, y: dp.bodyY, vx, vy,
+      x: dp.bodyX, y: dp.bodyY, z: 0, vx, vy,
       fixed: defs.fixed,
       standpointFacingAngle: isSun ? 270 : undefined,
       color: resolvedColor,
@@ -1617,12 +1615,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       volume: 1,
     }
     storeState.addBody(newBody)
-    pendingPlanetRef.current = null
-    setPendingPlanet(null)
     storeBodiesRef.current = [...storeBodiesRef.current, newBody]
     storeBodiesMapRef.current.set(newBody.id, newBody)
     liveBodiesRef.current.push({
-      id: newBody.id, mass: newBody.mass, x: dp.bodyX, y: dp.bodyY,
+      id: newBody.id, mass: newBody.mass, x: dp.bodyX, y: dp.bodyY, z: newBody.z ?? 0,
       vx, vy, ax: 0, ay: 0, fixed: newBody.fixed,
     })
     const launchTrail = makeTrail(simParamsRef.current.trailLength)
@@ -1766,7 +1762,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     storeBodiesRef.current = [...storeBodiesRef.current, newBody]
     storeBodiesMapRef.current.set(newBody.id, newBody)
     liveBodiesRef.current.push({
-      id: newBody.id, mass: newBody.mass, x, y, vx, vy,
+      id: newBody.id, mass: newBody.mass, x, y, z: newBody.z ?? 0, vx, vy,
       ax: 0, ay: 0, fixed: newBody.fixed,
     })
     const trail = makeTrail(simParamsRef.current.trailLength)
@@ -1831,19 +1827,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
         const { sx, sy } = svgPos(t)
         const { wx, wy } = tw(sx, sy)
         const currentTool = toolRef.current === 'add-sun' ? 'add-sun' : 'add-planet'
-        const pending = currentTool === 'add-planet' ? pendingPlanetRef.current : null
-        const dp: DragPlaceState = pending
-          ? {
-              bodyX: pending.bodyX,
-              bodyY: pending.bodyY,
-              dragX: wx,
-              dragY: wy,
-              tool: 'add-planet',
-              phase: 'velocity',
-              mass: pending.mass,
-              color: pending.color,
-            }
-          : { bodyX: wx, bodyY: wy, dragX: wx, dragY: wy, tool: currentTool, phase: 'mass' }
+        const dp: DragPlaceState = { bodyX: wx, bodyY: wy, dragX: wx, dragY: wy, tool: currentTool }
         dragPlaceRef.current = dp
         setDragPlace({ ...dp })
       } else if (e.touches.length >= 2) {
@@ -1944,9 +1928,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
         const { wx: wx2, wy: wy2 } = screenToWorld(maxSx, maxSy)
         const inRect = liveBodiesRef.current.filter(b => {
           const sb = storeBodiesRef.current.find(s => s.id === b.id)
-          const radius = (bodyScreenR(
+          const radius = (projectedBodyScreenR(
             b.mass,
             sb?.type,
+            sb?.z ?? b.z ?? 0,
             simParamsRef.current.bodyRadiusFromMass,
             simParamsRef.current.bodyRadiusMassScalePlanet,
             simParamsRef.current.bodyRadiusMassScaleSun,
@@ -1981,13 +1966,11 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const predictOrbitPoints: string | null = (() => {
     if (!dragPlace || !storeParams.showPredictedOrbit) return null
     if (dragPlace.tool === 'add-sun') return null  // sun is fixed — no orbit preview
-    if (dragPlace.phase !== 'velocity') return null
-    const vx = (dragPlace.dragX - dragPlace.bodyX) * VELOCITY_SCALE
-    const vy = (dragPlace.dragY - dragPlace.bodyY) * VELOCITY_SCALE
+    const { vx, vy } = launchVelocityFromDrag(dragPlace)
     const previewBody: LiveBody = {
-      id: '__preview__', mass: dragPlace.mass ?? 1,
+      id: '__preview__', mass: planetMassFromDrag(dragPlace),
       x: dragPlace.bodyX, y: dragPlace.bodyY,
-      vx, vy, ax: 0, ay: 0, fixed: false,
+      z: 0, vx, vy, ax: 0, ay: 0, fixed: false,
     }
     return computePredictedOrbit(liveBodiesRef.current, simParamsRef.current, previewBody, PREDICT_STEPS)
   })()
@@ -2004,10 +1987,14 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const hudColor     = monochromeMode ? monoInk : simple ? 'rgba(0,0,0,0.38)' : 'rgba(255,255,255,0.38)'
   const hudOpacity   = monochromeMode ? Math.max(0.12, labelOpacity * 0.72) : 1
   const selStroke    = monochromeMode ? monoInk : simple ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.45)'
-  const trailOpacity = monochromeMode ? Math.max(0, Math.min(1, paperCanvasTrailOpacity)) : simple ? 0.45 : 0.30
+  const trailOpacity = Math.max(0, Math.min(1, Number.isFinite(orbitTrailOpacity) ? orbitTrailOpacity : paperCanvasTrailOpacity))
   const paperMainOpacity = 0.28 + paperTone * 0.68
   const paperLineOpacity = 0.14 + paperTone * 0.56
   const paperSubtleOpacity = 0.04 + paperTone * 0.18
+  const drawingStrokeWidth = Math.max(0, Number.isFinite(canvasStrokeWidth) ? canvasStrokeWidth : 0)
+  const worldStroke = (scale = 1) => (drawingStrokeWidth * scale) / zoom
+  const trailStrokeWidth = Math.max(0, Number.isFinite(orbitTrailStrokeWidth) ? orbitTrailStrokeWidth : 1.2) / zoom
+  const trailDash = Math.max(0, Number.isFinite(orbitTrailDash) ? orbitTrailDash : 0)
   const bgImageOpacity = Math.max(0, Math.min(1, canvasBackgroundImageOpacity))
   const bgImagePreserveAspectRatio = canvasBackgroundImageFit === 'stretch'
     ? 'none'
@@ -2022,9 +2009,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
 
   // Probe cursor params
   const probePos = tool === 'probe' ? mousePosWorldRef.current : null
-  const probeWr  = probePos ? bodyScreenR(
+  const probeWr  = probePos ? projectedBodyScreenR(
     storeParams.probeMass,
     'planet',
+    0,
     storeParams.bodyRadiusFromMass,
     storeParams.bodyRadiusMassScalePlanet,
     storeParams.bodyRadiusMassScaleSun,
@@ -2036,26 +2024,25 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     const isSunDrag = dragPlace.tool === 'add-sun'
     const previewMass = isSunDrag
       ? sunMassFromDrag(dragPlace)
-      : dragPlace.phase === 'mass'
-        ? planetMassFromDrag(dragPlace)
-        : dragPlace.mass ?? 1
-    const isVelocityStage = dragPlace.tool === 'add-planet' && dragPlace.phase === 'velocity'
+      : planetMassFromDrag(dragPlace)
+    const isPlanetLaunch = dragPlace.tool === 'add-planet'
     return {
-      col:      monochromeMode ? monoInk : isSunDrag ? '#f59e0b' : dragPlace.color ?? '#60a5fa',
-      wr:       bodyScreenR(
+      col:      monochromeMode ? monoInk : isSunDrag ? '#f59e0b' : '#60a5fa',
+      wr:       projectedBodyScreenR(
         previewMass,
         isSunDrag ? 'sun' : 'planet',
+        0,
         storeParams.bodyRadiusFromMass,
         storeParams.bodyRadiusMassScalePlanet,
         storeParams.bodyRadiusMassScaleSun,
       ) / zoom,
-      arrowX:   dragPlace.dragX,
-      arrowY:   dragPlace.dragY,
-      hasDrag:  isVelocityStage && (dragPlace.dragX !== dragPlace.bodyX || dragPlace.dragY !== dragPlace.bodyY),
+      arrowX:   isPlanetLaunch ? dragPlace.bodyX + (dragPlace.bodyX - dragPlace.dragX) : dragPlace.dragX,
+      arrowY:   isPlanetLaunch ? dragPlace.bodyY + (dragPlace.bodyY - dragPlace.dragY) : dragPlace.dragY,
+      hasDrag:  isPlanetLaunch && (dragPlace.dragX !== dragPlace.bodyX || dragPlace.dragY !== dragPlace.bodyY),
       isSun:    isSunDrag,
       sunMass:  previewMass,
       mass:     previewMass,
-      isVelocityStage,
+      isPlanetLaunch,
     }
   })() : null
 
@@ -2133,7 +2120,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
             const trailColor = monochromeMode && !paperCanvasKeepBodyColors ? monoInk : sb?.color ?? '#888'
             return (
               <polyline key={`trail-${b.id}`} points={pts} fill="none"
-                stroke={trailColor} strokeWidth={1.2 / zoom} strokeOpacity={trailOpacity} />
+                stroke={trailColor}
+                strokeWidth={trailStrokeWidth}
+                strokeOpacity={trailOpacity}
+                strokeDasharray={trailDash > 0 ? `${trailDash / zoom} ${trailDash / zoom}` : undefined} />
             )
           })}
 
@@ -2200,7 +2190,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
             return (
               <line key={`vel-${b.id}`}
                 x1={b.x} y1={b.y} x2={b.x + b.vx * 25} y2={b.y + b.vy * 25}
-                stroke={velColor} strokeWidth={1.5 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.7}
+                stroke={velColor} strokeWidth={worldStroke()} strokeOpacity={monochromeMode ? paperLineOpacity : 0.7}
                 markerEnd="url(#velArrow)" />
             )
           })}
@@ -2218,9 +2208,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
               ? samplerSample.name
               : (sb?.name ?? b.id)
             const name  = sampleLabel
-            const wr        = bodyScreenR(
+            const wr        = projectedBodyScreenR(
               b.mass,
               type,
+              sb?.z ?? b.z ?? 0,
               storeParams.bodyRadiusFromMass,
               storeParams.bodyRadiusMassScalePlanet,
               storeParams.bodyRadiusMassScaleSun,
@@ -2258,12 +2249,12 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 })()}
                 {isSel && (
                   <circle cx={b.x} cy={b.y} r={wr + 5 / zoom} fill="none"
-                    stroke={selStroke} strokeWidth={1 / zoom}
+                    stroke={selStroke} strokeWidth={worldStroke(0.67)}
                     strokeDasharray={`${5 / zoom} ${3 / zoom}`} />
                 )}
                 {isMultiSel && (
                   <circle cx={b.x} cy={b.y} r={wr + 5 / zoom} fill="none"
-                    stroke={monochromeMode ? monoInk : 'rgba(139,92,246,0.65)'} strokeWidth={1 / zoom}
+                    stroke={monochromeMode ? monoInk : 'rgba(139,92,246,0.65)'} strokeWidth={worldStroke(0.67)}
                     strokeDasharray={`${4 / zoom} ${3 / zoom}`} />
                 )}
                 {/* Effector ring + influence radius */}
@@ -2293,10 +2284,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   return (
                     <>
                       <circle cx={b.x} cy={b.y} r={wr + 6 / zoom} fill="none"
-                        stroke={effCol} strokeWidth={1.5 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.65}
+                        stroke={effCol} strokeWidth={worldStroke()} strokeOpacity={monochromeMode ? paperLineOpacity : 0.65}
                         strokeDasharray={`${3 / zoom} ${2 / zoom}`} />
                       <circle cx={b.x} cy={b.y} r={effDist} fill="none"
-                        stroke={effCol} strokeWidth={0.5 / zoom} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.20}
+                        stroke={effCol} strokeWidth={worldStroke(0.33)} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.20}
                         strokeDasharray={`${8 / zoom} ${5 / zoom}`} />
                       <text
                         x={b.x + wr + 10 / zoom} y={b.y - 2 / zoom}
@@ -2329,17 +2320,17 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   return (
                     <>
                       <circle cx={b.x} cy={b.y} r={wr + 7 / zoom} fill="none"
-                        stroke={monochromeMode ? monoInk : '#06b6d4'} strokeWidth={1.5 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.75} />
+                        stroke={monochromeMode ? monoInk : '#06b6d4'} strokeWidth={worldStroke()} strokeOpacity={monochromeMode ? paperLineOpacity : 0.75} />
                       {/* Range: cone sector if directional, full circle otherwise */}
                       {dirOn ? (
                         // Directional: arc only (no center lines, no fill)
                         <path
                           d={`M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`}
-                          fill="none" stroke={monochromeMode ? monoInk : '#06b6d4'} strokeWidth={1 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.6}
+                          fill="none" stroke={monochromeMode ? monoInk : '#06b6d4'} strokeWidth={worldStroke(0.67)} strokeOpacity={monochromeMode ? paperLineOpacity : 0.6}
                           strokeDasharray={`${7 / zoom} ${5 / zoom}`} />
                       ) : (
                         <circle cx={b.x} cy={b.y} r={r} fill="none"
-                          stroke={monochromeMode ? monoInk : '#06b6d4'} strokeWidth={0.5 / zoom} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.22}
+                          stroke={monochromeMode ? monoInk : '#06b6d4'} strokeWidth={worldStroke(0.33)} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.22}
                           strokeDasharray={`${7 / zoom} ${5 / zoom}`} />
                       )}
                       <text
@@ -2372,23 +2363,23 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                     return (
                       <g key={k}>
                         <circle cx={mx} cy={my} r={5 / zoom} fill="none"
-                          stroke={monochromeMode ? monoInk : '#60a5fa'} strokeWidth={1.2 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.65} />
+                          stroke={monochromeMode ? monoInk : '#60a5fa'} strokeWidth={worldStroke(0.8)} strokeOpacity={monochromeMode ? paperLineOpacity : 0.65} />
                         <line
                           x1={mx} y1={my - 5 / zoom} x2={mx} y2={my + 5 / zoom}
-                          stroke={monochromeMode ? monoInk : '#60a5fa'} strokeWidth={0.8 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.40} />
+                          stroke={monochromeMode ? monoInk : '#60a5fa'} strokeWidth={worldStroke(0.53)} strokeOpacity={monochromeMode ? paperLineOpacity : 0.40} />
                       </g>
                     )
                   })
                 })()}
                 {hasSample && storeParams.rendezvousDistance > 0 && (
                   <circle cx={b.x} cy={b.y} r={storeParams.rendezvousDistance} fill="none"
-                    stroke={inkColor} strokeWidth={0.5 / zoom} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.18}
+                    stroke={inkColor} strokeWidth={worldStroke(0.33)} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.18}
                     strokeDasharray={`${8 / zoom} ${6 / zoom}`} />
                 )}
                 <circle cx={b.x} cy={b.y} r={wr} fill={inkColor}
                   opacity={monochromeMode ? paperMainOpacity : 1}
                   stroke={monochromeMode ? monoInk : simple ? 'rgba(0,0,0,0.15)' : 'none'}
-                  strokeWidth={simple ? 1 / zoom : 0}
+                  strokeWidth={simple ? worldStroke(0.67) : 0}
                   style={{
                     cursor: storeParams.paused && !b.fixed ? 'grab' : 'default',
                     filter: monochromeMode ? 'none' : !simple
@@ -2399,9 +2390,9 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 {simple && !monochromeMode && type === 'sun' && (
                   <>
                     <line x1={b.x - wr * 1.5} y1={b.y} x2={b.x + wr * 1.5} y2={b.y}
-                      stroke={inkColor} strokeWidth={1 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.45} />
+                      stroke={inkColor} strokeWidth={worldStroke(0.67)} strokeOpacity={monochromeMode ? paperLineOpacity : 0.45} />
                     <line x1={b.x} y1={b.y - wr * 1.5} x2={b.x} y2={b.y + wr * 1.5}
-                      stroke={inkColor} strokeWidth={1 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 0.45} />
+                      stroke={inkColor} strokeWidth={worldStroke(0.67)} strokeOpacity={monochromeMode ? paperLineOpacity : 0.45} />
                   </>
                 )}
                 {hasSample && (
@@ -2423,7 +2414,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
               <circle cx={probePos.x} cy={probePos.y} r={probeWr * 3}
                 fill={probeCol} opacity={monochromeMode ? paperSubtleOpacity : 0.06} />
               <circle cx={probePos.x} cy={probePos.y} r={probeWr} fill="none"
-                stroke={probeCol} strokeWidth={1.5 / zoom} strokeOpacity={monochromeMode ? paperLineOpacity : 1} strokeDasharray={`${4 / zoom} ${3 / zoom}`} />
+                stroke={probeCol} strokeWidth={worldStroke()} strokeOpacity={monochromeMode ? paperLineOpacity : 1} strokeDasharray={`${4 / zoom} ${3 / zoom}`} />
               <circle cx={probePos.x} cy={probePos.y} r={3 / zoom}
                 fill={probeCol} opacity={monochromeMode ? paperMainOpacity : 0.85} />
               {/* Crosshair */}
@@ -2431,7 +2422,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 <line key={i}
                   x1={probePos.x + x1f * probeWr} y1={probePos.y + y1f * probeWr}
                   x2={probePos.x + x2f * probeWr} y2={probePos.y + y2f * probeWr}
-                  stroke={probeCol} strokeWidth={1 / zoom} opacity={monochromeMode ? paperLineOpacity : 0.65} />
+                  stroke={probeCol} strokeWidth={worldStroke(0.67)} opacity={monochromeMode ? paperLineOpacity : 0.65} />
               ))}
               <text x={probePos.x} y={probePos.y - probeWr - 5 / zoom} textAnchor="middle"
                 fontSize={9 / zoom} fill={probeCol} opacity={monochromeMode ? labelOpacity : 0.8}
@@ -2447,68 +2438,30 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
               points={predictOrbitPoints}
               fill="none"
               stroke={dpOverlay.col}
-              strokeWidth={1 / zoom}
+              strokeWidth={worldStroke(0.67)}
               strokeOpacity={0.40}
               strokeDasharray={`${4 / zoom} ${4 / zoom}`}
             />
           )}
 
           {/* ── Drag-place bow-and-arrow overlay ───────────────────────── */}
-          {pendingPlanet && dragPlace?.phase !== 'velocity' && (
-            <g>
-              <circle
-                cx={pendingPlanet.bodyX}
-                cy={pendingPlanet.bodyY}
-                r={bodyScreenR(
-                  pendingPlanet.mass,
-                  'planet',
-                  storeParams.bodyRadiusFromMass,
-                  storeParams.bodyRadiusMassScalePlanet,
-                  storeParams.bodyRadiusMassScaleSun,
-                ) / zoom}
-                fill={monochromeMode ? monoInk : pendingPlanet.color}
-                opacity={monochromeMode ? paperSubtleOpacity + 0.12 : 0.38}
-                stroke={monochromeMode ? monoInk : pendingPlanet.color}
-                strokeWidth={1 / zoom}
-                strokeDasharray={`${4 / zoom} ${3 / zoom}`}
-              />
-              <text
-                x={pendingPlanet.bodyX}
-                y={pendingPlanet.bodyY - (bodyScreenR(
-                  pendingPlanet.mass,
-                  'planet',
-                  storeParams.bodyRadiusFromMass,
-                  storeParams.bodyRadiusMassScalePlanet,
-                  storeParams.bodyRadiusMassScaleSun,
-                ) / zoom) - 6 / zoom}
-                textAnchor="middle"
-                fontSize={10 / zoom}
-                fill={monochromeMode ? monoInk : pendingPlanet.color}
-                fontFamily="monospace"
-                opacity={monochromeMode ? labelOpacity : 0.85}
-              >
-                m={pendingPlanet.mass}
-              </text>
-            </g>
-          )}
           {dragPlace && dpOverlay && (
             <g>
-              {/* Drag line: only in vector stage. Mass stage uses drag radius preview. */}
-              {dpOverlay.isVelocityStage && (
+              {dpOverlay.isPlanetLaunch && (
                 <line x1={dragPlace.bodyX} y1={dragPlace.bodyY}
                   x2={dragPlace.dragX} y2={dragPlace.dragY}
                   stroke={monochromeMode ? monoInk : simple ? 'rgba(0,0,0,0.38)' : 'rgba(255,255,255,0.38)'}
                   strokeOpacity={monochromeMode ? paperLineOpacity : 1}
-                  strokeWidth={1.5 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} />
+                  strokeWidth={worldStroke()} strokeDasharray={`${6 / zoom} ${4 / zoom}`} />
               )}
               {dpOverlay.hasDrag && (
                 <line x1={dragPlace.bodyX} y1={dragPlace.bodyY}
                   x2={dpOverlay.arrowX} y2={dpOverlay.arrowY}
-                  stroke={dpOverlay.col} strokeWidth={2 / zoom} markerEnd="url(#placeArrow)" />
+                  stroke={dpOverlay.col} strokeWidth={worldStroke(1.33)} markerEnd="url(#placeArrow)" />
               )}
               <circle cx={dragPlace.bodyX} cy={dragPlace.bodyY} r={dpOverlay.wr}
                 fill={dpOverlay.col} opacity={monochromeMode ? paperMainOpacity : 0.72} />
-              {(dpOverlay.isSun || dragPlace.phase === 'mass') && (
+              {(dpOverlay.isSun || dpOverlay.isPlanetLaunch) && (
                 <text x={dragPlace.bodyX} y={dragPlace.bodyY - dpOverlay.wr - 6 / zoom}
                   textAnchor="middle" fontSize={11 / zoom}
                   fill={dpOverlay.col} fontFamily="monospace" opacity={monochromeMode ? labelOpacity : 0.9}>

@@ -789,6 +789,12 @@ export function PlanetBodyInspector({ hideHeader }: { hideHeader?: boolean } = {
                 style={{ flex: 1, minWidth: 0, fontSize: 11, fontFamily: 'monospace', border: 'none', borderRadius: 4, padding: '2px 6px', background: t.inputBg, color: t.inputText }}
               />
             </PlanetRow>
+            <PlanetRow label="Init Z">
+              <input type="number" value={body.z ?? 0} step={10}
+                onChange={e => updateBody(body.id, { z: Number(e.target.value) })}
+                style={{ flex: 1, minWidth: 0, fontSize: 11, fontFamily: 'monospace', border: 'none', borderRadius: 4, padding: '2px 6px', background: t.inputBg, color: t.inputText }}
+              />
+            </PlanetRow>
             <PlanetRow label="Init Vx">
               <input type="number" value={body.vx} step={0.1}
                 onChange={e => updateBody(body.id, { vx: Number(e.target.value) })}

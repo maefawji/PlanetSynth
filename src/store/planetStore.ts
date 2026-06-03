@@ -19,6 +19,8 @@ export interface PlanetBody {
   mass: number
   x: number
   y: number
+  /** Visual depth. Physics stays 2D; z affects projected canvas size for now. */
+  z: number
   vx: number
   vy: number
   fixed: boolean
@@ -364,7 +366,7 @@ const BODY_EFFECTOR_DEFAULTS = {
 export const DEFAULT_BODIES: PlanetBody[] = [
   {
     id: 'sun', name: 'Sun', type: 'sun',
-    mass: 1000, x: 0, y: 0, vx: 0, vy: 0,
+    mass: 1000, x: 0, y: 0, z: 0, vx: 0, vy: 0,
     fixed: true, color: '#f59e0b', sampleId: null,
     standpointFacingAngle: 270,
     orbitLoopNumer: 1, orbitLoopDenom: 1,
@@ -374,7 +376,7 @@ export const DEFAULT_BODIES: PlanetBody[] = [
   },
   {
     id: 'planet', name: 'Planet', type: 'planet',
-    mass: 1, x: 280, y: 0, vx: 0, vy: 1.89,
+    mass: 1, x: 280, y: 0, z: 0, vx: 0, vy: 1.89,
     fixed: false, color: '#60a5fa', sampleId: null,
     orbitLoopNumer: 1, orbitLoopDenom: 1,
     ...BODY_EFFECTOR_DEFAULTS,
@@ -383,7 +385,7 @@ export const DEFAULT_BODIES: PlanetBody[] = [
   },
   {
     id: 'perturber', name: 'Perturber', type: 'planet',
-    mass: 80, x: -600, y: 180, vx: 1.2, vy: 0,
+    mass: 80, x: -600, y: 180, z: 0, vx: 1.2, vy: 0,
     fixed: false, color: '#f472b6', sampleId: null,
     orbitLoopNumer: 1, orbitLoopDenom: 1,
     ...BODY_EFFECTOR_DEFAULTS,
