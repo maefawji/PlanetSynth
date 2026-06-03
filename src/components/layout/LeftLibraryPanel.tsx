@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Waves, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio, CircleHelp, Sparkles } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio, CircleHelp, Sparkles } from 'lucide-react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { usePlanetStore, type PlanetSimParams } from '../../store/planetStore'
 import {
@@ -31,7 +31,6 @@ import {
 import { parseProject, restoreProjectSamples, saveProjectJson } from '../../persistence/projectSchema'
 import { setGlobalAdsr } from '../../audio/intersectionSynth'
 import { ADSR_OFF, computeOrbitAdsr } from '../../audio/orbitAdsr'
-import { loadBuiltinSamples } from '../../lib/loadBuiltinSamples'
 import { useTheme } from '../../lib/theme'
 
 interface LeftLibraryPanelProps {
@@ -44,7 +43,7 @@ type LeftPanelId =
   | 'planet-triggers'
   | 'planet-auto'
   | 'planet-controls-trigger' | 'planet-controls-instrument' | 'planet-controls-effect'
-  | 'planet-playback' | 'planet-localization' | 'planet-adsr'
+  | 'planet-localization' | 'planet-adsr'
   | 'midi' | 'help'
 
 export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPanelProps) {
@@ -57,7 +56,6 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
   const loadProject         = useProjectStore(s => s.loadProject)
   const project             = useProjectStore(s => s.project)
   const samples             = useProjectStore(s => s.project.samples)
-  const randomAssignSamplesToPlanets = usePlanetStore(s => s.randomAssignSamplesToPlanets)
   const expandedWidth: number | string = activePanel === 'canvas' ? 'min(500px, 62vw)' : 246
 
   const [sampleImportStatus, setSampleImportStatus] = useState('')
@@ -119,40 +117,6 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
 
   function handleClearAllSamples() {
     clearSamples()
-  }
-
-  async function handleRandomAssignPlanetSamples() {
-    setSampleImportStatus('')
-    const builtinSamples = await loadBuiltinSamples()
-    const currentSamples = useProjectStore.getState().project.samples
-    const folderSamples = await loadDefaultFolderSamples()
-    const folderHydratedSamples = folderSamples.length
-      ? hydrateSamplesFromFolder(currentSamples, folderSamples)
-      : currentSamples
-    const restored = await restoreProjectSamples(folderHydratedSamples)
-    if (folderSamples.length) addSampleAssets(folderSamples)
-    addSampleAssets(restored)
-    for (const sample of restored) {
-      if (sample.objectUrl) setSampleObjectUrl(sample.id, sample.objectUrl)
-    }
-
-    const loadedById = new Map<string, SampleAsset>()
-    for (const sample of restored) {
-      if (sample.objectUrl) loadedById.set(sample.id, sample)
-    }
-    for (const sample of folderSamples) {
-      if (sample.objectUrl) loadedById.set(sample.id, sample)
-    }
-    for (const sample of builtinSamples) {
-      if (sample.objectUrl) loadedById.set(sample.id, sample)
-    }
-    const loadedSampleIds = Array.from(loadedById.keys())
-    if (loadedSampleIds.length === 0) {
-      setSampleImportStatus('No loaded samples available. Use Set Folder / Reload first, or allow folder permission when prompted.')
-      return
-    }
-    randomAssignSamplesToPlanets(loadedSampleIds)
-    setSampleImportStatus(`Randomly assigned ${loadedSampleIds.length} loaded sample${loadedSampleIds.length === 1 ? '' : 's'} to planet bodies.`)
   }
 
   function handleAddDroppedSamples(files: File[]) {
@@ -278,13 +242,6 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
           <Sparkles size={14} />
         </RailButton>
         <RailButton
-          active={activePanel === 'planet-playback' && !collapsed}
-          title="Sample Playback"
-          onClick={() => handleSelectPanel('planet-playback')}
-        >
-          <Waves size={14} />
-        </RailButton>
-        <RailButton
           active={activePanel === 'planet-adsr' && !collapsed}
           title="ADSR"
           onClick={() => handleSelectPanel('planet-adsr')}
@@ -358,7 +315,6 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
           onSaveSampleLibrary={handleSaveSampleLibrary}
           onLoadCanvasData={handleLoadCanvasDataFile}
           onSaveCanvasData={handleSaveCanvasData}
-          onRandomAssign={handleRandomAssignPlanetSamples}
           onReloadAll={handleReloadAllSamples}
           onSetFolder={handleSetSampleFolder}
           onClearAll={handleClearAllSamples}
@@ -386,9 +342,6 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
       )}
       {!collapsed && activePanel === 'planet-controls-effect' && (
         <ControlSetsPanel category="effect" />
-      )}
-      {!collapsed && activePanel === 'planet-playback' && (
-        <PlanetSamplePlaybackPanel />
       )}
       {!collapsed && activePanel === 'planet-adsr' && (
         <PlanetAdsrPanel />
@@ -440,7 +393,6 @@ function LibraryExplorer({ loadedSamples }: { loadedSamples: SampleAsset[] }) {
   const [tree, setTree]         = useState<TreeNode[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [status, setStatus]     = useState<'loading' | 'empty' | 'ok'>('loading')
-  const { selectedBodyId, updateBody } = usePlanetStore()
   const { addSampleAssets } = useProjectStore()
 
   useEffect(() => {
@@ -484,10 +436,6 @@ function LibraryExplorer({ loadedSamples }: { loadedSamples: SampleAsset[] }) {
         sample = newSample
       } catch { return }
     }
-    // Assign to selected planet body
-    if (selectedBodyId && sample) {
-      updateBody(selectedBodyId, { sampleId: sample.id })
-    }
   }
 
   function renderNodes(nodes: TreeNode[], depth = 0): React.ReactNode {
@@ -526,9 +474,7 @@ function LibraryExplorer({ loadedSamples }: { loadedSamples: SampleAsset[] }) {
       return (
         <button
           key={node.path}
-          title={loaded
-            ? (selectedBodyId ? `Assign "${node.name}" to selected body` : node.path)
-            : `Load "${node.name}"${selectedBodyId ? ' and assign to selected body' : ''}`}
+          title={loaded ? node.path : `Load "${node.name}"`}
           onClick={() => handleFileClick(node.path)}
           style={{
             width: '100%', textAlign: 'left', border: 'none', background: 'none',
@@ -581,19 +527,13 @@ function LibraryExplorer({ loadedSamples }: { loadedSamples: SampleAsset[] }) {
           {renderNodes(tree)}
         </div>
       )}
-
-      {selectedBodyId && status === 'ok' && (
-        <div style={{ fontSize: 9, color: '#a78bfa', padding: '3px 8px 6px', lineHeight: 1.4 }}>
-          ↑ クリックで選択ボディにアサイン
-        </div>
-      )}
     </div>
   )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function SamplesPanel({ samples, cachedLibrary, onAddSample, onAddDroppedSamples, onLoadSampleLibrary, onSaveSampleLibrary, onLoadCanvasData, onSaveCanvasData, onRandomAssign, onReloadAll, onSetFolder, onClearAll, importStatus }: {
+function SamplesPanel({ samples, cachedLibrary, onAddSample, onAddDroppedSamples, onLoadSampleLibrary, onSaveSampleLibrary, onLoadCanvasData, onSaveCanvasData, onReloadAll, onSetFolder, onClearAll, importStatus }: {
   samples: Array<SampleAsset>
   cachedLibrary: CachedSampleLibrary | null
   onAddSample: () => void
@@ -602,7 +542,6 @@ function SamplesPanel({ samples, cachedLibrary, onAddSample, onAddDroppedSamples
   onSaveSampleLibrary: () => void
   onLoadCanvasData: () => void | Promise<void>
   onSaveCanvasData: () => void
-  onRandomAssign: () => void
   onReloadAll: () => void | Promise<void>
   onSetFolder: () => void | Promise<void>
   onClearAll: () => void
@@ -772,29 +711,6 @@ function SamplesPanel({ samples, cachedLibrary, onAddSample, onAddDroppedSamples
           ))
         )}
       </div>
-      {/* Randomize assign */}
-      {samples.length > 0 && (
-        <div style={{ padding: '6px 10px', borderTop: `0.5px solid ${t.divider}` }}>
-          <button
-            onClick={onRandomAssign}
-            title="Randomly assign loaded samples from the list to every planet body"
-            style={{
-              width: '100%', padding: '6px 8px',
-              background: 'rgba(37,99,235,0.07)',
-              border: '0.5px solid rgba(37,99,235,0.18)',
-              borderRadius: 5, cursor: 'pointer',
-              fontSize: 10, fontWeight: 600,
-              color: '#2563eb', fontFamily: 'inherit',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(37,99,235,0.13)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(37,99,235,0.07)')}
-          >
-            🎲 Randomize planet assign
-          </button>
-        </div>
-      )}
-
       <button
         onClick={onAddSample}
         style={{
@@ -1385,7 +1301,8 @@ function RailButton({ active, title, onClick, children }: {
 }) {
   const t = useTheme()
   const [hovered, setHovered] = useState(false)
-  const mono = t.activeBg === '#111'
+  const mono = t.activeBg === '#111' || t.activeBg === '#f7f7f7'
+  const monoActiveText = t.activeBg === '#111' ? '#fff' : '#050505'
   return (
     <div
       style={{ position: 'relative', width: 28, height: 28, marginTop: 4, flexShrink: 0 }}
@@ -1399,7 +1316,7 @@ function RailButton({ active, title, onClick, children }: {
           width: 28, height: 28,
           border: 'none', borderRadius: mono ? 1 : 5,
           background: active ? t.activeBg : 'transparent',
-          color: active ? (mono ? '#fff' : '#2563eb') : t.textMid,
+          color: active ? (mono ? monoActiveText : '#2563eb') : t.textMid,
           cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
@@ -2106,108 +2023,6 @@ function AdsrReadout({ label, value }: { label: string; value: number }) {
   )
 }
 
-// ── Sample Playback panel ─────────────────────────────────────────────────────
-
-function PlanetSamplePlaybackPanel() {
-  const t = useTheme()
-  const { simParams, updateSimParams } = usePlanetStore()
-  const p = simParams
-
-  // Helper for segmented button group
-  function SegGroup<T extends string>({ value, options, onChange }: {
-    value: T
-    options: { val: T; label: string; hint?: string }[]
-    onChange: (v: T) => void
-  }) {
-    return (
-      <div style={{ display: 'flex', gap: 3 }}>
-        {options.map(o => (
-          <button
-            key={o.val}
-            title={o.hint}
-            onClick={() => onChange(o.val)}
-            style={{
-              flex: 1, padding: '4px 0', border: 'none', borderRadius: 4,
-              cursor: 'pointer', fontSize: 9.5, fontFamily: 'inherit', fontWeight: 600,
-              background: value === o.val ? 'rgba(139,92,246,0.15)' : t.inputBg,
-              color:      value === o.val ? '#7c3aed'                : t.textMid,
-              transition: 'background 120ms, color 120ms',
-            }}
-          >{o.label}</button>
-        ))}
-      </div>
-    )
-  }
-
-  return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-      <SectionHeader label="Sample Playback" />
-      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-
-        {/* ── Orbit source ─────────────────────────────────────────────── */}
-        <SettingsGroup label="Orbit Source">
-          <div style={{ fontSize: 9.5, color: t.textMid, lineHeight: 1.5, marginBottom: 6 }}>
-            ストレッチ・計算の基準となる軌道データを選択します。
-          </div>
-          <SegGroup
-            value={p.sampleOrbitSource}
-            onChange={v => updateSimParams({ sampleOrbitSource: v })}
-            options={[
-              { val: 'current',   label: 'Trigger orbit', hint: 'トリガー時点の瞬間角速度(ω)から算出した周期を使用' },
-              { val: 'predicted', label: 'Predicted next', hint: '指数移動平均で平滑化した予測周期を使用（安定・一定速）' },
-            ]}
-          />
-          <div style={{ marginTop: 5, padding: '4px 6px', background: t.sectionBg, borderRadius: 4 }}>
-            <div style={{ fontSize: 8.5, color: t.textDim, lineHeight: 1.55 }}>
-              <b style={{ color: t.textMid }}>Trigger orbit:</b> 毎フレームの瞬間ωを使用。速度変化がリアルタイムにレートへ反映。
-            </div>
-            <div style={{ fontSize: 8.5, color: t.textDim, lineHeight: 1.55, marginTop: 3 }}>
-              <b style={{ color: t.textMid }}>Predicted next:</b> 緩やかなEMAで平滑化。近日点・遠日点でも速度が一定に保たれる。
-            </div>
-          </div>
-        </SettingsGroup>
-
-        {/* ── Loop / Oneshot ───────────────────────────────────────────── */}
-        <SettingsGroup label="Play Mode">
-          <SegGroup
-            value={p.sampleLoopMode}
-            onChange={v => updateSimParams({ sampleLoopMode: v })}
-            options={[
-              { val: 'loop',    label: 'Loop',    hint: 'サンプルをループ再生。stretchが有効な場合は軌道に同期' },
-              { val: 'oneshot', label: 'Oneshot', hint: '1トリガーにつき1回のみ再生' },
-            ]}
-          />
-          <div style={{ marginTop: 4, padding: '4px 6px', background: t.sectionBg, borderRadius: 4 }}>
-            {p.sampleLoopMode === 'loop' && (
-              <span style={{ fontSize: 8.5, color: t.textDim }}>
-                ループ再生。Rate/Time stretchが有効な場合、playbackRateを毎フレーム更新し軌道に追従。
-              </span>
-            )}
-            {p.sampleLoopMode === 'oneshot' && (
-              <span style={{ fontSize: 8.5, color: t.textDim }}>
-                ワンショット。Stretchが有効な場合は算出したrateをトリガー時のみ適用して1回再生。
-              </span>
-            )}
-          </div>
-        </SettingsGroup>
-
-        {/* ── Loop ratio (orbit per loop) ───────────────────────────────── */}
-        {p.sampleLoopMode === 'loop' && (
-          <SettingsGroup label="Loop Ratio">
-            <div style={{ fontSize: 9.5, color: t.textMid, lineHeight: 1.5, marginBottom: 4 }}>
-              個別bodyのループ比はボディインスペクタで設定（Inspector → Loop ratio）。<br />
-              例: 1/2 = 2周ごとに1ループ
-            </div>
-          </SettingsGroup>
-        )}
-
-      </div>
-    </div>
-  )
-}
-
-// ── Pad / Drone Panel ─────────────────────────────────────────────────────────
-
 // ── Localization Panel ────────────────────────────────────────────────────────
 
 function LocalizationPanel() {
@@ -2589,12 +2404,25 @@ function CanvasSettingsPanel() {
       }}>
         <SettingsGroup label="UI">
           <label style={checkboxRowStyle}>
+            <input type="checkbox" checked={simParams.simpleTheme}
+              onChange={e => updateSimParams({ simpleTheme: e.target.checked })} />
+            <span style={{ fontSize: 10, color: t.textMid }}>Simple (light) theme</span>
+          </label>
+          <label style={checkboxRowStyle}>
             <input
               type="checkbox"
               checked={settings.monochromeMode}
               onChange={e => update({ monochromeMode: e.target.checked })}
             />
             <span style={{ fontSize: 10, color: t.textMid }}>Monochrome paper UI</span>
+          </label>
+          <label style={checkboxRowStyle}>
+            <input
+              type="checkbox"
+              checked={settings.monochromeInverted}
+              onChange={e => update({ monochromeInverted: e.target.checked })}
+            />
+            <span style={{ fontSize: 10, color: t.textMid }}>Invert B/W</span>
           </label>
           <label style={checkboxRowStyle}>
             <input
@@ -2706,11 +2534,6 @@ function CanvasSettingsPanel() {
             <span style={{ fontSize: 10, color: t.textMid }}>Velocity vectors</span>
           </label>
           <label style={checkboxRowStyle}>
-            <input type="checkbox" checked={simParams.simpleTheme}
-              onChange={e => updateSimParams({ simpleTheme: e.target.checked })} />
-            <span style={{ fontSize: 10, color: t.textMid }}>Simple (light) theme</span>
-          </label>
-          <label style={checkboxRowStyle}>
             <input type="checkbox" checked={simParams.showPredictedOrbit}
               onChange={e => updateSimParams({ showPredictedOrbit: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Predicted orbit on drag</span>
@@ -2718,13 +2541,12 @@ function CanvasSettingsPanel() {
           <label style={checkboxRowStyle}>
             <input type="checkbox" checked={simParams.bodyRadiusFromMass}
               onChange={e => updateSimParams({ bodyRadiusFromMass: e.target.checked })} />
-            <span style={{ fontSize: 10, color: t.textMid }}>Body size from mass (×0.1)</span>
+            <span style={{ fontSize: 10, color: t.textMid }}>Size from mass</span>
           </label>
-          <label style={checkboxRowStyle}>
-            <input type="checkbox" checked={simParams.showSampleName}
-              onChange={e => updateSimParams({ showSampleName: e.target.checked })} />
-            <span style={{ fontSize: 10, color: t.textMid }}>Show sample name</span>
-          </label>
+          <NumberSetting label="Planet rate" value={simParams.bodyRadiusMassScalePlanet} min={0} step={0.01}
+            onChange={bodyRadiusMassScalePlanet => updateSimParams({ bodyRadiusMassScalePlanet })} />
+          <NumberSetting label="Sun rate" value={simParams.bodyRadiusMassScaleSun} min={0} step={0.01}
+            onChange={bodyRadiusMassScaleSun => updateSimParams({ bodyRadiusMassScaleSun })} />
         </SettingsGroup>
 
         <SettingsGroup label="Trigger Stars">

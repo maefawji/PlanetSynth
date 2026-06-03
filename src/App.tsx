@@ -59,6 +59,7 @@ export default function App() {
   const updateNextPlanetDefaults = usePlanetStore(s => s.updateNextPlanetDefaults)
   const updateNextSunDefaults    = usePlanetStore(s => s.updateNextSunDefaults)
   const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
+  const monochromeInverted = useCanvasSettingsStore(s => s.monochromeInverted)
   const [leftCollapsed, setLeftCollapsed] = useState(true)
   const [rightCollapsed, setRightCollapsed] = useState(true)
   const [rackCollapsed, setRackCollapsed] = useState(false)
@@ -71,6 +72,14 @@ export default function App() {
   const audioUnlockStarted = useRef(false)
   const monoUi = monochromeMode
   const paperTheme = simpleTheme || monoUi
+  const monoBg = monochromeInverted ? '#050505' : '#fff'
+  const monoText = monochromeInverted ? '#f7f7f7' : '#050505'
+  const monoActiveBg = monochromeInverted ? '#f7f7f7' : '#111'
+  const monoActiveText = monochromeInverted ? '#050505' : '#fff'
+  const monoInputBg = monochromeInverted ? '#171717' : '#f2f2f2'
+  const monoPanelBg = monochromeInverted ? 'rgba(5,5,5,0.92)' : 'rgba(255,255,255,0.92)'
+  const monoBorder = monochromeInverted ? '0.5px solid rgba(255,255,255,0.18)' : '0.5px solid rgba(0,0,0,0.12)'
+  const monoTextMid = monochromeInverted ? '#a8a8a8' : '#777'
 
   useEffect(() => {
     loadBuiltinSamples()
@@ -126,8 +135,8 @@ export default function App() {
     return (
       <div style={{
         width: '100vw', height: '100dvh', position: 'relative', overflow: 'hidden',
-        background: monoUi ? '#fff' : '#0a0a0f',
-        color: monoUi ? '#050505' : undefined,
+        background: monoUi ? monoBg : '#0a0a0f',
+        color: monoUi ? monoText : undefined,
         fontFamily: monoUi
           ? '"Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Times New Roman", serif'
           : undefined,
@@ -154,8 +163,8 @@ export default function App() {
   return (
     <div style={{
       width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      background: monoUi ? '#fff' : undefined,
-      color: monoUi ? '#050505' : undefined,
+      background: monoUi ? monoBg : undefined,
+      color: monoUi ? monoText : undefined,
       fontFamily: monoUi
         ? '"Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Times New Roman", serif'
         : undefined,
@@ -196,16 +205,16 @@ export default function App() {
             />
 
             {/* Canvas area */}
-            <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: paperTheme ? '#fff' : '#0a0a0f' }}>
+            <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: monoUi ? monoBg : paperTheme ? '#fff' : '#0a0a0f' }}>
               <PlanetCanvas tool={planetTool} onSelectTool={() => setPlanetTool('select')} />
 
               {/* Planet toolbar — top-left */}
               <div style={{
                 position: 'absolute', top: 8, left: 8,
                 display: 'flex', gap: 4,
-                background: paperTheme ? 'rgba(255,255,255,0.92)' : 'rgba(10,10,20,0.80)',
+                background: monoUi ? monoPanelBg : paperTheme ? 'rgba(255,255,255,0.92)' : 'rgba(10,10,20,0.80)',
                 borderRadius: monoUi ? 2 : 8, padding: monoUi ? 4 : 5,
-                border: paperTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.10)',
+                border: monoUi ? monoBorder : paperTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.10)',
                 boxShadow: monoUi ? 'none' : '0 2px 6px rgba(0,0,0,0.15)',
                 backdropFilter: monoUi ? undefined : 'blur(4px)',
               }}>
@@ -215,9 +224,9 @@ export default function App() {
                   style={{
                     fontSize: 10, fontWeight: 600, padding: '3px 9px',
                     borderRadius: monoUi ? 1 : 5,
-                    border: paperTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
+                    border: monoUi ? monoBorder : paperTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
                     background: 'transparent',
-                    color: paperTheme ? '#111' : 'rgba(255,255,255,0.55)',
+                    color: monoUi ? monoText : paperTheme ? '#111' : 'rgba(255,255,255,0.55)',
                     cursor: 'pointer', fontFamily: 'inherit',
                   }}
                 >
@@ -235,15 +244,17 @@ export default function App() {
                     style={{
                       fontSize: 10, fontWeight: 600, padding: '3px 9px',
                       borderRadius: monoUi ? 1 : 5,
-                      border: paperTheme
+                      border: monoUi
+                        ? monoBorder
+                        : paperTheme
                         ? '0.5px solid rgba(0,0,0,0.12)'
                         : '0.5px solid rgba(255,255,255,0.15)',
                       background: planetTool === id
-                        ? monoUi ? '#111' : 'rgba(139,92,246,0.22)'
+                        ? monoUi ? monoActiveBg : 'rgba(139,92,246,0.22)'
                         : 'transparent',
                       color: planetTool === id
-                        ? monoUi ? '#fff' : '#a78bfa'
-                        : paperTheme ? '#111' : 'rgba(255,255,255,0.55)',
+                        ? monoUi ? monoActiveText : '#a78bfa'
+                        : monoUi ? monoText : paperTheme ? '#111' : 'rgba(255,255,255,0.55)',
                       cursor: 'pointer', fontFamily: 'inherit',
                     }}
                   >
@@ -253,11 +264,11 @@ export default function App() {
                 {/* Next body mass — always visible; edits planet or star mass depending on active tool */}
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: 3,
-                  borderLeft: paperTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
+                  borderLeft: monoUi ? monoBorder : paperTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
                   paddingLeft: 6, marginLeft: 2,
                   opacity: (planetTool === 'add-planet' || planetTool === 'add-sun') ? 1 : 0.45,
                 }}>
-                  <span style={{ fontSize: 9, color: paperTheme ? '#777' : 'rgba(255,255,255,0.45)', fontWeight: 600 }}>
+                  <span style={{ fontSize: 9, color: monoUi ? monoTextMid : paperTheme ? '#777' : 'rgba(255,255,255,0.45)', fontWeight: 600 }}>
                     {planetTool === 'add-sun' ? '☀' : '●'} m=
                   </span>
                   <input
@@ -275,9 +286,9 @@ export default function App() {
                     style={{
                       width: 52, fontSize: 10, fontFamily: 'monospace', fontWeight: 600,
                       padding: '2px 4px', borderRadius: monoUi ? 1 : 4,
-                      border: paperTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
-                      background: monoUi ? '#f2f2f2' : planetTool === 'add-sun' ? 'rgba(245,158,11,0.12)' : 'rgba(96,165,250,0.12)',
-                      color: monoUi ? '#050505' : planetTool === 'add-sun' ? '#f59e0b' : '#60a5fa',
+                      border: monoUi ? monoBorder : paperTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
+                      background: monoUi ? monoInputBg : planetTool === 'add-sun' ? 'rgba(245,158,11,0.12)' : 'rgba(96,165,250,0.12)',
+                      color: monoUi ? monoText : planetTool === 'add-sun' ? '#f59e0b' : '#60a5fa',
                       outline: 'none',
                     }}
                   />
@@ -286,10 +297,10 @@ export default function App() {
                 {planetTool === 'probe' && (
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 3,
-                    borderLeft: paperTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
+                    borderLeft: monoUi ? monoBorder : paperTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
                     paddingLeft: 6, marginLeft: 2,
                   }}>
-                    <span style={{ fontSize: 9, color: paperTheme ? '#777' : 'rgba(255,255,255,0.45)', fontWeight: 600 }}>m=</span>
+                    <span style={{ fontSize: 9, color: monoUi ? monoTextMid : paperTheme ? '#777' : 'rgba(255,255,255,0.45)', fontWeight: 600 }}>m=</span>
                     <input
                       type="number"
                       value={probeMass}
@@ -299,9 +310,9 @@ export default function App() {
                       style={{
                         width: 46, fontSize: 10, fontFamily: 'monospace', fontWeight: 600,
                         padding: '2px 4px', borderRadius: monoUi ? 1 : 4,
-                        border: paperTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
-                        background: monoUi ? '#f2f2f2' : 'rgba(139,92,246,0.12)',
-                        color: monoUi ? '#050505' : '#a78bfa',
+                        border: monoUi ? monoBorder : paperTheme ? '0.5px solid rgba(0,0,0,0.12)' : '0.5px solid rgba(255,255,255,0.15)',
+                        background: monoUi ? monoInputBg : 'rgba(139,92,246,0.12)',
+                        color: monoUi ? monoText : '#a78bfa',
                         outline: 'none',
                       }}
                     />

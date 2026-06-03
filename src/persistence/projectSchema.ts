@@ -60,6 +60,7 @@ export const modularProjectSchema = z.object({
   edges:     z.array(edgeSchema),
   geometry:  z.array(geometryObjectSchema),
   samples:   z.array(sampleAssetSchema),
+  planetSynth: z.unknown().optional(),
 })
 
 export function parseProject(data: unknown): ModularProject {

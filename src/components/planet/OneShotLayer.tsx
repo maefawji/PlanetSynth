@@ -30,6 +30,7 @@ import {
   unregisterBodyOneShotEngine,
 } from '../../audio/OneShotSamplerEngine'
 import { onMidiNoteOn } from '../../audio/midiManager'
+import type { SampleAsset } from '../../patch/types'
 
 // ── Engine map ────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,23 @@ type EngineEntry = {
   busHeld: boolean
 }
 type EngineMap = Map<string, EngineEntry>
+
+function stableIndexFromId(id: string, length: number): number {
+  if (length <= 0) return 0
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0
+  return Math.abs(hash) % length
+}
+
+function resolveOneShotSample(bodyId: string, ep: Record<string, unknown>, samples: SampleAsset[]): SampleAsset | null {
+  const samplerMode = String(ep.samplerMode ?? 'auto')
+  if (samplerMode === 'fixed') {
+    const fixedId = String(ep.samplerSampleId ?? '')
+    return fixedId ? (samples.find(s => s.id === fixedId) ?? null) : null
+  }
+  if (samples.length === 0) return null
+  return samples[stableIndexFromId(bodyId, samples.length)] ?? null
+}
 
 // ── Module-level sync ─────────────────────────────────────────────────────────
 
@@ -65,10 +83,7 @@ async function syncAllOneShotEngines(engines: EngineMap): Promise<void> {
     activeIds.add(body.id)
 
     // ── Resolve sample ────────────────────────────────────────────────────────
-    const samplerMode = String(ep.samplerMode ?? 'auto')
-    const fixedId     = ep.samplerSampleId as string | null ?? null
-    const resolvedId  = samplerMode === 'fixed' ? fixedId : (body.sampleId ?? null)
-    const sample      = resolvedId ? (samples.find(s => s.id === resolvedId) ?? null) : null
+    const sample = resolveOneShotSample(body.id, ep, samples)
 
     // ── Create engine if needed ───────────────────────────────────────────────
     let entry = engines.get(body.id)

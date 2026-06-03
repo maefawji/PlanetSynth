@@ -97,10 +97,30 @@ export const MONOCHROME_THEME: UITheme = {
   tagText:     '#111',
 }
 
+export const MONOCHROME_INVERTED_THEME: UITheme = {
+  panelBg:     '#050505',
+  panelBorder: 'rgba(255,255,255,0.18)',
+  headerBg:    '#050505',
+  divider:     'rgba(255,255,255,0.14)',
+  text:        '#f7f7f7',
+  textMid:     '#d0d0d0',
+  textDim:     '#787878',
+  inputBg:     '#161616',
+  inputText:   '#f7f7f7',
+  btnBg:       '#151515',
+  btnBorder:   'rgba(255,255,255,0.20)',
+  hoverBg:     '#1f1f1f',
+  activeBg:    '#f7f7f7',
+  sectionBg:   '#070707',
+  tagBg:       '#1c1c1c',
+  tagText:     '#f7f7f7',
+}
+
 /** Returns the appropriate theme based on the current simpleTheme setting. */
 export function useTheme(): UITheme {
   const simple = usePlanetStore(s => s.simParams.simpleTheme)
   const monochrome = useCanvasSettingsStore(s => s.monochromeMode)
-  if (monochrome) return MONOCHROME_THEME
+  const inverted = useCanvasSettingsStore(s => s.monochromeInverted)
+  if (monochrome) return inverted ? MONOCHROME_INVERTED_THEME : MONOCHROME_THEME
   return simple ? LIGHT_THEME : DARK_THEME
 }

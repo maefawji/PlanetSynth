@@ -1572,6 +1572,15 @@ function InlineChordTestContent({
   )
 }
 
+function stableSampleIndexFromBodyId(bodyId: string, length: number): number {
+  if (length <= 0) return 0
+  let hash = 0
+  for (let i = 0; i < bodyId.length; i++) {
+    hash = ((hash << 5) - hash + bodyId.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash) % length
+}
+
 // ── Inline One-Shot content (rendered inside SlotCard) ───────────────────────
 
 /**
@@ -1605,8 +1614,9 @@ function InlineOneShotContent({
   const samplerMode = (overrides as Record<string, unknown>).samplerMode as string ?? 'auto'
   const fixedId     = (overrides as Record<string, unknown>).samplerSampleId as string | null ?? null
   const body        = usePlanetStore(s => bodyId ? (s.bodies.find(b => b.id === bodyId) ?? null) : null)
-  const resolvedId  = samplerMode === 'fixed' ? fixedId : (body?.sampleId ?? null)
-  const sample      = resolvedId ? (samples.find(s => s.id === resolvedId) ?? null) : null
+  const sample      = samplerMode === 'fixed'
+    ? (fixedId ? (samples.find(s => s.id === fixedId) ?? null) : null)
+    : (bodyId && samples.length > 0 ? samples[stableSampleIndexFromBodyId(bodyId, samples.length)] ?? null : null)
 
   // ── Stretch info (only for instrument-oneshot-stretch) ──────────────────────
   const orbitStats  = isStretch && body ? computeOrbitStats(body, bodies, G) : null
@@ -1712,7 +1722,7 @@ function InlineOneShotContent({
           background: inputBg, color: inputCol, fontFamily: 'inherit',
         }}
       >
-        <option value="auto">Auto (body)</option>
+        <option value="auto">Auto (hash)</option>
         <option value="fixed">Fixed file</option>
       </select>
       {samplerMode === 'fixed' && fixedId && (

@@ -85,6 +85,8 @@ export interface ModularProject {
   edges: PatchEdge[]
   geometry: GeometryObject[]
   samples: SampleAsset[]
+  /** Optional app-level state for PlanetSynth project export/import. */
+  planetSynth?: unknown
 }
 
 export function makeDefaultProject(): ModularProject {

@@ -25,7 +25,8 @@ export interface PlanetBody {
   /** Manual facing angle used when this body becomes the standpoint listener. */
   standpointFacingAngle?: number
   color: string
-  sampleId: string | null  // assigned sample asset id
+  /** Legacy body-level sample id kept for project compatibility. New sample selection lives on instruments. */
+  sampleId: string | null
   /** Orbit-stretch loop ratio: sample loops = orbitLoopNumer per orbitLoopDenom orbits.
    *  e.g. numer=1, denom=2 → 1 loop every 2 orbits (displayed "1/2"). */
   orbitLoopNumer: number
@@ -167,8 +168,12 @@ export interface PlanetSimParams {
   adsrDecay:   number   // 0–3s
   adsrSustain: number   // 0–1
   adsrRelease: number   // 0–5s
-  /** Display: scale body radius from mass (mass × 0.01 as extra multiplier) */
+  /** Display: scale body radius from mass instead of cube-root sizing. */
   bodyRadiusFromMass: boolean
+  /** Display radius scale for planets when bodyRadiusFromMass is enabled. */
+  bodyRadiusMassScalePlanet: number
+  /** Display radius scale for suns when bodyRadiusFromMass is enabled. */
+  bodyRadiusMassScaleSun: number
   /** Display: show assigned sample name instead of body name on canvas */
   showSampleName: boolean
 
@@ -186,9 +191,9 @@ export interface PlanetSimParams {
   samplePitchCorrection: boolean
   /** Whether to loop the sample or play oneshot when stretch mode is active */
   sampleLoopMode: 'loop' | 'oneshot'
-  /** Sampler rack override: 'auto' = use body sampleId / folder hash, 'fixed' = always use samplerSampleId */
+  /** Sampler instrument source: 'auto' = stable hash from loaded samples, 'fixed' = samplerSampleId */
   samplerMode: 'auto' | 'fixed'
-  /** Sampler rack override: sample id to use when samplerMode = 'fixed' */
+  /** Sampler instrument sample id to use when samplerMode = 'fixed' */
   samplerSampleId: string | null
 
   // ── New Sampler instrument ────────────────────────────────────────────────
@@ -297,14 +302,13 @@ export interface NextBodyDefaults {
   color: string
   fixed: boolean
   randomColor: boolean   // true = generate a fresh hue on each placement
-  randomSample: boolean  // true = pick a random loaded sample on placement
 }
 
 export const DEFAULT_NEXT_SUN: NextBodyDefaults = {
-  mass: 1000, color: '#f59e0b', fixed: true, randomColor: true, randomSample: true,
+  mass: 1000, color: '#f59e0b', fixed: true, randomColor: true,
 }
 export const DEFAULT_NEXT_PLANET: NextBodyDefaults = {
-  mass: 1, color: '#60a5fa', fixed: false, randomColor: true, randomSample: true,
+  mass: 1, color: '#60a5fa', fixed: false, randomColor: true,
 }
 
 // ── Defaults ──────────────────────────────────────────────────────────────────
@@ -467,7 +471,9 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   adsrDecay:   0.1,
   adsrSustain: 1.0,
   adsrRelease: 0.3,
-  bodyRadiusFromMass: false,
+  bodyRadiusFromMass: true,
+  bodyRadiusMassScalePlanet: 0.1,
+  bodyRadiusMassScaleSun: 0.03,
   showSampleName: false,
   sampleStretchMode: 'rate',
   sampleOrbitSource: 'current',
@@ -584,7 +590,6 @@ interface PlanetState {
   removeBody: (id: string) => void
   clearBodies: () => void
   applyPreset: (bodies: PlanetBody[], simPatch?: Partial<PlanetSimParams>) => void
-  randomAssignSamplesToPlanets: (sampleIds: string[]) => void
   updateSimParams: (patch: Partial<PlanetSimParams>) => void
   updateNextSunDefaults: (patch: Partial<NextBodyDefaults>) => void
   updateNextPlanetDefaults: (patch: Partial<NextBodyDefaults>) => void
@@ -635,17 +640,6 @@ export const usePlanetStore = create<PlanetState>(set => ({
     cameraFollowBodyId: null,
     resetSeq: state.resetSeq + 1,
   })),
-
-  randomAssignSamplesToPlanets: sampleIds => {
-    if (sampleIds.length === 0) return
-    set(state => ({
-      bodies: state.bodies.map(b => {
-        if (b.type !== 'planet') return b
-        const sampleId = sampleIds[Math.floor(Math.random() * sampleIds.length)]
-        return { ...b, sampleId }
-      }),
-    }))
-  },
 
   updateSimParams: patch =>
     set(state => ({ simParams: { ...state.simParams, ...patch } })),

@@ -24,6 +24,15 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v))
 }
 
+function stableSampleIndexFromBodyId(bodyId: string, length: number): number {
+  if (length <= 0) return 0
+  let hash = 0
+  for (let i = 0; i < bodyId.length; i++) {
+    hash = ((hash << 5) - hash + bodyId.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash) % length
+}
+
 // ── Base control-set defaults ─────────────────────────────────────────────────
 
 const CS_BASE = BUILTIN_CONTROL_SETS.find(c => c.id === 'instrument-sampler')!
@@ -52,7 +61,6 @@ export function SamplerInstrumentPanel({ bodyId, slotKey, onClose }: Props) {
   // Project samples
   const samples         = useProjectStore(s => s.project.samples)
   const addSampleAsset  = useProjectStore(s => s.addSampleAsset)
-  const body            = usePlanetStore(s => s.bodies.find(b => b.id === bodyId) ?? null)
 
   // Read effective param (override → base default)
   function gp<T>(key: string, fallback: T): T {
@@ -72,8 +80,9 @@ export function SamplerInstrumentPanel({ bodyId, slotKey, onClose }: Props) {
   // Resolved current sample
   const samplerMode  = gp<string>('samplerMode',   'auto')
   const fixedId      = gp<string | null>('samplerSampleId', null)
-  const resolvedId   = samplerMode === 'fixed' ? fixedId : (body?.sampleId ?? null)
-  const sample       = resolvedId ? (samples.find(s => s.id === resolvedId) ?? null) : null
+  const sample       = samplerMode === 'fixed'
+    ? (fixedId ? (samples.find(s => s.id === fixedId) ?? null) : null)
+    : (bodyId && samples.length > 0 ? samples[stableSampleIndexFromBodyId(bodyId, samples.length)] ?? null : null)
 
   // Sampler params
   const sampleStart  = gp<number>('samplerSampleStart', 0)

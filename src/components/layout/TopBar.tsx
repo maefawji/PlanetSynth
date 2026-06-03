@@ -13,6 +13,7 @@ import { usePlanetStore } from '../../store/planetStore'
 import { useControlSetStore } from '../../store/controlSetStore'
 import { ADSR_OFF, computeOrbitAdsr } from '../../audio/orbitAdsr'
 import type { SampleAsset } from '../../patch/types'
+import type { ModularProject } from '../../patch/types'
 
 function stableIndexFromId(id: string, length: number): number {
   if (length <= 0) return 0
@@ -23,9 +24,9 @@ function stableIndexFromId(id: string, length: number): number {
   return Math.abs(hash) % length
 }
 
-function resolveBodySamplerSample(bodyId: string, explicitSampleId: string | null | undefined, samples: SampleAsset[]): SampleAsset | null {
+function resolveBodySamplerSample(bodyId: string, _legacyBodySampleId: string | null | undefined, samples: SampleAsset[]): SampleAsset | null {
   const rack = useControlSetStore.getState().getBodyEffectiveRack(bodyId)
-  // Rack must have instrument-sampler — never fall back to raw body.sampleId otherwise
+  // Instrument owns sample selection; legacy body.sampleId is intentionally ignored.
   if (rack.instrument !== 'instrument-sampler') return null
   const ep = useControlSetStore.getState().getBodyEffectiveParams(bodyId)
   const samplerMode = String((ep as Record<string, unknown>).samplerMode ?? 'auto')
@@ -33,13 +34,93 @@ function resolveBodySamplerSample(bodyId: string, explicitSampleId: string | nul
     const fixedId = String((ep as Record<string, unknown>).samplerSampleId ?? '')
     return fixedId ? (samples.find(s => s.id === fixedId) ?? null) : null
   }
-  // auto: explicit body sampleId first, then stable hash
-  if (explicitSampleId) return samples.find(s => s.id === explicitSampleId) ?? null
   if (samples.length === 0) return null
   return samples[stableIndexFromId(bodyId, samples.length)] ?? null
 }
 
 type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev' | 'wave-lab'
+
+const SHOW_RETRIGGER_BUTTON = false
+
+type PlanetSynthProjectState = {
+  planet?: {
+    bodies?: unknown
+    simParams?: unknown
+    nextSunDefaults?: unknown
+    nextPlanetDefaults?: unknown
+    cameraFollowBodyId?: unknown
+  }
+  racks?: {
+    userControlSets?: unknown
+    globalRack?: unknown
+    bodyRacks?: unknown
+    rackParamOverrides?: unknown
+  }
+  canvasSettings?: unknown
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function buildProjectExport(project: ModularProject): ModularProject {
+  const planet = usePlanetStore.getState()
+  const racks = useControlSetStore.getState()
+  const canvas = useCanvasSettingsStore.getState()
+  const { updateCanvasSettings: _updateCanvasSettings, ...canvasSettings } = canvas
+
+  return {
+    ...project,
+    planetSynth: {
+      planet: {
+        bodies: planet.bodies,
+        simParams: planet.simParams,
+        nextSunDefaults: planet.nextSunDefaults,
+        nextPlanetDefaults: planet.nextPlanetDefaults,
+        cameraFollowBodyId: planet.cameraFollowBodyId,
+      },
+      racks: {
+        userControlSets: racks.userControlSets,
+        globalRack: racks.globalRack,
+        bodyRacks: racks.bodyRacks,
+        rackParamOverrides: racks.rackParamOverrides,
+      },
+      canvasSettings,
+    },
+  }
+}
+
+function restorePlanetSynthState(raw: unknown): void {
+  if (!isRecord(raw)) return
+  const planet = isRecord(raw.planet) ? raw.planet : null
+  if (planet) {
+    usePlanetStore.setState(state => ({
+      bodies: Array.isArray(planet.bodies) ? planet.bodies as never : state.bodies,
+      simParams: isRecord(planet.simParams) ? { ...state.simParams, ...planet.simParams } as never : state.simParams,
+      nextSunDefaults: isRecord(planet.nextSunDefaults) ? { ...state.nextSunDefaults, ...planet.nextSunDefaults } as never : state.nextSunDefaults,
+      nextPlanetDefaults: isRecord(planet.nextPlanetDefaults) ? { ...state.nextPlanetDefaults, ...planet.nextPlanetDefaults } as never : state.nextPlanetDefaults,
+      selectedBodyId: null,
+      selectedBodyIds: [],
+      cameraFollowBodyId: typeof planet.cameraFollowBodyId === 'string' ? planet.cameraFollowBodyId : null,
+      resetSeq: state.resetSeq + 1,
+    }))
+  }
+
+  const racks = isRecord(raw.racks) ? raw.racks : null
+  if (racks) {
+    useControlSetStore.setState(state => ({
+      userControlSets: Array.isArray(racks.userControlSets) ? racks.userControlSets as never : state.userControlSets,
+      globalRack: isRecord(racks.globalRack) ? racks.globalRack as never : state.globalRack,
+      bodyRacks: isRecord(racks.bodyRacks) ? racks.bodyRacks as never : state.bodyRacks,
+      rackParamOverrides: isRecord(racks.rackParamOverrides) ? racks.rackParamOverrides as never : state.rackParamOverrides,
+    }))
+  }
+
+  if (isRecord(raw.canvasSettings)) {
+    const { updateCanvasSettings: _ignored, ...settings } = raw.canvasSettings
+    useCanvasSettingsStore.getState().updateCanvasSettings(settings)
+  }
+}
 
 interface TopBarProps {
   appMode?: AppMode
@@ -48,7 +129,8 @@ interface TopBarProps {
 
 export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
   const t         = useTheme()
-  const mono      = t.activeBg === '#111'
+  const mono      = t.activeBg === '#111' || t.activeBg === '#f7f7f7'
+  const monoActiveText = t.activeBg === '#111' ? '#fff' : '#050505'
   const project   = useProjectStore(s => s.project)
   const isDirty   = useProjectStore(s => s.isDirty)
   const loadProj  = useProjectStore(s => s.loadProject)
@@ -133,7 +215,7 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
   }
 
   function save() {
-    saveProjectJson(project)
+    saveProjectJson(buildProjectExport(project))
     markClean()
   }
 
@@ -142,6 +224,7 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
       const p = await loadProjectFromFile()
       const restoredSamples = await restoreProjectSamples(p.samples)
       loadProj({ ...p, samples: restoredSamples })
+      restorePlanetSynthState(p.planetSynth)
       const setSampleObjectUrl = useProjectStore.getState().setSampleObjectUrl
       for (const s of restoredSamples) {
         if (s.objectUrl) setSampleObjectUrl(s.id, s.objectUrl)
@@ -177,17 +260,21 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
 
       <div style={{ width: 1, height: 16, background: t.divider }} />
 
-      {/* Retrigger */}
-      <button
-        onClick={retrigger}
-        style={btnStyle(false, false, t)}
-        title="Start audio + retrigger all planet sounds"
-      >
-        <RotateCcw size={11} strokeWidth={2.5} />
-        <span>Retrigger</span>
-      </button>
+      {SHOW_RETRIGGER_BUTTON && (
+        <>
+          {/* Retrigger */}
+          <button
+            onClick={retrigger}
+            style={btnStyle(false, false, t)}
+            title="Start audio + retrigger all planet sounds"
+          >
+            <RotateCcw size={11} strokeWidth={2.5} />
+            <span>Retrigger</span>
+          </button>
 
-      <div style={{ width: 1, height: 16, background: t.divider }} />
+          <div style={{ width: 1, height: 16, background: t.divider }} />
+        </>
+      )}
 
       {/* Save / Load */}
       <button onClick={save} style={btnStyle(false, false, t)}>
@@ -276,7 +363,7 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
                 fontSize: 10, fontWeight: 600, padding: '2px 9px', borderRadius: mono ? 1 : 4,
                 border: 'none', fontFamily: 'inherit', cursor: 'pointer',
                 background: appMode === mode ? t.activeBg : 'transparent',
-                color: appMode === mode ? (mono ? '#fff' : '#a78bfa') : t.textMid,
+                color: appMode === mode ? (mono ? monoActiveText : '#a78bfa') : t.textMid,
               }}>
               {label}
             </button>
@@ -292,13 +379,14 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
 }
 
 function btnStyle(active: boolean, disabled: boolean, t: ReturnType<typeof useTheme>): React.CSSProperties {
-  const mono = t.activeBg === '#111'
+  const mono = t.activeBg === '#111' || t.activeBg === '#f7f7f7'
+  const monoActiveText = t.activeBg === '#111' ? '#fff' : '#050505'
   return {
     display: 'flex', alignItems: 'center', gap: 4,
     padding: '3px 8px', borderRadius: mono ? 1 : 5, border: `0.5px solid ${t.btnBorder}`,
     background: active ? t.activeBg : t.btnBg,
     fontSize: 11, fontWeight: 500, cursor: disabled ? 'default' : 'pointer',
-    opacity: disabled ? 0.4 : 1, color: active && mono ? '#fff' : t.text,
+    opacity: disabled ? 0.4 : 1, color: active && mono ? monoActiveText : t.text,
     fontFamily: 'inherit',
   }
 }

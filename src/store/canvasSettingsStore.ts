@@ -10,6 +10,7 @@ interface CanvasSettingsState {
   wayLength: number
   zoom: number
   monochromeMode: boolean
+  monochromeInverted: boolean
   paperCanvasBackground: string
   paperCanvasInk: string
   paperCanvasTone: number
@@ -35,6 +36,7 @@ export const useCanvasSettingsStore = create<CanvasSettingsState>(set => ({
   wayLength: 300,
   zoom: 1,
   monochromeMode: false,
+  monochromeInverted: false,
   paperCanvasBackground: '#ffffff',
   paperCanvasInk: '#050505',
   paperCanvasTone: 0.72,

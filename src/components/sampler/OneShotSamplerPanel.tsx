@@ -27,13 +27,21 @@ interface Props {
 // when the slot has no param overrides yet (selector must return stable ref).
 const EMPTY_OVERRIDES: Partial<PlanetSimParams> = {}
 
+function stableSampleIndexFromBodyId(bodyId: string, length: number): number {
+  if (length <= 0) return 0
+  let hash = 0
+  for (let i = 0; i < bodyId.length; i++) {
+    hash = ((hash << 5) - hash + bodyId.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash) % length
+}
+
 export function OneShotSamplerPanel({ bodyId, slotKey, onClose }: Props) {
   const simpleTheme  = usePlanetStore(s => s.simParams.simpleTheme)
   const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
   const simple       = simpleTheme || monochromeMode
   const samples      = useProjectStore(s => s.project.samples)
   const addSampleAsset = useProjectStore(s => s.addSampleAsset)
-  const body         = usePlanetStore(s => s.bodies.find(b => b.id === bodyId) ?? null)
   const overrides    = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_OVERRIDES)
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
   const resetSlotParam  = useControlSetStore(s => s.resetSlotParam)
@@ -50,8 +58,9 @@ export function OneShotSamplerPanel({ bodyId, slotKey, onClose }: Props) {
   // ── Resolved sample ─────────────────────────────────────────────────────────
   const samplerMode = (overrides as Record<string, unknown>).samplerMode as string ?? 'auto'
   const fixedId     = (overrides as Record<string, unknown>).samplerSampleId as string | null ?? null
-  const resolvedId  = samplerMode === 'fixed' ? fixedId : (body?.sampleId ?? null)
-  const sample      = resolvedId ? (samples.find(s => s.id === resolvedId) ?? null) : null
+  const sample      = samplerMode === 'fixed'
+    ? (fixedId ? (samples.find(s => s.id === fixedId) ?? null) : null)
+    : (bodyId && samples.length > 0 ? samples[stableSampleIndexFromBodyId(bodyId, samples.length)] ?? null : null)
 
   // ── Sampler state (from engine) ─────────────────────────────────────────────
   const [samplerState, setSamplerState] = useState<OneShotState>('idle')
@@ -285,7 +294,7 @@ export function OneShotSamplerPanel({ bodyId, slotKey, onClose }: Props) {
           onChange={e => setSlotOverride(slotKey, { samplerMode: e.target.value } as Partial<PlanetSimParams>)}
           style={{ flex: 1, fontSize: 8.5, border: `0.5px solid ${border}`, borderRadius: 3, padding: '2px 4px', background: simple ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)', color: text, fontFamily: 'inherit' }}
         >
-          <option value="auto">Auto (body's sample)</option>
+          <option value="auto">Auto (hash)</option>
           <option value="fixed">Fixed (this file)</option>
         </select>
         {samplerMode === 'fixed' && fixedId && (

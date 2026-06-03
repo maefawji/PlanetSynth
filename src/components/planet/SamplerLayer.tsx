@@ -3,9 +3,8 @@
 // Manages one SamplerEngine per body whose effective samplerType === 'sampler'.
 //
 // Sample resolution (same priority as GranularLayer):
-//   1. Rack samplerMode 'fixed' + samplerSampleId
-//   2. Body's explicit sampleId
-//   3. First loaded sample (index-stable hash per body)
+//   1. Instrument samplerMode 'fixed' + samplerSampleId
+//   2. Instrument samplerMode 'auto' + first loaded sample (index-stable hash per body)
 //
 // The engine output is wired into the per-body rack bus (rackBusMixer).
 // body.volume (mixer fader) is applied via setBusVolume each tick.
@@ -47,14 +46,13 @@ function stableIndexFromId(id: string, length: number): number {
   return Math.abs(hash) % length
 }
 
-function resolveSample(bodyId: string, bodySampleId: string | null | undefined, samples: SampleAsset[]): SampleAsset | null {
+function resolveSample(bodyId: string, samples: SampleAsset[]): SampleAsset | null {
   const ep = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
   const samplerMode = String(ep.samplerMode ?? 'auto')
   if (samplerMode === 'fixed') {
     const fixedId = String(ep.samplerSampleId ?? '')
     return fixedId ? (samples.find(s => s.id === fixedId) ?? null) : null
   }
-  if (bodySampleId) return samples.find(s => s.id === bodySampleId) ?? null
   if (samples.length === 0) return null
   return samples[stableIndexFromId(bodyId, samples.length)] ?? null
 }
@@ -82,7 +80,7 @@ async function syncAllEngines(engines: EngineMap): Promise<void> {
     if (samplerType !== 'sampler' || body.muted) continue
 
     // Resolve sample
-    const sample = resolveSample(body.id, body.sampleId, samples)
+    const sample = resolveSample(body.id, samples)
     if (!sample?.objectUrl) continue  // no sample → skip
 
     activeIds.add(body.id)

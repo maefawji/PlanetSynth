@@ -205,7 +205,7 @@ function MixerBodyRow({ b, selected, onSelect, onRemove, onToggleMute, onVolumeC
         <span style={{ fontSize: 10, color: isMuted ? t.textDim : t.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {b.name}
         </span>
-        {(b.sampleId || level > 0.001 || triggered) && (
+        {(level > 0.001 || triggered) && (
           <span style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
             background: isMuted ? t.divider : triggered ? '#f59e0b' : level > 0.01 ? `rgba(34,197,94,${Math.min(1, level * 1.5)})` : t.divider,
             boxShadow: triggered && !isMuted ? '0 0 4px rgba(245,158,11,0.7)' : 'none',
@@ -258,9 +258,9 @@ function PlanetMixerSection() {
         const fixedId = String(ep.samplerSampleId ?? '')
         sample = fixedId ? (samples.find(s => s.id === fixedId) ?? null) : null
       } else {
-        sample = b.sampleId
-          ? (samples.find(s => s.id === b.sampleId) ?? null)
-          : (samples.length > 0 ? samples[Math.abs(b.id.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)) % samples.length] ?? null : null)
+        sample = samples.length > 0
+          ? samples[Math.abs(b.id.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)) % samples.length] ?? null
+          : null
       }
       if (sample?.objectUrl) {
         const adsr = simParams.adsrMode === 'off' ? ADSR_OFF
@@ -399,17 +399,6 @@ export function NextBodyInspector({ tool }: { tool: 'add-sun' | 'add-planet' }) 
             </label>
           </div>
         </PlanetRow>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 12px' }}>
-          <span style={{ fontSize: 10, color: t.textMid, width: 72, flexShrink: 0, textAlign: 'right' }} />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-            <input
-              type="checkbox" checked={defs.randomSample}
-              onChange={e => update({ randomSample: e.target.checked })}
-            />
-            <span style={{ fontSize: 10, color: t.textMid }}>Random sample each time</span>
-          </label>
-        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 12px' }}>
           <span style={{ fontSize: 10, color: t.textMid, width: 72, flexShrink: 0, textAlign: 'right' }} />
@@ -643,36 +632,12 @@ function BodyOrbitSection({ bodyId }: { bodyId: string }) {
 export function PlanetBodyInspector({ hideHeader }: { hideHeader?: boolean } = {}) {
   const t = useTheme()
   const { bodies, simParams, selectedBodyId, updateBody, cameraFollowBodyId, setCameraFollowBodyId, updateSimParams, restartSim } = usePlanetStore()
-  const loadedSamples  = useProjectStore(s => s.project.samples)
-  const addSampleAsset = useProjectStore(s => s.addSampleAsset)
   const body = selectedBodyId ? bodies.find(b => b.id === selectedBodyId) : null
   const [showPhysics, setShowPhysics] = useState(false)
   const [showInitFields, setShowInitFields] = useState(false)
   const isFollowing = cameraFollowBodyId === body?.id
   // Debounce timer for mass changes → restart sim after 1s of no further changes
   const massRestartTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  async function handleAddSample() {
-    return new Promise<void>(resolve => {
-      const input = document.createElement('input')
-      input.type = 'file'
-      input.accept = 'audio/*'
-      input.onchange = () => {
-        const file = input.files?.[0]
-        if (!file || !body) { resolve(); return }
-        const sample = {
-          id: crypto.randomUUID(),
-          name: file.name.replace(/\.[^.]+$/, ''),
-          objectUrl: URL.createObjectURL(file),
-          fileType: file.type || 'audio/unknown',
-        }
-        addSampleAsset(sample)
-        updateBody(body.id, { sampleId: sample.id })
-        resolve()
-      }
-      input.click()
-    })
-  }
 
   if (!body) {
     return (
@@ -775,46 +740,6 @@ export function PlanetBodyInspector({ hideHeader }: { hideHeader?: boolean } = {
               onChange={e => updateBody(body.id, { fixed: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Fixed (immovable)</span>
           </label>
-        </div>
-
-        {/* ── Sample ── used by orbit trigger in auto mode */}
-        <div style={{ padding: '6px 12px 5px', borderTop: `0.5px solid ${t.divider}` }}>
-          <div style={{ fontSize: 8, fontWeight: 700, color: t.textDim, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
-            Sample <span style={{ fontSize: 7, fontWeight: 400, opacity: 0.65 }}>— orbit trigger / auto</span>
-          </div>
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-            <select
-              value={body.sampleId ?? ''}
-              onChange={e => updateBody(body.id, { sampleId: e.target.value || null })}
-              style={{
-                flex: 1, minWidth: 0, fontSize: 10.5, border: 'none', borderRadius: 4,
-                padding: '3px 5px', background: t.inputBg,
-                color: body.sampleId ? t.inputText : t.textDim,
-                fontFamily: 'inherit',
-              }}
-            >
-              <option value="">— none —</option>
-              {loadedSamples.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-            <button
-              onClick={handleAddSample}
-              title="Load new audio file and assign"
-              style={{
-                flexShrink: 0, padding: '3px 7px', fontSize: 9,
-                border: 'none', borderRadius: 4, cursor: 'pointer',
-                background: t.btnBg, color: t.textMid, fontFamily: 'inherit',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.color = t.text)}
-              onMouseLeave={e => (e.currentTarget.style.color = t.textMid)}
-            >＋</button>
-          </div>
-          {body.sampleId && (
-            <div style={{ fontSize: 8, color: t.textDim, marginTop: 3, opacity: 0.7 }}>
-              ↑ orbit trigger がこのサンプルを再生
-            </div>
-          )}
         </div>
 
         {/* ── MIDI OUT ── trigger sends MIDI note on this channel/note */}

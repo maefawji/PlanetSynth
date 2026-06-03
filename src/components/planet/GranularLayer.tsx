@@ -4,9 +4,8 @@
 // per body whose effective granularType === 'grain'.
 //
 // Sample resolution (priority order):
-//   1. Rack samplerMode 'fixed' + samplerSampleId
-//   2. Body's explicit sampleId
-//   3. First loaded sample (index-stable hash per body)
+//   1. Instrument samplerMode 'fixed' + samplerSampleId
+//   2. Instrument samplerMode 'auto' + first loaded sample (index-stable hash per body)
 //
 // Performance: no React state, no store subscriptions.
 // Sync runs at ~15fps via RealtimeSyncManager → syncAllGranularEngines().
@@ -43,14 +42,13 @@ function stableIndexFromId(id: string, length: number): number {
   return Math.abs(hash) % length
 }
 
-function resolveGrainSample(bodyId: string, bodySampleId: string | null | undefined, samples: SampleAsset[]): SampleAsset | null {
+function resolveGrainSample(bodyId: string, samples: SampleAsset[]): SampleAsset | null {
   const ep = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
   const samplerMode = String(ep.samplerMode ?? 'auto')
   if (samplerMode === 'fixed') {
     const fixedId = String(ep.samplerSampleId ?? '')
     return fixedId ? (samples.find(s => s.id === fixedId) ?? null) : null
   }
-  if (bodySampleId) return samples.find(s => s.id === bodySampleId) ?? null
   if (samples.length === 0) return null
   return samples[stableIndexFromId(bodyId, samples.length)] ?? null
 }
@@ -77,7 +75,7 @@ async function syncAllGranularEngines(engines: EngineMap): Promise<void> {
     const granularType = String(ep.granularType ?? 'off')
     if (granularType !== 'grain' || body.muted) continue
 
-    const sample = resolveGrainSample(body.id, body.sampleId, samples)
+    const sample = resolveGrainSample(body.id, samples)
     if (!sample?.objectUrl) continue
 
     activeIds.add(body.id)
