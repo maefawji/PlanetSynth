@@ -70,17 +70,61 @@ const ARP_CHORD_INTERVALS: Record<string, number[]> = {
   Dom7:  [0, 4, 7, 10],
 }
 
+const ARP_MAJOR_DEGREES = [
+  { pc: 0,  quality: 'Maj7' },
+  { pc: 2,  quality: 'Min7' },
+  { pc: 4,  quality: 'Min7' },
+  { pc: 5,  quality: 'Maj7' },
+  { pc: 7,  quality: 'Dom7' },
+  { pc: 9,  quality: 'Min7' },
+  { pc: 11, quality: 'Dim' },
+]
+const ARP_MINOR_DEGREES = [
+  { pc: 0,  quality: 'Min7' },
+  { pc: 2,  quality: 'Dim' },
+  { pc: 3,  quality: 'Maj7' },
+  { pc: 5,  quality: 'Min7' },
+  { pc: 7,  quality: 'Min7' },
+  { pc: 8,  quality: 'Maj7' },
+  { pc: 10, quality: 'Dom7' },
+]
+
+function parseArpProgression(raw: unknown): number[] {
+  const text = String(raw ?? '').trim()
+  const degrees = text.match(/-?\d+/g)?.map(n => Number(n)).filter(n => Number.isFinite(n)) ?? []
+  return degrees.length ? degrees : [1]
+}
+
+function buildArpChordNotesFrom(rootPc: number, octave: number, quality: string, inversion: number): number[] {
+  const intervals = ARP_CHORD_INTERVALS[quality] ?? ARP_CHORD_INTERVALS.Maj7
+  const safeInversion = Math.max(0, Math.min(intervals.length - 1, Math.round(inversion)))
+  const base = (octave + 1) * 12 + rootPc
+  return intervals.map((iv, i) => {
+    const raised = i < safeInversion ? 12 : 0
+    return Math.max(0, Math.min(127, base + iv + raised))
+  }).sort((a, b) => a - b)
+}
+
 function buildArpChordNotes(tp: Record<string, unknown>): number[] {
   const rootPc = Math.max(0, Math.min(11, Math.round(Number(tp.arpChordRoot ?? 0))))
   const octave = Math.max(0, Math.min(8, Math.round(Number(tp.arpChordOctave ?? 3))))
   const quality = String(tp.arpChordQuality ?? 'Maj7')
-  const intervals = ARP_CHORD_INTERVALS[quality] ?? ARP_CHORD_INTERVALS.Maj7
-  const inversion = Math.max(0, Math.min(intervals.length - 1, Math.round(Number(tp.arpChordInversion ?? 0))))
-  const base = (octave + 1) * 12 + rootPc
-  return intervals.map((iv, i) => {
-    const raised = i < inversion ? 12 : 0
-    return Math.max(0, Math.min(127, base + iv + raised))
-  }).sort((a, b) => a - b)
+  const inversion = Math.max(0, Math.min(3, Math.round(Number(tp.arpChordInversion ?? 0))))
+  return buildArpChordNotesFrom(rootPc, octave, quality, inversion)
+}
+
+function buildArpProgressionChordNotes(tp: Record<string, unknown>, index: number): number[] {
+  const degrees = parseArpProgression(tp.arpChordProgression)
+  const degree = degrees[((index % degrees.length) + degrees.length) % degrees.length]
+  const keyPc = Math.max(0, Math.min(11, Math.round(Number(tp.arpChordRoot ?? 0))))
+  const octave = Math.max(0, Math.min(8, Math.round(Number(tp.arpChordOctave ?? 3))))
+  const inversion = Math.max(0, Math.min(3, Math.round(Number(tp.arpChordInversion ?? 0))))
+  const table = String(tp.arpChordScaleMode ?? 'major') === 'minor' ? ARP_MINOR_DEGREES : ARP_MAJOR_DEGREES
+  const degreeIndex = ((Math.round(degree) - 1) % 7 + 7) % 7
+  const octaveShift = Math.floor((Math.round(degree) - 1) / 7)
+  const spec = table[degreeIndex] ?? table[0]
+  const chordRoot = (keyPc + spec.pc) % 12
+  return buildArpChordNotesFrom(chordRoot, Math.max(0, Math.min(8, octave + octaveShift)), spec.quality, inversion)
 }
 
 // Reusable acceleration buffers for verletStep — eliminates per-step heap allocation
@@ -447,6 +491,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const toggleStateRef  = useRef<Map<string, boolean>>(new Map())
   // Arpeggiator: current step index per timerKey
   const arpStepRef      = useRef<Map<string, number>>(new Map())
+  const arpChordStepRef = useRef<Map<string, number>>(new Map())
   // Arpeggiator: last note fired per timerKey (for monophonic noteOff on next step)
   const arpPrevNoteRef  = useRef<Map<string, number[]>>(new Map())
   const lastAutoSpawnMsRef = useRef(performance.now())
@@ -479,6 +524,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
         planetBodyStatsCache.delete(lb.id)
         toggleStateRef.current.delete(lb.id)
         arpStepRef.current.delete(lb.id)
+        arpChordStepRef.current.delete(lb.id)
         arpPrevNoteRef.current.delete(lb.id)
       }
       prevInRef.current.clear()
@@ -587,6 +633,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     measuredRealTMsRef.current.clear()
     toggleStateRef.current.clear()
     arpStepRef.current.clear()
+    arpChordStepRef.current.clear()
     arpPrevNoteRef.current.clear()
     planetBodyStatsCache.clear()
   }, [])
@@ -791,6 +838,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
               planetBodyStatsCache.delete(id)
               toggleStateRef.current.delete(id)
               arpStepRef.current.delete(id)
+              arpChordStepRef.current.delete(id)
               arpPrevNoteRef.current.delete(id)
               storeBodiesMapRef.current.delete(id)
             }
@@ -1121,6 +1169,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   const tpRecord = tp as Record<string, unknown>
                   const arpMode  = Boolean(tpRecord.arpMode)
                   const arpPlayMode = String(tpRecord.arpPlayMode ?? 'arp')
+                  const arpProgressionEnabled = Boolean(tpRecord.arpChordProgressionEnabled)
                   const arpLen   = Math.max(1, Math.min(4, Number((tp as Record<string, unknown>).arpLength ?? 4)))
                   const arpNotes = [
                     Number((tp as Record<string, unknown>).arpNote0 ?? 48),
@@ -1140,7 +1189,20 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                         waveEng?.noteOff(prevNote)
                       }
                     }
-                    if (arpPlayMode === 'chord') {
+                    if (arpProgressionEnabled) {
+                      const chordStep = arpChordStepRef.current.get(timerKey) ?? 0
+                      const chordNotes = buildArpProgressionChordNotes(tpRecord, chordStep)
+                      if (arpPlayMode === 'chord') {
+                        fireNotes = chordNotes
+                        arpChordStepRef.current.set(timerKey, chordStep + 1)
+                      } else {
+                        const step = arpStepRef.current.get(timerKey) ?? 0
+                        fireNotes = [chordNotes[step % Math.max(1, chordNotes.length)] ?? 60]
+                        const nextStep = (step + 1) % Math.max(1, chordNotes.length)
+                        arpStepRef.current.set(timerKey, nextStep)
+                        if (nextStep === 0) arpChordStepRef.current.set(timerKey, chordStep + 1)
+                      }
+                    } else if (arpPlayMode === 'chord') {
                       fireNotes = buildArpChordNotes(tpRecord)
                     } else {
                       const step = arpStepRef.current.get(timerKey) ?? 0
@@ -1649,6 +1711,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           planetBodyStatsCache.delete(id)
           toggleStateRef.current.delete(id)
           arpStepRef.current.delete(id)
+          arpChordStepRef.current.delete(id)
           arpPrevNoteRef.current.delete(id)
           clearBodyOutputLevel(id, 'sampler')
         }

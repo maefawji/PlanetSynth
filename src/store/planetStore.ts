@@ -295,6 +295,9 @@ export interface PlanetSimParams {
   arpChordQuality: 'Major' | 'Minor' | 'Sus2' | 'Sus4' | 'Dim' | 'Aug' | 'Maj7' | 'Min7' | 'Dom7'
   arpChordOctave: number
   arpChordInversion: number
+  arpChordProgressionEnabled: boolean
+  arpChordProgression: string
+  arpChordScaleMode: 'major' | 'minor'
 }
 
 // ── Next-body placement defaults ──────────────────────────────────────────────
@@ -570,6 +573,9 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   arpChordQuality: 'Maj7',
   arpChordOctave: 3,
   arpChordInversion: 0,
+  arpChordProgressionEnabled: false,
+  arpChordProgression: '1 2 5 7',
+  arpChordScaleMode: 'major',
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────

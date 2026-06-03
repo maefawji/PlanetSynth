@@ -165,6 +165,9 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       arpChordQuality: 'Maj7',
       arpChordOctave: 3,
       arpChordInversion: 0,
+      arpChordProgressionEnabled: false,
+      arpChordProgression: '1 2 5 7',
+      arpChordScaleMode: 'major',
     },
   },
   // ── Effect ─────────────────────────────────────────────────────────────────

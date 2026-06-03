@@ -1167,6 +1167,24 @@ const ARP_CHORD_INTERVALS: Record<string, number[]> = {
   Min7:  [0, 3, 7, 10],
   Dom7:  [0, 4, 7, 10],
 }
+const ARP_MAJOR_DEGREES = [
+  { pc: 0,  quality: 'Maj7' },
+  { pc: 2,  quality: 'Min7' },
+  { pc: 4,  quality: 'Min7' },
+  { pc: 5,  quality: 'Maj7' },
+  { pc: 7,  quality: 'Dom7' },
+  { pc: 9,  quality: 'Min7' },
+  { pc: 11, quality: 'Dim' },
+]
+const ARP_MINOR_DEGREES = [
+  { pc: 0,  quality: 'Min7' },
+  { pc: 2,  quality: 'Dim' },
+  { pc: 3,  quality: 'Maj7' },
+  { pc: 5,  quality: 'Min7' },
+  { pc: 7,  quality: 'Min7' },
+  { pc: 8,  quality: 'Maj7' },
+  { pc: 10, quality: 'Dom7' },
+]
 
 function getArpParam(overrides: Partial<PlanetSimParams>, key: string, fallback: unknown): unknown {
   return key in (overrides as Record<string, unknown>)
@@ -1174,14 +1192,42 @@ function getArpParam(overrides: Partial<PlanetSimParams>, key: string, fallback:
     : fallback
 }
 
+function parseRackProgression(raw: unknown): number[] {
+  const degrees = String(raw ?? '').match(/-?\d+/g)?.map(n => Number(n)).filter(n => Number.isFinite(n)) ?? []
+  return degrees.length ? degrees : [1]
+}
+
+function buildRackChordNotesFrom(rootPc: number, octave: number, quality: string, inversion: number): number[] {
+  const intervals = ARP_CHORD_INTERVALS[quality] ?? ARP_CHORD_INTERVALS.Maj7
+  const safeInversion = Math.max(0, Math.min(intervals.length - 1, Math.round(inversion)))
+  const base = (octave + 1) * 12 + rootPc
+  return intervals.map((iv, i) => Math.max(0, Math.min(127, base + iv + (i < safeInversion ? 12 : 0)))).sort((a, b) => a - b)
+}
+
 function buildRackChordNotes(overrides: Partial<PlanetSimParams>): number[] {
   const rootPc = Math.max(0, Math.min(11, Math.round(Number(getArpParam(overrides, 'arpChordRoot', 0)))))
   const octave = Math.max(0, Math.min(8, Math.round(Number(getArpParam(overrides, 'arpChordOctave', 3)))))
   const quality = String(getArpParam(overrides, 'arpChordQuality', 'Maj7'))
-  const intervals = ARP_CHORD_INTERVALS[quality] ?? ARP_CHORD_INTERVALS.Maj7
-  const inversion = Math.max(0, Math.min(intervals.length - 1, Math.round(Number(getArpParam(overrides, 'arpChordInversion', 0)))))
-  const base = (octave + 1) * 12 + rootPc
-  return intervals.map((iv, i) => Math.max(0, Math.min(127, base + iv + (i < inversion ? 12 : 0)))).sort((a, b) => a - b)
+  const inversion = Math.max(0, Math.min(3, Math.round(Number(getArpParam(overrides, 'arpChordInversion', 0)))))
+  return buildRackChordNotesFrom(rootPc, octave, quality, inversion)
+}
+
+function buildRackProgressionChordNotes(overrides: Partial<PlanetSimParams>, index: number): number[] {
+  const degrees = parseRackProgression(getArpParam(overrides, 'arpChordProgression', '1 2 5 7'))
+  const degree = degrees[((index % degrees.length) + degrees.length) % degrees.length]
+  const keyPc = Math.max(0, Math.min(11, Math.round(Number(getArpParam(overrides, 'arpChordRoot', 0)))))
+  const octave = Math.max(0, Math.min(8, Math.round(Number(getArpParam(overrides, 'arpChordOctave', 3)))))
+  const inversion = Math.max(0, Math.min(3, Math.round(Number(getArpParam(overrides, 'arpChordInversion', 0)))))
+  const table = String(getArpParam(overrides, 'arpChordScaleMode', 'major')) === 'minor' ? ARP_MINOR_DEGREES : ARP_MAJOR_DEGREES
+  const degreeIndex = ((Math.round(degree) - 1) % 7 + 7) % 7
+  const octaveShift = Math.floor((Math.round(degree) - 1) / 7)
+  const spec = table[degreeIndex] ?? table[0]
+  return buildRackChordNotesFrom((keyPc + spec.pc) % 12, Math.max(0, Math.min(8, octave + octaveShift)), spec.quality, inversion)
+}
+
+function progressionLabel(overrides: Partial<PlanetSimParams>): string {
+  const scale = String(getArpParam(overrides, 'arpChordScaleMode', 'major'))
+  return `${NOTE_NAMES[Math.max(0, Math.min(11, Number(getArpParam(overrides, 'arpChordRoot', 0))))]} ${scale} · ${String(getArpParam(overrides, 'arpChordProgression', '1 2 5 7'))}`
 }
 
 function InlineArpContent({
@@ -1192,7 +1238,8 @@ function InlineArpContent({
   const resetSlotParam  = useControlSetStore(s => s.resetSlotParam)
   const dimText = simple ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.35)'
   const playMode = String(getArpParam(overrides, 'arpPlayMode', 'arp'))
-  const chordNotes = buildRackChordNotes(overrides)
+  const progressionEnabled = Boolean(getArpParam(overrides, 'arpChordProgressionEnabled', false))
+  const chordNotes = progressionEnabled ? buildRackProgressionChordNotes(overrides, 0) : buildRackChordNotes(overrides)
   const chordLabel = chordNotes.map(midiToNoteName).join(' ')
   const division = Number(getArpParam(overrides, 'orbitTriggerDivision', 0.25))
   const divisionLabel = division === 1 ? '1/1' : division === 0.5 ? '1/2' : division === 0.25 ? '1/4' : division === 0.125 ? '1/8' : '1/16'
@@ -1281,7 +1328,9 @@ function InlineArpContent({
           }}
           title="Click to preview chord"
         >
-          <div style={{ fontSize: 7, color: dimText, lineHeight: 1, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Chord</div>
+          <div style={{ fontSize: 7, color: dimText, lineHeight: 1, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            {progressionEnabled ? progressionLabel(overrides) : 'Chord'}
+          </div>
           <div style={{ fontSize: 9, fontWeight: 800, color: accent, lineHeight: 1.2 }}>{chordLabel}</div>
         </div>
       ) : (
@@ -1319,7 +1368,7 @@ function InlineArpContent({
       </div>
       )}
       <div style={{ fontSize: 7, color: dimText, marginTop: 3, lineHeight: 1.3 }}>
-        {playMode === 'chord' ? 'click: preview · expand: edit chord' : 'scroll: ±1st · click: preview · right-click: reset'}
+        {progressionEnabled ? 'progression: advances by degree' : playMode === 'chord' ? 'click: preview · expand: edit chord' : 'scroll: ±1st · click: preview · right-click: reset'}
       </div>
     </div>
   )
@@ -1335,16 +1384,21 @@ function ArpeggioExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; 
   const border = simple ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.08)'
   const panel = simple ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.04)'
   const playMode = String(getArpParam(overrides, 'arpPlayMode', 'arp'))
+  const progressionEnabled = Boolean(getArpParam(overrides, 'arpChordProgressionEnabled', false))
+  const progression = String(getArpParam(overrides, 'arpChordProgression', '1 2 5 7'))
+  const scaleMode = String(getArpParam(overrides, 'arpChordScaleMode', 'major'))
   const rootPc = Math.max(0, Math.min(11, Math.round(Number(getArpParam(overrides, 'arpChordRoot', 0)))))
   const quality = String(getArpParam(overrides, 'arpChordQuality', 'Maj7'))
   const octave = Math.max(0, Math.min(8, Math.round(Number(getArpParam(overrides, 'arpChordOctave', 3)))))
   const inversion = Math.max(0, Math.min(3, Math.round(Number(getArpParam(overrides, 'arpChordInversion', 0)))))
   const chordNotes = buildRackChordNotes(overrides)
+  const progressionPreview = parseRackProgression(progression).slice(0, 8).map((_, i) => buildRackProgressionChordNotes(overrides, i))
   const chordPcs = new Set(chordNotes.map(n => n % 12))
   const stepNotes = ARP_STEP_KEYS.map((key, i) => Number(getArpParam(overrides, key, [48, 52, 55, 59][i])))
 
   const setNum = (key: string, value: number) => setSlotOverride(slotKey, { [key]: value } as Partial<PlanetSimParams>)
   const setStr = (key: string, value: string) => setSlotOverride(slotKey, { [key]: value } as Partial<PlanetSimParams>)
+  const setBool = (key: string, value: boolean) => setSlotOverride(slotKey, { [key]: value } as Partial<PlanetSimParams>)
 
   function preview(notes: number[]) {
     const tgt = bodyId || usePlanetStore.getState().selectedBodyId
@@ -1373,7 +1427,7 @@ function ArpeggioExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; 
   )
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr 260px', gap: 14, padding: '12px 14px', minHeight: 300 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr 260px', gap: 14, padding: '12px 14px 12px 48px', minHeight: 300 }}>
       <div style={{ borderRight: `0.5px solid ${border}`, paddingRight: 14 }}>
         {sectionLabel('Mode')}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 12 }}>
@@ -1383,6 +1437,44 @@ function ArpeggioExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; 
               border: `0.5px solid ${playMode === mode ? accent : border}`,
               background: playMode === mode ? `${accent}22` : panel,
               color: playMode === mode ? accent : dim2,
+              textTransform: 'uppercase',
+            }}>{mode}</button>
+          ))}
+        </div>
+
+        {sectionLabel('Progression')}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9, color: dim2, marginBottom: 7 }}>
+          <input
+            type="checkbox"
+            checked={progressionEnabled}
+            onChange={e => setBool('arpChordProgressionEnabled', e.target.checked)}
+            style={{ accentColor: accent }}
+          />
+          degree progression
+        </label>
+        <input
+          value={progression}
+          onChange={e => setStr('arpChordProgression', e.target.value)}
+          placeholder="1 2 5 7"
+          style={{
+            width: '100%',
+            fontSize: 11,
+            color: dim2,
+            background: panel,
+            border: `0.5px solid ${progressionEnabled ? accent + '66' : border}`,
+            borderRadius: 4,
+            padding: '5px 7px',
+            marginBottom: 6,
+            boxSizing: 'border-box',
+          }}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 12 }}>
+          {(['major', 'minor'] as const).map(mode => (
+            <button key={mode} onClick={() => setStr('arpChordScaleMode', mode)} style={{
+              fontSize: 9, fontWeight: 800, padding: '5px 7px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+              border: `0.5px solid ${scaleMode === mode ? accent : border}`,
+              background: scaleMode === mode ? `${accent}18` : panel,
+              color: scaleMode === mode ? accent : dim2,
               textTransform: 'uppercase',
             }}>{mode}</button>
           ))}
@@ -1466,6 +1558,28 @@ function ArpeggioExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; 
           }}>
             use as steps
           </button>
+        </div>
+        {sectionLabel('Progression Preview')}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 5, opacity: progressionEnabled ? 1 : 0.45 }}>
+          {progressionPreview.map((notes, i) => (
+            <button
+              key={i}
+              onClick={() => preview(notes)}
+              style={{
+                border: `0.5px solid ${border}`,
+                borderRadius: 5,
+                background: panel,
+                color: dim2,
+                padding: '6px 5px',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                minWidth: 0,
+              }}
+            >
+              <div style={{ fontSize: 8, color: accent, fontWeight: 800 }}>{parseRackProgression(progression)[i]}</div>
+              <div style={{ fontSize: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{notes.map(midiToNoteName).join(' ')}</div>
+            </button>
+          ))}
         </div>
       </div>
 
