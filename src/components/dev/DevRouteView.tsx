@@ -7,6 +7,9 @@ import {
 } from '../../store/controlSetStore'
 import { getBodyOutputLevel } from '../../audio/bodyOutputMeter'
 import { getBodyTriggerAge } from '../../audio/intersectionSynth'
+import { useWholeInstrumentStore } from '../../store/wholeInstrumentStore'
+import { useOrbitTransformStore, type OrbitTransformOutput } from '../../store/orbitTransformStore'
+import { useProjectStore } from '../../store/projectStore'
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -32,6 +35,8 @@ const C = {
   effect:     '#06b6d4',
   mixer:      '#f472b6',
   standpoint: '#0891b2',
+  transform:  '#a78bfa',
+  whole:      '#22d3ee',
   master:     '#34d399',
 }
 
@@ -515,6 +520,71 @@ function GlobalRackBar({ t }: { t: ReturnType<typeof useT> }) {
   )
 }
 
+function RouteChip({ label, value, color, t }: {
+  label: string
+  value: string
+  color: string
+  t: ReturnType<typeof useT>
+}) {
+  return (
+    <div style={{
+      minWidth: 108,
+      border: `0.5px solid ${color}55`,
+      borderRadius: 6,
+      background: `${color}12`,
+      padding: '6px 9px',
+    }}>
+      <div style={{ fontSize: 6.5, fontWeight: 800, color, letterSpacing: '0.09em', textTransform: 'uppercase', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 9, fontWeight: 800, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</div>
+    </div>
+  )
+}
+
+function WholeRouteBar({ t }: { t: ReturnType<typeof useT> }) {
+  const whole = useWholeInstrumentStore()
+  const transformNodes = useOrbitTransformStore(s => s.nodes)
+  const samples = useProjectStore(s => s.project.samples)
+  const activeTransformCount = (Object.keys(transformNodes) as OrbitTransformOutput[])
+    .filter(id => transformNodes[id].enabled)
+    .length
+  const sampleName = whole.samplerSampleId
+    ? samples.find(s => s.id === whole.samplerSampleId)?.name ?? 'missing sample'
+    : samples[0]?.name ?? 'no sample'
+  const instrumentDetail = whole.type === 'sampler'
+    ? `sampler · ${sampleName}`
+    : whole.type === 'wave-drone'
+      ? 'wave drone'
+      : 'off'
+
+  return (
+    <div style={{
+      flexShrink: 0,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 9,
+      padding: '8px 14px',
+      background: t.panelBg,
+      borderBottom: `0.5px solid ${t.border}`,
+      fontSize: 8,
+    }}>
+      <span style={{ fontWeight: 800, color: t.dim, letterSpacing: '0.08em', textTransform: 'uppercase', flexShrink: 0 }}>
+        Whole route
+      </span>
+      <RouteChip label="source" value="Orbit Hub telemetry" color={C.orbit} t={t} />
+      <span style={{ color: t.dim }}>›</span>
+      <RouteChip label="transform" value={`${activeTransformCount} nodes · level/cutoff/motion/root`} color={C.transform} t={t} />
+      <span style={{ color: t.dim }}>›</span>
+      <RouteChip label="instrument" value={instrumentDetail} color={C.whole} t={t} />
+      <span style={{ color: t.dim }}>›</span>
+      <RouteChip label="output" value="master destination" color={C.master} t={t} />
+      <span style={{ flex: 1 }} />
+      <span style={{ color: t.dim, fontStyle: 'italic' }}>
+        Transform Lab controls how Orbit Hub data reaches Whole Instrument.
+      </span>
+    </div>
+  )
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function DevRouteView() {
@@ -574,6 +644,8 @@ export function DevRouteView() {
           ['◆', 'Effect', C.effect],
           ['▧', 'Mixer', C.mixer],
           ['◉', 'Standpoint', C.standpoint],
+          ['◇', 'Transform', C.transform],
+          ['∿', 'Whole', C.whole],
           ['↑', 'Master', C.master],
         ] as [string, string, string][]).map(([icon, label, color], i, arr) => (
           <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -587,6 +659,7 @@ export function DevRouteView() {
 
       {/* ── Global rack info ── */}
       <GlobalRackBar t={t} />
+      <WholeRouteBar t={t} />
 
       {/* ── Pipeline ── */}
       <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px 40px' }}>

@@ -23,6 +23,7 @@ import { OscView } from './components/osc/OscView'
 import { WaveLabView } from './components/wave/WaveLabView'
 import { WholeInstrumentDevView } from './components/whole/WholeInstrumentDevView'
 import { OrbitHubView } from './components/orbit/OrbitHubView'
+import { TransformLabView } from './components/transform/TransformLabView'
 import type { PlanetTool } from './components/planet/PlanetCanvas'
 import { MobileHud } from './components/layout/MobileHud'
 import { usePlanetStore } from './store/planetStore'
@@ -48,7 +49,7 @@ import { initToneContext } from './audio/audioLatencySettings'
 // Apply saved audio latency setting before any Tone.start() call
 initToneContext()
 
-type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub'
+type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub' | 'transform-lab'
 
 const RACK_MIN = 120
 const RACK_MAX = 340
@@ -224,6 +225,16 @@ export default function App() {
           </div>
           <div style={{ position: 'absolute', inset: 0 }}>
             <OrbitHubView />
+          </div>
+        </div>
+      ) : appMode === 'transform-lab' ? (
+        /* ── Transform Lab ───────────────────────────────────────────────── */
+        <div style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', inset: 0, opacity: 0, pointerEvents: 'none' }}>
+            <PlanetCanvas tool="select" onSelectTool={() => {}} />
+          </div>
+          <div style={{ position: 'absolute', inset: 0 }}>
+            <TransformLabView />
           </div>
         </div>
       ) : (

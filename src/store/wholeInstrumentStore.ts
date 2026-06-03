@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type WholeInstrumentType = 'off' | 'wave-drone'
+export type WholeInstrumentType = 'off' | 'wave-drone' | 'sampler'
 export type WholeInstrumentSource = 'count' | 'mass' | 'speed' | 'spread' | 'z' | 'nearest' | 'center-x' | 'center-y'
 
 export interface WholeInstrumentSettings {
@@ -11,6 +11,8 @@ export interface WholeInstrumentSettings {
   width: number
   motion: number
   brightness: number
+  samplerSampleId: string | null
+  samplerDensity: number
 }
 
 interface WholeInstrumentState extends WholeInstrumentSettings {
@@ -28,6 +30,8 @@ export const useWholeInstrumentStore = create<WholeInstrumentState>(set => ({
   width: 0.55,
   motion: 0.45,
   brightness: 1200,
+  samplerSampleId: null,
+  samplerDensity: 0.45,
   updateWholeInstrument: patch => set(patch),
   setPanelOpen: panelOpen => set({ panelOpen }),
 }))

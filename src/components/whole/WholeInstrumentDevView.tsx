@@ -6,6 +6,8 @@ import { useWholeInstrumentStore, type WholeInstrumentSource, type WholeInstrume
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { WHOLE_ORBIT_SOURCES, wholeOrbitSourceDef } from '../../lib/wholeOrbitSources'
 import { mapWholeInstrument, wholeFeatureValues } from '../../lib/wholeInstrumentMapping'
+import { evaluateOrbitTransform } from '../../lib/orbitTransform'
+import { useOrbitTransformStore } from '../../store/orbitTransformStore'
 
 type LivePlanetBody = PlanetBody & { ax?: number; ay?: number }
 
@@ -54,6 +56,7 @@ function NumberControl({
 export function WholeInstrumentDevView() {
   const storeBodies = usePlanetStore(s => s.bodies)
   const whole = useWholeInstrumentStore()
+  const transformNodes = useOrbitTransformStore(s => s.nodes)
   const update = whole.updateWholeInstrument
   const mono = useCanvasSettingsStore(s => s.monochromeMode)
   const inverted = useCanvasSettingsStore(s => s.monochromeInverted)
@@ -80,7 +83,8 @@ export function WholeInstrumentDevView() {
   const values = wholeFeatureValues(telemetry)
   const activeValue = clamp01(values[whole.source])
   const activeSource = wholeOrbitSourceDef(whole.source)
-  const mapped = mapWholeInstrument(whole, values)
+  const transform = evaluateOrbitTransform(transformNodes, values)
+  const mapped = mapWholeInstrument(whole, values, transform)
 
   const bg = mono ? (inverted ? '#050505' : '#fff') : '#080a12'
   const fg = mono ? (inverted ? '#f7f7f7' : '#050505') : '#e5e7eb'
@@ -179,11 +183,11 @@ export function WholeInstrumentDevView() {
             <div style={{ position: 'absolute', left: '39%', top: '32%', width: 180, border: `0.5px solid ${border}`, background: panel, borderRadius: mono ? 1 : 8, padding: 12 }}>
               <div style={{ fontSize: 10, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800 }}>mapper</div>
               <div style={{ marginTop: 8, display: 'grid', gap: 6, fontSize: 11, fontFamily: 'monospace' }}>
-                <span>level = mass + count</span>
-                <span>cutoff = z + speed</span>
-                <span>lfo = speed + motion</span>
-                <span>pan = center-x * spread</span>
-                <span>root = root + center-y</span>
+                <span>level = transform node</span>
+                <span>cutoff = transform node</span>
+                <span>lfo = motion node</span>
+                <span>pan = pan node * width</span>
+                <span>root = root node</span>
               </div>
             </div>
             <div style={{ position: 'absolute', right: '7%', top: '22%', width: 190, display: 'grid', gap: 10 }}>
@@ -209,7 +213,7 @@ export function WholeInstrumentDevView() {
             <span style={{ fontSize: 10, color: activeColor, fontFamily: 'monospace' }}>{whole.source}</span>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {(['off', 'wave-drone'] as WholeInstrumentType[]).map(type => (
+            {(['off', 'wave-drone', 'sampler'] as WholeInstrumentType[]).map(type => (
               <button
                 key={type}
                 onClick={() => update({ type })}
@@ -233,6 +237,7 @@ export function WholeInstrumentDevView() {
           <NumberControl label="width" value={whole.width} min={0} max={1} step={0.01} onChange={width => update({ width })} />
           <NumberControl label="motion" value={whole.motion} min={0} max={1} step={0.01} onChange={motion => update({ motion })} />
           <NumberControl label="bright" value={whole.brightness} min={80} max={8000} step={10} onChange={brightness => update({ brightness })} />
+          <NumberControl label="density" value={whole.samplerDensity} min={0} max={1} step={0.01} onChange={samplerDensity => update({ samplerDensity })} />
         </section>
       </div>
     </div>

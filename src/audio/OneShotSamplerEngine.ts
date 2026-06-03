@@ -69,6 +69,11 @@ export class OneShotSamplerEngine {
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
+  /** Initialise the audio context/output without loading a sample yet. */
+  async init(): Promise<void> {
+    await this._ensureCtx()
+  }
+
   /** Load sample from objectUrl. No-op if url is already loaded. */
   async loadSample(url: string): Promise<void> {
     if (url === this._loadedUrl && this.buffer) return

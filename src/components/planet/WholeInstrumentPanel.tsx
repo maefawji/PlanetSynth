@@ -7,6 +7,9 @@ import { getPlanetLiveBodySnapshot } from './PlanetCanvas'
 import { computeOrbitTelemetry, type OrbitTelemetrySnapshot } from '../../lib/orbitTelemetry'
 import { WHOLE_ORBIT_SOURCES, wholeOrbitSourceDef } from '../../lib/wholeOrbitSources'
 import { mapWholeInstrument, wholeFeatureValues } from '../../lib/wholeInstrumentMapping'
+import { evaluateOrbitTransform } from '../../lib/orbitTransform'
+import { useOrbitTransformStore } from '../../store/orbitTransformStore'
+import { useProjectStore } from '../../store/projectStore'
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, Number.isFinite(v) ? v : lo))
@@ -134,13 +137,16 @@ export function WholeInstrumentPanel({ height }: { height: number }) {
   const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
   const simple = simpleTheme || monochromeMode
   const whole = useWholeInstrumentStore()
+  const transformNodes = useOrbitTransformStore(s => s.nodes)
+  const samples = useProjectStore(s => s.project.samples)
   const update = whole.updateWholeInstrument
   const close = whole.setPanelOpen
   const features = computeWholeFeatures()
   const feature = features.values[whole.source]
   const meta = wholeOrbitSourceDef(whole.source)
   const rawSourceValue = meta.rawValue(features.telemetry as OrbitTelemetrySnapshot)
-  const mapped = mapWholeInstrument(whole, features.values)
+  const transform = evaluateOrbitTransform(transformNodes, features.values)
+  const mapped = mapWholeInstrument(whole, features.values, transform)
   const mappedSynthesis = clamp(mapped.tension * 0.52 + mapped.width * 0.34 + features.values.speed * 0.14, 0, 1)
 
   const bg = simple ? 'rgba(246,246,243,0.98)' : '#0d0d16'
@@ -186,7 +192,7 @@ export function WholeInstrumentPanel({ height }: { height: number }) {
           color: ready ? '#22c55e' : dim,
           border: `0.5px solid ${ready ? 'rgba(34,197,94,0.3)' : border}`,
         }}>
-          {ready ? '● wave drone' : '○ off'}
+          {ready ? `● ${whole.type}` : '○ off'}
         </div>
         <button
           onClick={() => close(false)}
@@ -287,32 +293,32 @@ export function WholeInstrumentPanel({ height }: { height: number }) {
               <MappingRow
                 label="cutoff"
                 value={`${Math.round(mapped.cutoff)}Hz`}
-                detail={`brightness ← z + speed`}
+                detail={`transform.cutoff ${transform.cutoff.toFixed(3)}`}
               />
               <MappingRow
                 label="level"
                 value={mapped.level.toFixed(3)}
-                detail={`volume ← mass + count`}
+                detail={`transform.level ${transform.level.toFixed(3)}`}
               />
               <MappingRow
                 label="lfo"
                 value={`${mapped.lfoRate.toFixed(2)}Hz`}
-                detail={`motion ← speed`}
+                detail={`transform.motion ${transform.motion.toFixed(3)}`}
               />
               <MappingRow
                 label="depth"
                 value={mapped.lfoDepth.toFixed(3)}
-                detail={`depth ← spread + nearest`}
+                detail={`transform.depth ${transform.depth.toFixed(3)}`}
               />
               <MappingRow
                 label="pan"
                 value={mapped.pan.toFixed(3)}
-                detail={`pan ← center x`}
+                detail={`transform.pan ${transform.pan.toFixed(3)}`}
               />
               <MappingRow
                 label="notes"
                 value={mapped.notes.join(' ')}
-                detail={`root/register ← center y`}
+                detail={`transform.root ${transform.root.toFixed(3)}`}
               />
             </div>
           </div>
@@ -325,6 +331,7 @@ export function WholeInstrumentPanel({ height }: { height: number }) {
               {([
                 ['off', 'Off'],
                 ['wave-drone', 'Wave Drone'],
+                ['sampler', 'Sampler'],
               ] as [WholeInstrumentType, string][]).map(([type, label]) => (
                 <button
                   key={type}
@@ -348,6 +355,25 @@ export function WholeInstrumentPanel({ height }: { height: number }) {
             </div>
             <NumberControl label="Volume" value={whole.volume} min={0} max={1} step={0.05} onChange={volume => update({ volume })} />
             <NumberControl label="Root" value={whole.rootNote} min={24} max={72} step={1} onChange={rootNote => update({ rootNote })} />
+            {whole.type === 'sampler' && (
+              <div style={{ display: 'grid', gap: 7, marginTop: 8 }}>
+                <label style={{ display: 'grid', gridTemplateColumns: '58px 1fr', alignItems: 'center', gap: 7 }}>
+                  <span style={{ fontSize: 8, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>Sample</span>
+                  <select
+                    value={whole.samplerSampleId ?? ''}
+                    onChange={e => update({ samplerSampleId: e.target.value || null })}
+                    style={{ minWidth: 0, border: 'none', borderRadius: 4, padding: '5px 6px', background: input, color: text, fontSize: 9, fontFamily: 'inherit' }}
+                  >
+                    <option value="">Auto first sample</option>
+                    {samples.map(sample => <option key={sample.id} value={sample.id}>{sample.name}</option>)}
+                  </select>
+                </label>
+                <NumberControl label="Density" value={whole.samplerDensity} min={0} max={1} step={0.05} onChange={samplerDensity => update({ samplerDensity })} />
+                <div style={{ fontSize: 8, color: dim, lineHeight: 1.45, fontFamily: 'monospace', paddingLeft: 65 }}>
+                  level→gain · motion→trigger · root/tension→rate
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ border: `0.5px solid ${border}`, borderRadius: 5, padding: 10 }}>
