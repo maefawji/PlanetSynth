@@ -3,7 +3,7 @@ import type { PlanetSimParams } from './planetStore'
 
 // ── Control Set definition ────────────────────────────────────────────────────
 
-export type ControlSetCategory = 'trigger' | 'instrument' | 'effect'
+export type ControlSetCategory = 'trigger' | 'note' | 'instrument' | 'effect'
 
 export interface ControlSet {
   id: string
@@ -31,7 +31,7 @@ function loadUserControlSets(): ControlSet[] {
     if (!Array.isArray(parsed)) return []
     return parsed.filter(cs =>
       cs && typeof cs.id === 'string' && cs.id.startsWith('user:') &&
-      ['trigger', 'instrument', 'effect'].includes(cs.category) &&
+      ['trigger', 'note', 'instrument', 'effect'].includes(cs.category) &&
       typeof cs.name === 'string' && cs.params && typeof cs.params === 'object'
     ) as ControlSet[]
   } catch (_) {
@@ -59,6 +59,25 @@ export function findBuiltinControlSet(id: string | null): ControlSet | null {
 }
 
 // ── Built-in sets ─────────────────────────────────────────────────────────────
+
+const ARPEGGIO_NOTE_PARAMS: Partial<PlanetSimParams> = {
+  arpMode:   true,
+  arpPlayMode: 'arp',
+  arpLength: 4,
+  arpNote0:  48,
+  arpNote1:  52,
+  arpNote2:  55,
+  arpNote3:  59,
+  arpChordRoot: 0,
+  arpChordQuality: 'Maj7',
+  arpChordOctave: 3,
+  arpChordInversion: 0,
+  arpChordProgressionEnabled: false,
+  arpChordProgression: '1 2 5 7',
+  arpChordScaleMode: 'major',
+  arpUseSeq: false,
+  arpChordSeq: '[{"root":0,"quality":"Maj7","inv":0,"oct":3,"beats":4},{"root":5,"quality":"Maj7","inv":1,"oct":3,"beats":4},{"root":9,"quality":"Min7","inv":0,"oct":3,"beats":4},{"root":7,"quality":"Dom7","inv":0,"oct":3,"beats":4}]',
+}
 
 export const BUILTIN_CONTROL_SETS: ControlSet[] = [
   // ── Trigger ────────────────────────────────────────────────────────────────
@@ -140,37 +159,51 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
     },
   },
   {
+    id: 'trigger-orbit-step',
+    name: 'Orbit Step',
+    icon: '↺',
+    color: '#60a5fa',
+    category: 'trigger',
+    description:
+      'Orbit周期を基準に一定間隔でtrigger eventを送信。\n' +
+      'Note slotがある場合、そのNote processorへ発火を渡します。',
+    params: {
+      orbitTriggerMode:     'orbit-complete',
+      orbitTriggerType:     'tperiod',
+      orbitTriggerDivision: 0.25,
+      orbitStepSeqEnabled:  false,
+      orbitStepSeqLength:   8,
+      orbitStepSeqPattern:  '11111111',
+      rendezvousDistance:   0,
+    },
+  },
+  {
+    id: 'note-arpeggio',
+    name: 'Arpeggio Note',
+    icon: '♜',
+    color: '#f59e0b',
+    category: 'note',
+    description:
+      'Trigger eventを受け取り、ノート列またはコードへ変換。\n' +
+      'Arp mode はステップを巡回、Chord mode は選択したコードを同時発音。\n' +
+      '拡張パネルで root / quality / voicing を編集できます。',
+    params: ARPEGGIO_NOTE_PARAMS,
+  },
+  {
     id: 'trigger-arpeggio',
     name: 'Arpeggio',
     icon: '♜',
     color: '#f59e0b',
     category: 'trigger',
     description:
-      'T周期を1小節としてノート列またはコードをトリガー。\n' +
-      'Arp mode はステップを巡回、Chord mode は選択したコードを同時発音。\n' +
-      '拡張パネルで root / quality / voicing を編集できます。',
+      'Legacy combined Orbit Step + Arpeggio Note preset.\n' +
+      'Use Orbit Step in Trigger and Arpeggio Note in Note for the separated flow.',
     params: {
       orbitTriggerMode:     'orbit-complete',
       orbitTriggerType:     'tperiod',
-      orbitTriggerDivision: 0.25,   // 4 triggers per orbit = quarter notes
+      orbitTriggerDivision: 0.25,
       rendezvousDistance:   0,
-      arpMode:   true,
-      arpPlayMode: 'arp',
-      arpLength: 4,
-      arpNote0:  48,  // C3
-      arpNote1:  52,  // E3
-      arpNote2:  55,  // G3
-      arpNote3:  59,  // B3
-      arpChordRoot: 0,
-      arpChordQuality: 'Maj7',
-      arpChordOctave: 3,
-      arpChordInversion: 0,
-      arpChordProgressionEnabled: false,
-      arpChordProgression: '1 2 5 7',
-      arpChordScaleMode: 'major',
-      // Chord Sequence mode: each step has individual root/quality/inv/oct
-      arpUseSeq: false,
-      arpChordSeq: '[{"root":0,"quality":"Maj7","inv":0,"oct":3,"beats":4},{"root":5,"quality":"Maj7","inv":1,"oct":3,"beats":4},{"root":9,"quality":"Min7","inv":0,"oct":3,"beats":4},{"root":7,"quality":"Dom7","inv":0,"oct":3,"beats":4}]',
+      ...ARPEGGIO_NOTE_PARAMS,
     },
   },
   // ── Effect ─────────────────────────────────────────────────────────────────
@@ -451,6 +484,23 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
     },
   },
   {
+    id: 'instrument-sampler',
+    name: 'Sampler',
+    icon: '⟿',
+    color: '#818cf8',
+    category: 'instrument',
+    description:
+      'ピッチを維持したままサンプル長を軌道周期に同期するタイムストレッチサンプラー。\n' +
+      'preservesPitch によりブラウザのフェーズボコーダを使用。\n' +
+      'ループ比で何周期分に引き伸ばすか設定可能。',
+    params: {
+      oneShotType:       'stretch-sampler',
+      orbitLoopNumer:    1,
+      orbitLoopDenom:    1,
+      sampleOrbitSource: 'current',
+    },
+  },
+  {
     id: 'instrument-wave-lab',
     name: 'Wave Lab',
     icon: '∿',
@@ -501,6 +551,8 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
 export interface BodyRack {
   /** Ordered list of trigger ControlSet IDs (multiple allowed, each fires independently) */
   triggers:   string[]
+  /** ControlSet ID for the note processor slot, or null */
+  note: string | null
   /** ControlSet ID for the instrument slot, or null */
   instrument: string | null
   /** Ordered list of effect ControlSet IDs */
@@ -513,6 +565,7 @@ export interface BodyRack {
  */
 export interface BodyRackOverride {
   triggers?:   string[]   // if present, replaces global triggers list
+  note?:       string | null
   instrument?: string | null
   effects?:    string[]   // if present, replaces global effects list
 }
@@ -521,18 +574,18 @@ export const MAX_EFFECTS  = 6
 export const MAX_TRIGGERS = 4
 
 export const DEFAULT_BODY_RACKS: Record<string, BodyRackOverride> = {
-  sun:       { triggers: ['trigger-empty'], instrument: 'instrument-empty', effects: ['effect-empty'] },
-  perturber: { triggers: ['trigger-arpeggio'], instrument: 'instrument-wave-lab', effects: ['effect-empty'] },
+  sun:       { triggers: ['trigger-empty'], note: null, instrument: 'instrument-empty', effects: ['effect-empty'] },
+  perturber: { triggers: ['trigger-orbit-step'], note: 'note-arpeggio', instrument: 'instrument-wave-lab', effects: ['effect-empty'] },
 }
 
 /** Blank rack — used when clearing. Empty trigger list = no trigger. */
 function emptyRack(): BodyRack {
-  return { triggers: [], instrument: 'instrument-oneshot', effects: [] }
+  return { triggers: [], note: null, instrument: 'instrument-oneshot', effects: [] }
 }
 
 /** Initial global rack — arpeggio trigger + Wave Lab instrument as defaults. */
 function defaultGlobalRack(): BodyRack {
-  return { triggers: ['trigger-arpeggio'], instrument: 'instrument-wave-lab', effects: [] }
+  return { triggers: ['trigger-orbit-step'], note: 'note-arpeggio', instrument: 'instrument-wave-lab', effects: [] }
 }
 
 function defaultBodyRacks(): Record<string, BodyRackOverride> {
@@ -550,7 +603,7 @@ function defaultBodyRacks(): Record<string, BodyRackOverride> {
 // Format: "g:trigger:N" | "g:instrument" | "g:effect:N"
 //         "b:{id}:trigger:N" | "b:{id}:instrument" | "b:{id}:effect:N"
 
-type SlotSuffix = 'instrument' | `trigger:${number}` | `effect:${number}`
+type SlotSuffix = 'note' | 'instrument' | `trigger:${number}` | `effect:${number}`
 
 function gKey(slot: SlotSuffix): string {
   return `g:${slot}`
@@ -575,8 +628,8 @@ interface ControlSetState {
   // ── Global rack ─────────────────────────────────────────────────────────
   globalRack: BodyRack
 
-  /** Set the instrument slot (id=null to clear). For legacy trigger compat: sets triggers=[id]. */
-  setGlobalSlot:      (slot: 'instrument', id: string | null) => void
+  /** Set a single-value global slot (id=null to clear). */
+  setGlobalSlot:      (slot: 'note' | 'instrument', id: string | null) => void
   addGlobalTrigger:   (id: string) => void
   removeGlobalTrigger:(index: number) => void
   addGlobalEffect:    (id: string) => void
@@ -586,16 +639,16 @@ interface ControlSetState {
   // ── Per-body racks ───────────────────────────────────────────────────────
   bodyRacks: Record<string, BodyRackOverride>
 
-  /** Set the instrument slot override for a body.  Pass null to explicitly clear. */
-  setBodySlot:      (bodyId: string, slot: 'instrument', id: string | null) => void
-  /** Remove the instrument override (reverts to global) */
-  clearBodySlot:    (bodyId: string, slot: 'instrument') => void
+  /** Set a single-value slot override for a body. Pass null to explicitly clear. */
+  setBodySlot:      (bodyId: string, slot: 'note' | 'instrument', id: string | null) => void
+  /** Remove the slot override (reverts to global) */
+  clearBodySlot:    (bodyId: string, slot: 'note' | 'instrument') => void
   addBodyTrigger:   (bodyId: string, id: string) => void
   removeBodyTrigger:(bodyId: string, index: number) => void
   clearBodyTriggers:(bodyId: string) => void
   addBodyEffect:    (bodyId: string, id: string) => void
   removeBodyEffect: (bodyId: string, index: number) => void
-  makeBodyRackUnique:(bodyId: string, slot: 'triggers' | 'instrument' | 'effects') => void
+  makeBodyRackUnique:(bodyId: string, slot: 'triggers' | 'note' | 'instrument' | 'effects') => void
   clearBodyRack:    (bodyId: string) => void
   resetBodyRacksToDefaults: () => void
 
@@ -681,12 +734,14 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
       persistUserControlSets(next)
       const globalRack: BodyRack = {
         triggers: s.globalRack.triggers.filter(csId => csId !== id),
+        note: s.globalRack.note === id ? null : s.globalRack.note,
         instrument: s.globalRack.instrument === id ? null : s.globalRack.instrument,
         effects: s.globalRack.effects.filter(csId => csId !== id),
       }
       const bodyRacks = Object.fromEntries(Object.entries(s.bodyRacks).map(([bodyId, rack]) => [bodyId, {
         ...rack,
         triggers: rack.triggers?.filter(csId => csId !== id),
+        note: rack.note === id ? null : rack.note,
         instrument: rack.instrument === id ? null : rack.instrument,
         effects: rack.effects?.filter(csId => csId !== id),
       }]))
@@ -704,7 +759,7 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
       const now = new Date().toISOString()
       for (const raw of incoming) {
         if (!raw || typeof raw !== 'object') continue
-        if (!['trigger', 'instrument', 'effect'].includes(raw.category)) continue
+        if (!['trigger', 'note', 'instrument', 'effect'].includes(raw.category)) continue
         if (!raw.params || typeof raw.params !== 'object') continue
         const category = raw.category as ControlSetCategory
         const id = typeof raw.id === 'string' && raw.id.startsWith('user:') ? raw.id : makeUserControlSetId(category)
@@ -825,7 +880,7 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
       delete next[slot]
       const overrides = { ...s.rackParamOverrides }
       delete overrides[bKey(bodyId, slot)]
-      return { bodyRacks: { ...s.bodyRacks, [bodyId]: next } }
+      return { bodyRacks: { ...s.bodyRacks, [bodyId]: next }, rackParamOverrides: overrides }
     })
   },
 
@@ -930,6 +985,13 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
           const bodyKey = bKey(bodyId, `trigger:${i}`)
           if (s.rackParamOverrides[globalKey]) overrides[bodyKey] = { ...s.rackParamOverrides[globalKey] }
         })
+      } else if (slot === 'note') {
+        next.note = s.globalRack.note
+        delete overrides[bKey(bodyId, 'note')]
+        const globalKey = gKey('note')
+        if (s.rackParamOverrides[globalKey]) {
+          overrides[bKey(bodyId, 'note')] = { ...s.rackParamOverrides[globalKey] }
+        }
       } else if (slot === 'instrument') {
         next.instrument = s.globalRack.instrument
         delete overrides[bKey(bodyId, 'instrument')]
@@ -1018,6 +1080,7 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
     //   instrument       — use body's value if non-null; otherwise use global
     return {
       triggers:   (ov.triggers   != null && ov.triggers.length   > 0) ? ov.triggers   : globalRack.triggers,
+      note:       (ov.note       != null)                              ? ov.note       : globalRack.note,
       instrument: (ov.instrument != null)                              ? ov.instrument : globalRack.instrument,
       effects:    (ov.effects    != null && ov.effects.length    > 0) ? ov.effects    : globalRack.effects,
     }
@@ -1031,6 +1094,7 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
 
     const bodyOvMap  = state.bodyRacks[bodyId] ?? {}
     const trigIsBody = bodyOvMap.triggers   != null && bodyOvMap.triggers.length   > 0
+    const noteIsBody = bodyOvMap.note       != null
     const instIsBody = bodyOvMap.instrument != null
     const effIsBody  = bodyOvMap.effects    != null && bodyOvMap.effects.length    > 0
 
@@ -1053,6 +1117,12 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
         trigIsBody ? bKey(bodyId, `trigger:${i}`) : gKey(`trigger:${i}`),
         trigIsBody, `trigger:${i}`)
     })
+    // Note processor
+    if (rack.note) {
+      applySlot(rack.note,
+        noteIsBody ? bKey(bodyId, 'note') : gKey('note'),
+        noteIsBody, 'note')
+    }
     // Instrument
     if (rack.instrument) {
       applySlot(rack.instrument,
@@ -1075,6 +1145,18 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
     const rack = state.getBodyEffectiveRack(bodyId)
     const bodyOvMap  = state.bodyRacks[bodyId] ?? {}
     const trigIsBody = bodyOvMap.triggers != null && bodyOvMap.triggers.length > 0
+    const noteIsBody = bodyOvMap.note != null
+    const noteParams = rack.note
+      ? mergeWithOverride(
+          csParamsFromState(state, rack.note),
+          noteIsBody ? bKey(bodyId, 'note') : gKey('note'),
+          rackParamOverrides,
+        )
+      : {}
+    if (rack.note && !noteIsBody) {
+      const bodyNoteOv = rackParamOverrides[bKey(bodyId, 'note')]
+      if (bodyNoteOv) Object.assign(noteParams, bodyNoteOv)
+    }
 
     return rack.triggers.map((id, i) => {
       const effectiveKey = trigIsBody ? bKey(bodyId, `trigger:${i}`) : gKey(`trigger:${i}`)
@@ -1083,6 +1165,7 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
         const bodyOv = rackParamOverrides[bKey(bodyId, `trigger:${i}`)]
         if (bodyOv) Object.assign(merged, bodyOv)
       }
+      Object.assign(merged, noteParams)
       return merged
     })
   },
@@ -1093,6 +1176,9 @@ export const useControlSetStore = create<ControlSetState>((set, get) => ({
     globalRack.triggers.forEach((id, i) => {
       Object.assign(merged, mergeWithOverride(csParamsFromState(get(), id), gKey(`trigger:${i}`), rackParamOverrides))
     })
+    if (globalRack.note) {
+      Object.assign(merged, mergeWithOverride(csParamsFromState(get(), globalRack.note), gKey('note'), rackParamOverrides))
+    }
     if (globalRack.instrument) {
       Object.assign(merged, mergeWithOverride(csParamsFromState(get(), globalRack.instrument), gKey('instrument'), rackParamOverrides))
     }

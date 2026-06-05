@@ -8,6 +8,7 @@
 import { useControlSetStore } from '../store/controlSetStore'
 import { usePlanetStore } from '../store/planetStore'
 import { getBodyOneShotEngine } from './OneShotSamplerEngine'
+import { getBodyStretchSamplerEngine } from './StretchSamplerEngine'
 import { getBodyOscSynthEngine } from '../components/planet/OscSynthLayer'
 import {
   getBodyWaveLabEngine,
@@ -63,6 +64,16 @@ export function fireBodyInstrumentTrigger(bodyId: string, playbackRate = 1, note
   if (rack.instrument === 'instrument-oneshot-stretch') {
     const eng = getBodyOneShotEngine(bodyId)
     if (eng?.hasBuffer) {
+      eng.trigger(playbackRate)
+      return true
+    }
+    return false
+  }
+
+  if (rack.instrument === 'instrument-sampler') {
+    const eng = getBodyStretchSamplerEngine(bodyId)
+    if (eng?.hasBuffer) {
+      // playbackRate = bufferDuration / targetPeriodSec (computed in PlanetCanvas)
       eng.trigger(playbackRate)
       return true
     }

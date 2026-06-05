@@ -31,14 +31,15 @@ import { computeBodyRackOutputSpatial } from '../../audio/bodyRackOutput'
 import { clearBusOscilloscopeAnalysers, getBusOscilloscopeData, setBusStandpointSpatial } from '../../audio/rackBusMixer'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
 import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
+import { getBodyStretchSamplerEngine } from '../../audio/StretchSamplerEngine'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
 import { getBodyWaveLabEngine } from './WaveLabInstrumentLayer'
 import { sendMidiNote } from '../../audio/midiManager'
 import { unlockMobileAudio } from '../../audio/mobileAudioUnlock'
 import { generateStarIdentity, collectExistingIdentities } from '../../lib/starNaming'
 import { useArpProgressionStore } from '../../store/arpProgressionStore'
-import { randomGrammar, randomSeed } from '../../sigil/sigilGenerator'
-import type { SigilGrammar } from '../../sigil/sigilGenerator'
+import { randomGrammar, randomSeed, generateFromGrammar } from '../../sigil/sigilGenerator'
+import type { SigilGrammar, SigilShape } from '../../sigil/sigilGenerator'
 
 export type PlanetTool = 'select' | 'add-sun' | 'add-planet' | 'probe'
 
@@ -532,7 +533,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   // Per-frame caches: populated once at frame start, reused throughout the RAF loop
   const bodyParamsCacheRef = useRef<Map<string, Partial<PlanetSimParams>>>(new Map())
   const trigParamsCacheRef = useRef<Map<string, Partial<PlanetSimParams>[]>>(new Map())
-  const rackCacheRef       = useRef<Map<string, { triggers: string[]; instrument: string | null; effects: string[] }>>(new Map())
+  const rackCacheRef       = useRef<Map<string, { triggers: string[]; note: string | null; instrument: string | null; effects: string[] }>>(new Map())
   const liveBodiesRef   = useRef<LiveBody[]>([])
   const trailsRef       = useRef<Map<string, TrailRing>>(new Map())
   const bodyOscilloscopeRef = useRef<Map<string, Float32Array>>(new Map())
@@ -555,14 +556,28 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   // Arpeggiator: current step index per timerKey
   const arpStepRef      = useRef<Map<string, number>>(new Map())
   const arpChordStepRef = useRef<Map<string, number>>(new Map())
+  const orbitStepSeqRef = useRef<Map<string, number>>(new Map())
   // Arpeggiator: last note fired per timerKey (for monophonic noteOff on next step)
   const arpPrevNoteRef  = useRef<Map<string, number[]>>(new Map())
   const lastAutoSpawnMsRef = useRef(performance.now())
+  // Sigil shape cache: keyed by body id — recomputed only when identity/grammar changes
+  const sigilCacheRef = useRef<Map<string, { key: string; shapes: SigilShape[] }>>(new Map())
   const triggerStarMarkersRef = useRef<TriggerStarMarker[]>([])
   // Stardust: persistent dots left after trigger star animations
   const stardustDotsRef = useRef<TriggerStarMarker[]>([])
   // expose for external clear
   _stardustDotsRefExternal = stardustDotsRef
+
+  function shouldFireOrbitStep(tpRecord: Record<string, unknown>, timerKey: string): boolean {
+    if (!Boolean(tpRecord.orbitStepSeqEnabled)) return true
+    const len = Math.max(1, Math.min(16, Math.round(Number(tpRecord.orbitStepSeqLength ?? 8))))
+    const rawPattern = String(tpRecord.orbitStepSeqPattern ?? '11111111').replace(/[^01xX.-]/g, '')
+    const pattern = rawPattern.length > 0 ? rawPattern : '11111111'
+    const step = orbitStepSeqRef.current.get(timerKey) ?? 0
+    orbitStepSeqRef.current.set(timerKey, (step + 1) % len)
+    const mark = pattern[step % Math.min(len, pattern.length)] ?? '1'
+    return mark !== '0' && mark !== '.' && mark !== '-'
+  }
 
   // Sync storeBodiesRef + purge deleted bodies from live simulation
   useEffect(() => {
@@ -586,6 +601,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
         lfoAccumRef.current.delete(lb.id)
         lastTriggerSimTimeRef.current.delete(lb.id)
         lastTriggerWallMsRef.current.delete(lb.id)
+        orbitStepSeqRef.current.delete(lb.id)
         tperiodIntervalMsRef.current.delete(lb.id)
         lastOrbitCrossWallMsRef.current.delete(lb.id)
         measuredRealTMsRef.current.delete(lb.id)
@@ -704,6 +720,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     simTimeRef.current = 0
     lastTriggerSimTimeRef.current.clear()
     lastTriggerWallMsRef.current.clear()
+    orbitStepSeqRef.current.clear()
     tperiodIntervalMsRef.current.clear()
     lastOrbitCrossWallMsRef.current.clear()
     measuredRealTMsRef.current.clear()
@@ -909,6 +926,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
               lfoAccumRef.current.delete(id)
               lastTriggerSimTimeRef.current.delete(id)
               lastTriggerWallMsRef.current.delete(id)
+              orbitStepSeqRef.current.delete(id)
               tperiodIntervalMsRef.current.delete(id)
               planetBodyStatsCache.delete(id)
               toggleStateRef.current.delete(id)
@@ -1140,13 +1158,78 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           const sbi   = sbMap.get(b.id)
           if (!params.paused && sbi && !sbi.muted && newAccum !== 0) {
             const triggerParamsList = tpCache.get(b.id) ?? []
-            const rack = rkCache.get(b.id) ?? { triggers: [] as string[], instrument: null as string | null, effects: [] as string[] }
+            const rack = rkCache.get(b.id) ?? { triggers: [] as string[], note: null as string | null, instrument: null as string | null, effects: [] as string[] }
 
             for (let ti = 0; ti < triggerParamsList.length; ti++) {
               const tp       = triggerParamsList[ti]
               const tpOrbitMode = String(tp.orbitTriggerMode ?? '')
               const tpType      = String(tp.orbitTriggerType ?? 'cumulative')
               if (tpOrbitMode !== 'orbit-complete') continue
+              const timerKey = ti === 0 ? b.id : `${b.id}:${ti}`
+              const tpRecord = tp as Record<string, unknown>
+
+              const resolveFireNotes = () => {
+                const arpMode  = Boolean(tpRecord.arpMode)
+                const arpPlayMode = String(tpRecord.arpPlayMode ?? 'arp')
+                const arpUseSeq = Boolean(tpRecord.arpUseSeq)
+                const arpProgressionEnabled = Boolean(tpRecord.arpChordProgressionEnabled)
+                const arpLen   = Math.max(1, Math.min(4, Number(tpRecord.arpLength ?? 4)))
+                const arpNotes = [
+                  Number(tpRecord.arpNote0 ?? 48),
+                  Number(tpRecord.arpNote1 ?? 52),
+                  Number(tpRecord.arpNote2 ?? 55),
+                  Number(tpRecord.arpNote3 ?? 59),
+                ]
+                let fireNotes = [sbi.midiNote ?? 60]
+                if (arpMode) {
+                  const prevNotes = arpPrevNoteRef.current.get(timerKey) ?? []
+                  if (prevNotes.length > 0) {
+                    const oscEng = getBodyOscSynthEngine(b.id)
+                    const waveEng = getBodyWaveLabEngine(b.id)
+                    for (const prevNote of prevNotes) {
+                      oscEng?.noteOff(prevNote)
+                      waveEng?.noteOff(prevNote)
+                    }
+                  }
+                  if (arpUseSeq) {
+                    const chordStep = arpChordStepRef.current.get(timerKey) ?? 0
+                    const chordNotes = buildArpSeqChordNotes(tpRecord, chordStep)
+                    if (arpPlayMode === 'chord') {
+                      fireNotes = chordNotes
+                      arpChordStepRef.current.set(timerKey, chordStep + 1)
+                    } else {
+                      const step = arpStepRef.current.get(timerKey) ?? 0
+                      fireNotes = [chordNotes[step % Math.max(1, chordNotes.length)] ?? 60]
+                      const nextStep = (step + 1) % Math.max(1, chordNotes.length)
+                      arpStepRef.current.set(timerKey, nextStep)
+                      if (nextStep === 0) arpChordStepRef.current.set(timerKey, chordStep + 1)
+                    }
+                  } else if (arpProgressionEnabled) {
+                    const chordStep = arpChordStepRef.current.get(timerKey) ?? 0
+                    const chordNotes = buildArpProgressionChordNotes(tpRecord, chordStep)
+                    if (arpPlayMode === 'chord') {
+                      fireNotes = chordNotes
+                      updateArpProgressionLiveState(b.id, ti, tpRecord, chordStep, fireNotes)
+                      arpChordStepRef.current.set(timerKey, chordStep + 1)
+                    } else {
+                      const step = arpStepRef.current.get(timerKey) ?? 0
+                      fireNotes = [chordNotes[step % Math.max(1, chordNotes.length)] ?? 60]
+                      updateArpProgressionLiveState(b.id, ti, tpRecord, chordStep, chordNotes)
+                      const nextStep = (step + 1) % Math.max(1, chordNotes.length)
+                      arpStepRef.current.set(timerKey, nextStep)
+                      if (nextStep === 0) arpChordStepRef.current.set(timerKey, chordStep + 1)
+                    }
+                  } else if (arpPlayMode === 'chord') {
+                    fireNotes = buildArpChordNotes(tpRecord)
+                  } else {
+                    const step = arpStepRef.current.get(timerKey) ?? 0
+                    fireNotes = [arpNotes[step % arpLen]]
+                    arpStepRef.current.set(timerKey, (step + 1) % arpLen)
+                  }
+                  arpPrevNoteRef.current.set(timerKey, fireNotes)
+                }
+                return { fireNotes, arpMode }
+              }
 
               if (tpType !== 'tperiod') {
                 // ── Orbit-complete (angle-based) ──────────────────────────────
@@ -1155,23 +1238,48 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 const prevOrbit = Math.floor(Math.abs(prevAccum) / unit)
                 const currOrbit = Math.floor(Math.abs(newAccum) / unit)
                 if (currOrbit > prevOrbit) {
-                  sendMidiNote(sbi.midiChannel ?? 1, sbi.midiNote ?? 60, sbi.midiVelocity ?? 100, 200)
+                  if (!shouldFireOrbitStep(tpRecord, timerKey)) continue
+                  const { fireNotes, arpMode } = resolveFireNotes()
+                  for (const fireNote of fireNotes) {
+                    sendMidiNote(sbi.midiChannel ?? 1, fireNote, sbi.midiVelocity ?? 100, 200)
+                  }
                   // Only fire instrument on the FIRST (ti=0) trigger to avoid duplicate audio
                   if (ti === 0) {
                     const numer = Number((bodyParams as Record<string, unknown>).orbitLoopNumer ?? 1)
                     const denom = Number((bodyParams as Record<string, unknown>).orbitLoopDenom ?? 1)
+                    const sourceDiv = Math.max(0.0625, Number(tp.orbitTriggerDivision ?? 1))
                     const stretchRatio = denom > 0 ? numer / denom : 1
                     const oneShotDur = getBodyOneShotEngine(b.id)?.bufferDuration ?? 0
-                    const instrRate = rack.instrument === 'instrument-oneshot-stretch'
-                      ? (computeSampleStretchRate({
-                          sampleDuration: oneShotDur, period,
-                          smoothedPeriod: _smoothedPeriods.get(b.id),
-                          dt: params.dt, frameSeconds: frameTimeRef.current / 1000,
-                          stretchRatio, stretchMode: 'rate',
-                          orbitSource: (bodyParams as Record<string, unknown>).sampleOrbitSource as string ?? 'current',
-                        }) ?? 1)
-                      : 1
-                    if (fireBodyInstrumentTrigger(b.id, instrRate)) {
+                    const instrRate = 1
+                    // oneshot-stretch: just trigger at rate=1 regardless of note
+                    if (rack.instrument === 'instrument-oneshot-stretch') {
+                      if (fireBodyInstrumentTrigger(b.id, 1, undefined)) {
+                        markTriggeredOnCanvas(b.id)
+                      }
+                    } else if (rack.instrument === 'instrument-sampler') {
+                      // pitch-preserving time stretch: rate = bufDur / realPeriodSec
+                      const stretchEng = getBodyStretchSamplerEngine(b.id)
+                      const bufDur = stretchEng?.bufferDuration ?? 0
+                      const simStep = Math.max(0.000001, params.dt * STEPS_PER_FRAME)
+                      const realPeriodSec = isFinite(period) && period > 0
+                        ? (period / simStep) * (frameTimeRef.current / 1000) * stretchRatio
+                        : 0
+                      const samplerRate = bufDur > 0 && realPeriodSec > 0
+                        ? Math.max(0.01, Math.min(8, bufDur / realPeriodSec))
+                        : 1
+                      if (fireBodyInstrumentTrigger(b.id, samplerRate, undefined)) {
+                        markTriggeredOnCanvas(b.id)
+                      }
+                    } else {
+                    const supportsPitchedNotes =
+                      rack.instrument === 'instrument-wave-lab' ||
+                      rack.instrument === 'instrument-osc-synth-orbit'
+                    const instrumentNotes = supportsPitchedNotes ? fireNotes : [fireNotes[0]]
+                    let consumed = false
+                    for (const fireNote of instrumentNotes) {
+                      consumed = fireBodyInstrumentTrigger(b.id, instrRate, arpMode ? fireNote : undefined) || consumed
+                    }
+                    if (consumed) {
                       markTriggeredOnCanvas(b.id)
                     } else {
                       const sample = resolveBodySamplerSample(b.id, sbi.sampleId, smpArr)
@@ -1201,6 +1309,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                         markTriggeredOnCanvas(b.id)
                       }
                     }
+                    } // end else (not oneshot-stretch)
                   }
                 }
 
@@ -1247,67 +1356,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   lastTriggerWallMsRef.current.set(timerKey, nowMs)
 
                   // ── Arpeggiator / chord trigger notes ────────────────────────
-                  const tpRecord = tp as Record<string, unknown>
-                  const arpMode  = Boolean(tpRecord.arpMode)
-                  const arpPlayMode = String(tpRecord.arpPlayMode ?? 'arp')
-                  const arpUseSeq = Boolean(tpRecord.arpUseSeq)
-                  const arpProgressionEnabled = Boolean(tpRecord.arpChordProgressionEnabled)
-                  const arpLen   = Math.max(1, Math.min(4, Number((tp as Record<string, unknown>).arpLength ?? 4)))
-                  const arpNotes = [
-                    Number((tp as Record<string, unknown>).arpNote0 ?? 48),
-                    Number((tp as Record<string, unknown>).arpNote1 ?? 52),
-                    Number((tp as Record<string, unknown>).arpNote2 ?? 55),
-                    Number((tp as Record<string, unknown>).arpNote3 ?? 59),
-                  ]
-                  let fireNotes = [sbi.midiNote ?? 60]
-                  if (arpMode) {
-                    // Release previous step/chord before firing next.
-                    const prevNotes = arpPrevNoteRef.current.get(timerKey) ?? []
-                    if (prevNotes.length > 0) {
-                      const oscEng = getBodyOscSynthEngine(b.id)
-                      const waveEng = getBodyWaveLabEngine(b.id)
-                      for (const prevNote of prevNotes) {
-                        oscEng?.noteOff(prevNote)
-                        waveEng?.noteOff(prevNote)
-                      }
-                    }
-                    if (arpUseSeq) {
-                      const chordStep = arpChordStepRef.current.get(timerKey) ?? 0
-                      const chordNotes = buildArpSeqChordNotes(tpRecord, chordStep)
-                      if (arpPlayMode === 'chord') {
-                        fireNotes = chordNotes
-                        arpChordStepRef.current.set(timerKey, chordStep + 1)
-                      } else {
-                        const step = arpStepRef.current.get(timerKey) ?? 0
-                        fireNotes = [chordNotes[step % Math.max(1, chordNotes.length)] ?? 60]
-                        const nextStep = (step + 1) % Math.max(1, chordNotes.length)
-                        arpStepRef.current.set(timerKey, nextStep)
-                        if (nextStep === 0) arpChordStepRef.current.set(timerKey, chordStep + 1)
-                      }
-                    } else if (arpProgressionEnabled) {
-                      const chordStep = arpChordStepRef.current.get(timerKey) ?? 0
-                      const chordNotes = buildArpProgressionChordNotes(tpRecord, chordStep)
-                      if (arpPlayMode === 'chord') {
-                        fireNotes = chordNotes
-                        updateArpProgressionLiveState(b.id, ti, tpRecord, chordStep, fireNotes)
-                        arpChordStepRef.current.set(timerKey, chordStep + 1)
-                      } else {
-                        const step = arpStepRef.current.get(timerKey) ?? 0
-                        fireNotes = [chordNotes[step % Math.max(1, chordNotes.length)] ?? 60]
-                        updateArpProgressionLiveState(b.id, ti, tpRecord, chordStep, chordNotes)
-                        const nextStep = (step + 1) % Math.max(1, chordNotes.length)
-                        arpStepRef.current.set(timerKey, nextStep)
-                        if (nextStep === 0) arpChordStepRef.current.set(timerKey, chordStep + 1)
-                      }
-                    } else if (arpPlayMode === 'chord') {
-                      fireNotes = buildArpChordNotes(tpRecord)
-                    } else {
-                      const step = arpStepRef.current.get(timerKey) ?? 0
-                      fireNotes = [arpNotes[step % arpLen]]
-                      arpStepRef.current.set(timerKey, (step + 1) % arpLen)
-                    }
-                    arpPrevNoteRef.current.set(timerKey, fireNotes)
-                  }
+                  if (!shouldFireOrbitStep(tpRecord, timerKey)) continue
+                  const { fireNotes, arpMode } = resolveFireNotes()
 
                   for (const fireNote of fireNotes) {
                     sendMidiNote(sbi.midiChannel ?? 1, fireNote, sbi.midiVelocity ?? 100, 200)
@@ -1315,24 +1365,37 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   if (ti === 0) {
                     const tpNumer = Number((bodyParams as Record<string, unknown>).orbitLoopNumer ?? 1)
                     const tpDenom = Number((bodyParams as Record<string, unknown>).orbitLoopDenom ?? 1)
+                    const tpSourceDiv = Math.max(0.0625, Number(tp.orbitTriggerDivision ?? 1))
                     const tpStr = tpDenom > 0 ? tpNumer / tpDenom : 1
                     const tpDur = getBodyOneShotEngine(b.id)?.bufferDuration ?? 0
-                    const tpRate = rack.instrument === 'instrument-oneshot-stretch'
-                      ? (computeSampleStretchRate({
-                          sampleDuration: tpDur, period,
-                          smoothedPeriod: _smoothedPeriods.get(b.id),
-                          dt: params.dt, frameSeconds: frameTimeRef.current / 1000,
-                          stretchRatio: tpStr, stretchMode: 'rate',
-                          orbitSource: (bodyParams as Record<string, unknown>).sampleOrbitSource as string ?? 'current',
-                        }) ?? 1)
-                      : 1
+                    // oneshot-stretch: just trigger at rate=1 regardless of note
+                    if (rack.instrument === 'instrument-oneshot-stretch') {
+                      if (fireBodyInstrumentTrigger(b.id, 1, undefined)) {
+                        markTriggeredOnCanvas(b.id)
+                      }
+                    } else if (rack.instrument === 'instrument-sampler') {
+                      // pitch-preserving time stretch: rate = bufDur / realPeriodSec
+                      const tpStretchEng = getBodyStretchSamplerEngine(b.id)
+                      const tpBufDur = tpStretchEng?.bufferDuration ?? 0
+                      const tpSimStep = Math.max(0.000001, params.dt * STEPS_PER_FRAME)
+                      const effectiveP2 = _smoothedPeriods.get(b.id) ?? period
+                      const tpRealPeriodSec = isFinite(effectiveP2) && effectiveP2 > 0
+                        ? (effectiveP2 / tpSimStep) * (frameTimeRef.current / 1000) * tpStr
+                        : 0
+                      const tpSamplerRate = tpBufDur > 0 && tpRealPeriodSec > 0
+                        ? Math.max(0.01, Math.min(8, tpBufDur / tpRealPeriodSec))
+                        : 1
+                      if (fireBodyInstrumentTrigger(b.id, tpSamplerRate, undefined)) {
+                        markTriggeredOnCanvas(b.id)
+                      }
+                    } else {
                     const supportsPitchedNotes =
                       rack.instrument === 'instrument-wave-lab' ||
                       rack.instrument === 'instrument-osc-synth-orbit'
                     const instrumentNotes = supportsPitchedNotes ? fireNotes : [fireNotes[0]]
                     let consumed = false
                     for (const fireNote of instrumentNotes) {
-                      consumed = fireBodyInstrumentTrigger(b.id, tpRate, arpMode ? fireNote : undefined) || consumed
+                      consumed = fireBodyInstrumentTrigger(b.id, 1, arpMode ? fireNote : undefined) || consumed
                     }
                     if (consumed) {
                       markTriggeredOnCanvas(b.id)
@@ -1364,6 +1427,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                         markTriggeredOnCanvas(b.id)
                       }
                     }
+                    } // end else (not oneshot-stretch)
                   }
                 }
               }
@@ -1782,7 +1846,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     } else if (mobileMode) {
       const cs = useControlSetStore.getState()
       cs.clearBodyRack(newBody.id)
-      cs.addBodyTrigger(newBody.id, 'trigger-arpeggio')
+      cs.addBodyTrigger(newBody.id, 'trigger-orbit-step')
+      cs.setBodySlot(newBody.id, 'note', 'note-arpeggio')
       cs.setBodySlot(newBody.id, 'instrument', 'instrument-wave-lab')
 
       const mobilePlanets = storeBodiesRef.current.filter(b => b.type === 'planet')
@@ -1803,6 +1868,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           lfoAccumRef.current.delete(id)
           lastTriggerSimTimeRef.current.delete(id)
           lastTriggerWallMsRef.current.delete(id)
+          orbitStepSeqRef.current.delete(id)
           tperiodIntervalMsRef.current.delete(id)
           lastOrbitCrossWallMsRef.current.delete(id)
           measuredRealTMsRef.current.delete(id)
@@ -2199,6 +2265,22 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     : dragSel ? 'crosshair'
     : 'default'
 
+  // ── Sigil helper ─────────────────────────────────────────────────────────────
+  function getBodySigilShapes(body: { id: string; name: string; sigilGrammar?: SigilGrammar | null }): SigilShape[] {
+    const cacheKey = `${body.id}:${body.name}:${body.sigilGrammar ? JSON.stringify(body.sigilGrammar) : ''}`
+    const cached = sigilCacheRef.current.get(body.id)
+    if (cached && cached.key === cacheKey) return cached.shapes
+    // stableSigilSeed: FNV-1a hash of input string
+    let h = 2166136261
+    const s = `${body.id}:${body.name}`
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) }
+    const seed = h >>> 0
+    const grammar = body.sigilGrammar ?? randomGrammar(seed, {})
+    const shapes = generateFromGrammar(grammar).shapes
+    sigilCacheRef.current.set(body.id, { key: cacheKey, shapes })
+    return shapes
+  }
+
   return (
     <div
       ref={containerRef}
@@ -2566,7 +2648,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   <circle cx={b.x + wr * 0.7} cy={b.y - wr * 0.7} r={2.5 / zoom}
                     fill={monochromeMode ? monoInk : simple ? '#2563eb' : '#60a5fa'} opacity={monochromeMode ? paperMainOpacity : 0.9} />
                 )}
-                <text x={b.x} y={b.y - wr - 5 / zoom} textAnchor="middle"
+                <text x={b.x} y={b.y - wr - 9 / zoom} textAnchor="middle"
                   fontSize={10 / zoom} fill={labelColor} opacity={labelOpacity}
                   style={{ pointerEvents: 'none', userSelect: 'none' }}>
                   {name}
@@ -2591,7 +2673,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   x2={probePos.x + x2f * probeWr} y2={probePos.y + y2f * probeWr}
                   stroke={probeCol} strokeWidth={worldStroke(0.67)} opacity={monochromeMode ? paperLineOpacity : 0.65} />
               ))}
-              <text x={probePos.x} y={probePos.y - probeWr - 5 / zoom} textAnchor="middle"
+              <text x={probePos.x} y={probePos.y - probeWr - 9 / zoom} textAnchor="middle"
                 fontSize={9 / zoom} fill={probeCol} opacity={monochromeMode ? labelOpacity : 0.8}
                 style={{ userSelect: 'none', pointerEvents: 'none' }}>
                 probe m={storeParams.probeMass}
@@ -2629,7 +2711,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
               <circle cx={dragPlace.bodyX} cy={dragPlace.bodyY} r={dpOverlay.wr}
                 fill={dpOverlay.col} opacity={monochromeMode ? paperMainOpacity : 0.72} />
               {(dpOverlay.isSun || dpOverlay.isPlanetLaunch) && (
-                <text x={dragPlace.bodyX} y={dragPlace.bodyY - dpOverlay.wr - 6 / zoom}
+                <text x={dragPlace.bodyX} y={dragPlace.bodyY - dpOverlay.wr - 10 / zoom}
                   textAnchor="middle" fontSize={11 / zoom}
                   fill={dpOverlay.col} fontFamily="monospace" opacity={monochromeMode ? labelOpacity : 0.9}>
                   m={dpOverlay.mass}
@@ -2659,6 +2741,52 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           opacity={monochromeMode ? hudOpacity : 1}>
           {bodies.length} bodies · speed={(storeParams.dt / 0.2).toFixed(storeParams.dt < 0.2 ? 2 : 1)}x · G={storeParams.G} · ε={storeParams.epsilon} · dt={storeParams.dt}
         </text>
+
+        {/* Selected body sigil — fixed bottom-right corner */}
+        {selectedBodyId && (() => {
+          const sb2 = storeBodiesMapRef.current.get(selectedBodyId)
+          if (!sb2) return null
+          const shapes = getBodySigilShapes(sb2)
+          const sz = 72  // display size in screen px
+          const pad = 12
+          const cx = w - rightPanelWidth - pad - sz
+          const cy = h - pad - sz
+          const sigilColor = monochromeMode ? monoInk
+            : storeBodies.find(b => b.id === selectedBodyId)?.color ?? '#fff'
+          return (
+            <g style={{ pointerEvents: 'none' }} opacity={monochromeMode ? 0.22 : 0.45}>
+              {shapes.map((shape, si) => {
+                const tx = cx
+                const ty = cy
+                const sc = sz / 100
+                if (shape.kind === 'circle') {
+                  return <circle key={si}
+                    cx={tx + shape.cx * sc} cy={ty + shape.cy * sc} r={shape.r * sc}
+                    fill={shape.renderMode === 'stroke' ? 'none' : sigilColor}
+                    stroke={shape.renderMode === 'fill' ? 'none' : sigilColor}
+                    strokeWidth={1.2} />
+                }
+                if (shape.kind === 'polygon') {
+                  return <polygon key={si}
+                    points={shape.points.map(p => `${(tx + p.x * sc).toFixed(2)},${(ty + p.y * sc).toFixed(2)}`).join(' ')}
+                    fill={shape.renderMode === 'stroke' ? 'none' : sigilColor}
+                    stroke={shape.renderMode === 'fill' ? 'none' : sigilColor}
+                    strokeWidth={1.2} strokeLinejoin="round" />
+                }
+                // path: re-translate by parsing is complex, use transform instead
+                return (
+                  <g key={si} transform={`translate(${tx},${ty}) scale(${sc})`}>
+                    <path d={shape.d}
+                      fill={shape.renderMode === 'stroke' ? 'none' : sigilColor}
+                      stroke={shape.renderMode === 'fill' ? 'none' : sigilColor}
+                      strokeWidth={1.2 / sc}
+                      strokeLinecap="round" strokeLinejoin="round" />
+                  </g>
+                )
+              })}
+            </g>
+          )
+        })()}
 
         {/* Drag-rect multi-select overlay (screen coords, no camera transform) */}
         {dragSel && tool === 'select' && (() => {

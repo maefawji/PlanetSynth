@@ -12,6 +12,7 @@ import { FMDroneLayer } from './components/planet/FMDroneLayer'
 import { NoisePadLayer } from './components/planet/NoisePadLayer'
 import { SamplerLayer } from './components/planet/SamplerLayer'
 import { OneShotLayer } from './components/planet/OneShotLayer'
+import { StretchSamplerLayer } from './components/planet/StretchSamplerLayer'
 import { OscSynthLayer } from './components/planet/OscSynthLayer'
 import { WaveLabInstrumentLayer } from './components/planet/WaveLabInstrumentLayer'
 import { WholeInstrumentLayer } from './components/planet/WholeInstrumentLayer'
@@ -158,7 +159,7 @@ export default function App() {
       >
         {/* Headless audio layers */}
         <DroneLayer /><GranularLayer /><FMDroneLayer /><NoisePadLayer />
-        <SamplerLayer /><OneShotLayer />
+        <SamplerLayer /><OneShotLayer /><StretchSamplerLayer />
         <OscSynthLayer />
         <WaveLabInstrumentLayer />
         <WholeInstrumentLayer />
@@ -192,6 +193,7 @@ export default function App() {
       <NoisePadLayer />
       <SamplerLayer />
       <OneShotLayer />
+      <StretchSamplerLayer />
       <OscSynthLayer />
       <WaveLabInstrumentLayer />
       <WholeInstrumentLayer />

@@ -20,7 +20,9 @@ import { getBodyTriggerAge, markBodyTriggered } from '../../audio/intersectionSy
 import { sendMidiNote, getMidiSendAge, getMidiReceiveAge, getLastMidiSendInfo, getLastMidiReceiveInfo, isMidiReady } from '../../audio/midiManager'
 import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import type { OneShotState } from '../../audio/OneShotSamplerEngine'
+import { getBodyStretchSamplerEngine } from '../../audio/StretchSamplerEngine'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
+import { getBodyOutputLevel } from '../../audio/bodyOutputMeter'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
 import { getBusOscilloscopeData } from '../../audio/rackBusMixer'
 import { useArpProgressionStore } from '../../store/arpProgressionStore'
@@ -229,7 +231,6 @@ function RackBodySigil({
     >
       {sigil.shapes.map((shape, index) => {
         const common = {
-          key: index,
           opacity: 1,
         }
         const stroke = shape.renderMode === 'fill' ? 'none' : color
@@ -237,6 +238,7 @@ function RackBodySigil({
         if (shape.kind === 'circle') {
           return (
             <circle
+              key={index}
               {...common}
               cx={shape.cx}
               cy={shape.cy}
@@ -250,6 +252,7 @@ function RackBodySigil({
         if (shape.kind === 'polygon') {
           return (
             <polygon
+              key={index}
               {...common}
               points={shape.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')}
               fill={fill}
@@ -261,6 +264,7 @@ function RackBodySigil({
         }
         return (
           <path
+            key={index}
             {...common}
             d={shape.d}
             fill={fill}
@@ -1430,6 +1434,7 @@ function progressionLabel(overrides: Partial<PlanetSimParams>): string {
 function InlineArpContent({
   bodyId, slotKey, simple, accent,
 }: { bodyId: string | null; slotKey: string; simple: boolean; accent: string }) {
+  const isNoteSlot = slotKey === 'g:note' || slotKey.endsWith(':note')
   const overrides       = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
   const liveState       = useArpProgressionStore(s => s.liveBySlot[slotKey] ?? null)
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
@@ -1446,7 +1451,7 @@ function InlineArpContent({
     ? `${liveState.degreeIndex + 1}/${liveState.degreeCount} · ${liveState.label} · ${liveNotes.map(midiToNoteName).join(' ')}`
     : progressionLabel(overrides)
   const division = Number(getArpParam(overrides, 'orbitTriggerDivision', 0.25))
-  const divisionLabel = division === 1 ? '1/1' : division === 0.5 ? '1/2' : division === 0.25 ? '1/4' : division === 0.125 ? '1/8' : '1/16'
+  const divisionLabel = isNoteSlot ? 'note' : division === 1 ? '1/1' : division === 0.5 ? '1/2' : division === 0.25 ? '1/4' : division === 0.125 ? '1/8' : '1/16'
 
   // defaults C3 E3 G3 B3
   const DEFAULT_NOTES = [48, 52, 55, 59]
@@ -1597,6 +1602,7 @@ function InlineArpContent({
 }
 
 function ArpeggioExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string | null; slotKey: string; simple: boolean; onClose?: () => void }) {
+  const isNoteSlot = slotKey === 'g:note' || slotKey.endsWith(':note')
   const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
   const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
@@ -1727,19 +1733,23 @@ function ArpeggioExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string
           ))}
         </div>
 
-        {sectionLabel('Timing')}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <span style={{ width: 54, fontSize: 8, color: dim, textAlign: 'right' }}>division</span>
-          <select value={String(getArpParam(overrides, 'orbitTriggerDivision', 0.25))}
-            onChange={e => setNum('orbitTriggerDivision', Number(e.target.value))}
-            style={{ flex: 1, fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px' }}>
-            <option value={1}>1/1</option>
-            <option value={0.5}>1/2</option>
-            <option value={0.25}>1/4</option>
-            <option value={0.125}>1/8</option>
-            <option value={0.0625}>1/16</option>
-          </select>
-        </div>
+        {!isNoteSlot && (
+          <>
+            {sectionLabel('Timing')}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ width: 54, fontSize: 8, color: dim, textAlign: 'right' }}>division</span>
+              <select value={String(getArpParam(overrides, 'orbitTriggerDivision', 0.25))}
+                onChange={e => setNum('orbitTriggerDivision', Number(e.target.value))}
+                style={{ flex: 1, fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px' }}>
+                <option value={1}>1/1</option>
+                <option value={0.5}>1/2</option>
+                <option value={0.25}>1/4</option>
+                <option value={0.125}>1/8</option>
+                <option value={0.0625}>1/16</option>
+              </select>
+            </div>
+          </>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ width: 54, fontSize: 8, color: dim, textAlign: 'right' }}>length</span>
           <input type="range" min={1} max={4} step={1} value={Number(getArpParam(overrides, 'arpLength', 4))}
@@ -2011,6 +2021,10 @@ function stableSampleIndexFromBodyId(bodyId: string, length: number): number {
   return Math.abs(hash) % length
 }
 
+function isBuiltinSample(sample: { id: string; source?: string; sourcePath?: string }): boolean {
+  return sample.source === 'builtin' || sample.id.startsWith('builtin:') || sample.sourcePath?.startsWith('/samples/') === true
+}
+
 // ── Inline One-Shot content (rendered inside SlotCard) ───────────────────────
 
 /**
@@ -2018,13 +2032,15 @@ function stableSampleIndexFromBodyId(bodyId: string, length: number): number {
  * Mirrors OneShotSamplerPanel logic but in a narrow inline layout.
  */
 function InlineOneShotContent({
-  bodyId, slotKey, simple, accent, isStretch,
+  bodyId, slotKey, simple, accent, isStretch, isSamplerStretch,
 }: {
   bodyId: string | null
   slotKey: string
   simple: boolean
   accent: string
   isStretch?: boolean
+  /** When true, use StretchSamplerEngine instead of OneShotSamplerEngine */
+  isSamplerStretch?: boolean
 }) {
   const samples         = useProjectStore(s => s.project.samples)
   const addSampleAsset  = useProjectStore(s => s.addSampleAsset)
@@ -2033,6 +2049,10 @@ function InlineOneShotContent({
   const resetSlotParam  = useControlSetStore(s => s.resetSlotParam)
   const bodies          = usePlanetStore(s => s.bodies)
   const G               = usePlanetStore(s => s.simParams.G)
+  const getBodyEffectiveParams = useControlSetStore(s => s.getBodyEffectiveParams)
+  const getBodyTriggerParamsList = useControlSetStore(s => s.getBodyTriggerParamsList)
+  const effectiveParams = bodyId ? getBodyEffectiveParams(bodyId) : null
+  const triggerParams   = bodyId ? (getBodyTriggerParamsList(bodyId)[0] ?? null) : null
 
   const dimText   = simple ? 'rgba(0,0,0,0.32)' : 'rgba(255,255,255,0.28)'
   const accentDim = simple ? 'rgba(6,182,212,0.10)' : 'rgba(6,182,212,0.12)'
@@ -2052,7 +2072,17 @@ function InlineOneShotContent({
   const orbitStats  = isStretch && body ? computeOrbitStats(body, bodies, G) : null
   const tRealSec    = orbitStats?.T_real ?? null
   // bufferDuration read inline — re-evaluated on each render triggered by engState changes
-  const bufDurSec   = isStretch && bodyId ? (getBodyOneShotEngine(bodyId)?.bufferDuration ?? 0) : 0
+  const bufDurSec   = isStretch && bodyId
+    ? (isSamplerStretch
+        ? (getBodyStretchSamplerEngine(bodyId)?.bufferDuration ?? 0)
+        : (getBodyOneShotEngine(bodyId)?.bufferDuration ?? 0))
+    : 0
+  const sourceDiv    = Math.max(0.0625, Number((triggerParams as Record<string, unknown> | null)?.orbitTriggerDivision ?? 1))
+  const sourceSec    = tRealSec !== null ? tRealSec * sourceDiv : null
+  const loopNumer    = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopNumer ?? 1))
+  const loopDenom    = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopDenom ?? 1))
+  const stretchRatio = loopNumer / loopDenom
+  const shownRate    = bufDurSec > 0 && sourceSec !== null && sourceSec > 0 ? (bufDurSec * stretchRatio / sourceSec) : null
 
   // ── Engine state + playhead (RAF, no React state for 60fps) ─────────────────
   const [engState, setEngState] = useState<OneShotState>('idle')
@@ -2065,9 +2095,11 @@ function InlineOneShotContent({
   useEffect(() => {
     const tick = () => {
       if (bodyId) {
-        const eng = getBodyOneShotEngine(bodyId)
+        const eng = isSamplerStretch
+          ? getBodyStretchSamplerEngine(bodyId)
+          : getBodyOneShotEngine(bodyId)
         if (eng) {
-          setEngState(eng.state)
+          setEngState(eng.state as OneShotState)
           const norm = eng.getPlayheadNorm()
           if (playheadRef.current) {
             if (norm !== null) {
@@ -2113,6 +2145,8 @@ function InlineOneShotContent({
         name: file.name.replace(/\.[^.]+$/, ''),
         objectUrl,
         fileType: file.type || 'audio/unknown',
+        sourcePath: file.name,
+        source: 'local' as const,
       }
       addSampleAsset(newSample)
       setSlotOverride(slotKey, { samplerMode: 'fixed', samplerSampleId: newSample.id } as Partial<PlanetSimParams>)
@@ -2253,22 +2287,22 @@ function InlineOneShotContent({
         />
       </div>
 
-      {/* Stretch info row — original duration + orbit T */}
+      {/* Stretch info row — original duration + Orbit Step source interval */}
       {isStretch && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '1px 2px' }}>
           <span style={{ fontSize: 7, color: dimText, flexShrink: 0 }}>orig</span>
           <span style={{ fontSize: 8, color: inputCol, fontFamily: 'monospace', fontWeight: 600 }}>
             {bufDurSec > 0 ? `${bufDurSec.toFixed(2)}s` : '—'}
           </span>
-          <span style={{ fontSize: 7, color: dimText, flexShrink: 0, marginLeft: 4 }}>T</span>
+          <span style={{ fontSize: 7, color: dimText, flexShrink: 0, marginLeft: 4 }}>src</span>
           <span style={{ fontSize: 8, color: accent, fontFamily: 'monospace', fontWeight: 600 }}>
-            {tRealSec !== null ? `${tRealSec.toFixed(2)}s` : '—'}
+            {sourceSec !== null ? `${sourceSec.toFixed(2)}s` : '—'}
           </span>
-          {bufDurSec > 0 && tRealSec !== null && (
+          {shownRate !== null && (
             <>
               <span style={{ fontSize: 7, color: dimText, flexShrink: 0, marginLeft: 4 }}>×</span>
               <span style={{ fontSize: 8, color: '#a78bfa', fontFamily: 'monospace', fontWeight: 600 }}>
-                {(tRealSec / bufDurSec).toFixed(2)}
+                {shownRate.toFixed(2)}
               </span>
             </>
           )}
@@ -3175,6 +3209,328 @@ function InlineWaveLabContent({
   )
 }
 
+function OrbitStepExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string | null; slotKey: string; simple: boolean; onClose?: () => void }) {
+  const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
+  const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
+  const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
+  const accent = '#60a5fa'
+  const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.38)'
+  const dim2 = simple ? 'rgba(0,0,0,0.64)' : 'rgba(255,255,255,0.64)'
+  const border = simple ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.08)'
+  const panel = simple ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.04)'
+  const params = {
+    orbitTriggerMode: 'orbit-complete',
+    orbitTriggerType: 'tperiod',
+    orbitTriggerDivision: 0.25,
+    orbitStepSeqEnabled: false,
+    orbitStepSeqLength: 8,
+    orbitStepSeqPattern: '11111111',
+    ...overrides,
+  } as Record<string, unknown>
+  const source = String(params.orbitTriggerType ?? 'tperiod')
+  const division = Number(params.orbitTriggerDivision ?? 0.25)
+  const seqEnabled = Boolean(params.orbitStepSeqEnabled)
+  const seqLength = Math.max(1, Math.min(16, Math.round(Number(params.orbitStepSeqLength ?? 8))))
+  const rawPattern = String(params.orbitStepSeqPattern ?? '11111111').replace(/[^01]/g, '')
+  const pattern = (rawPattern || '11111111').padEnd(seqLength, '1').slice(0, seqLength)
+
+  const setPatch = (patch: Partial<PlanetSimParams>) => setSlotOverride(slotKey, patch)
+  const sectionLabel = (label: string) => (
+    <div style={{ fontSize: 8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{label}</div>
+  )
+  function setPattern(next: string) {
+    setPatch({ orbitStepSeqPattern: next } as Partial<PlanetSimParams>)
+  }
+  function toggleStep(i: number) {
+    const chars = pattern.split('')
+    chars[i] = chars[i] === '1' ? '0' : '1'
+    setPattern(chars.join(''))
+  }
+  function setLength(nextLength: number) {
+    const len = Math.max(1, Math.min(16, nextLength))
+    setPatch({
+      orbitStepSeqLength: len,
+      orbitStepSeqPattern: pattern.padEnd(len, '1').slice(0, len),
+    } as Partial<PlanetSimParams>)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px 4px 48px', borderBottom:`0.5px solid ${border}`, flexShrink:0 }}>
+        {onClose && <button onClick={onClose} style={{ fontSize:9, color:dim, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:'0 4px' }}>▼ close</button>}
+        <span style={{ fontSize:10, fontWeight:700, color:accent }}>↺ Orbit Step</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr 240px', gap: 16, padding: '12px 14px 12px 48px', minHeight: 230 }}>
+        <div style={{ borderRight: `0.5px solid ${border}`, paddingRight: 14 }}>
+          {sectionLabel('Source / Rate')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ width: 50, fontSize: 8, color: dim, textAlign: 'right' }}>source</span>
+            <select
+              value={source}
+              onChange={e => setPatch({ orbitTriggerType: e.target.value as PlanetSimParams['orbitTriggerType'] })}
+              style={{ flex: 1, fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px' }}
+            >
+              <option value="tperiod">T-period</option>
+              <option value="cumulative">Cumulative</option>
+              <option value="periodic">Periodic</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ width: 50, fontSize: 8, color: dim, textAlign: 'right' }}>rate</span>
+            <select
+              value={String(division)}
+              onChange={e => setPatch({ orbitTriggerDivision: Number(e.target.value) })}
+              style={{ flex: 1, fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px' }}
+            >
+              <option value={2}>2 orbits</option>
+              <option value={1}>1 orbit</option>
+              <option value={0.5}>1/2</option>
+              <option value={0.25}>1/4</option>
+              <option value={0.125}>1/8</option>
+              <option value={0.0625}>1/16</option>
+            </select>
+          </div>
+          <button
+            onClick={() => {
+              resetSlotParam(slotKey, 'orbitTriggerType')
+              resetSlotParam(slotKey, 'orbitTriggerDivision')
+            }}
+            style={{ width: '100%', fontSize: 8, color: dim, background: 'transparent', border: `0.5px solid ${border}`, borderRadius: 4, padding: '5px 7px', cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            reset source/rate
+          </button>
+        </div>
+
+        <div>
+          {sectionLabel('Step Sequencer')}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 10, color: dim2, marginBottom: 10 }}>
+            <input
+              type="checkbox"
+              checked={seqEnabled}
+              onChange={e => setPatch({ orbitStepSeqEnabled: e.target.checked })}
+              style={{ accentColor: accent }}
+            />
+            gate trigger events by step pattern
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, opacity: seqEnabled ? 1 : 0.45 }}>
+            <span style={{ width: 44, fontSize: 8, color: dim, textAlign: 'right' }}>steps</span>
+            <input
+              type="range"
+              min={1}
+              max={16}
+              step={1}
+              value={seqLength}
+              onChange={e => setLength(Number(e.target.value))}
+              style={{ flex: 1, accentColor: accent }}
+            />
+            <span style={{ width: 20, fontSize: 10, color: accent, fontFamily: 'monospace', textAlign: 'right' }}>{seqLength}</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, minmax(24px, 1fr))', gap: 5, opacity: seqEnabled ? 1 : 0.45 }}>
+            {Array.from({ length: seqLength }, (_, i) => {
+              const on = pattern[i] !== '0'
+              return (
+                <button
+                  key={i}
+                  onClick={() => toggleStep(i)}
+                  title={`Step ${i + 1}: ${on ? 'on' : 'rest'}`}
+                  style={{
+                    height: 28,
+                    borderRadius: 5,
+                    border: `0.5px solid ${on ? accent : border}`,
+                    background: on ? `${accent}28` : panel,
+                    color: on ? accent : dim,
+                    fontSize: 9,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {i + 1}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div style={{ borderLeft: `0.5px solid ${border}`, paddingLeft: 14 }}>
+          {sectionLabel('Pattern')}
+          <input
+            value={pattern}
+            onChange={e => setPattern(e.target.value.replace(/[^01]/g, '').slice(0, 16))}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              fontSize: 12,
+              fontFamily: 'monospace',
+              color: accent,
+              background: panel,
+              border: `0.5px solid ${border}`,
+              borderRadius: 5,
+              padding: '6px 8px',
+              marginBottom: 8,
+              letterSpacing: '0.08em',
+            }}
+          />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+            {[
+              ['All', '11111111'],
+              ['Offbeat', '01010101'],
+              ['Sparse', '10001000'],
+              ['Clave', '10010100'],
+            ].map(([label, value]) => (
+              <button
+                key={label}
+                onClick={() => setPattern(value.padEnd(seqLength, '0').slice(0, seqLength))}
+                style={{ fontSize: 8, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '5px 6px', cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 8, color: dim, lineHeight: 1.45, marginTop: 10 }}>
+            1 = fire, 0 = rest. The sequencer advances only when Orbit Step reaches the selected rate.
+          </div>
+          {bodyId && (
+            <div style={{ marginTop: 10 }}>
+              <OrbitInputBlock bodyId={bodyId} dimText={dim} accent={accent} triggerType={source} division={division} />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function OneShotStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string | null; slotKey: string; simple: boolean; onClose?: () => void }) {
+  const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
+  const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
+  const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
+  const getBodyEffectiveParams2 = useControlSetStore(s => s.getBodyEffectiveParams)
+  const getBodyTriggerParamsList2 = useControlSetStore(s => s.getBodyTriggerParamsList)
+  const effectiveParams = bodyId ? getBodyEffectiveParams2(bodyId) : null
+  const triggerParams = bodyId ? (getBodyTriggerParamsList2(bodyId)[0] ?? null) : null
+  const bodies = usePlanetStore(s => s.bodies)
+  const G = usePlanetStore(s => s.simParams.G)
+  const body = bodyId ? (bodies.find(b => b.id === bodyId) ?? null) : null
+  const orbitStats = body ? computeOrbitStats(body, bodies, G) : null
+  const bufDurSec = bodyId ? (getBodyOneShotEngine(bodyId)?.bufferDuration ?? 0) : 0
+  const fullT = orbitStats?.T_real ?? null
+  const sourceDiv = Math.max(0.0625, Number((triggerParams as Record<string, unknown> | null)?.orbitTriggerDivision ?? 1))
+  const sourceSec = fullT !== null ? fullT * sourceDiv : null
+  const mode = String((effectiveParams as Record<string, unknown> | null)?.sampleStretchMode ?? 'rate')
+  const source = String((effectiveParams as Record<string, unknown> | null)?.sampleOrbitSource ?? 'current')
+  const numer = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopNumer ?? 1))
+  const denom = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopDenom ?? 1))
+  const pitchFix = Boolean((effectiveParams as Record<string, unknown> | null)?.samplePitchCorrection)
+  const stretchRatio = numer / denom
+  const playbackRate = bufDurSec > 0 && sourceSec !== null && sourceSec > 0 ? (bufDurSec * stretchRatio / sourceSec) : null
+  const accent = '#f59e0b'
+  const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.38)'
+  const dim2 = simple ? 'rgba(0,0,0,0.64)' : 'rgba(255,255,255,0.64)'
+  const border = simple ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.08)'
+  const panel = simple ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.04)'
+  const setPatch = (patch: Partial<PlanetSimParams>) => setSlotOverride(slotKey, patch)
+  const sectionLabel = (label: string) => (
+    <div style={{ fontSize: 8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{label}</div>
+  )
+  const metric = (label: string, value: string, color = dim2) => (
+    <div style={{ border: `0.5px solid ${border}`, borderRadius: 5, background: panel, padding: '7px 8px' }}>
+      <div style={{ fontSize: 8, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 16, color, fontFamily: 'monospace', fontWeight: 800, lineHeight: 1 }}>{value}</div>
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px 4px 48px', borderBottom:`0.5px solid ${border}`, flexShrink:0 }}>
+        {onClose && <button onClick={onClose} style={{ fontSize:9, color:dim, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:'0 4px' }}>▼ close</button>}
+        <span style={{ fontSize:10, fontWeight:700, color:accent }}>⟳ Oneshot Stretch</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '230px 1fr 250px', gap: 16, padding: '12px 14px 12px 48px', minHeight: 230 }}>
+        <div style={{ borderRight: `0.5px solid ${border}`, paddingRight: 14 }}>
+          {sectionLabel('Stretch')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ width: 54, fontSize: 8, color: dim, textAlign: 'right' }}>mode</span>
+            <select
+              value={mode}
+              onChange={e => setPatch({ sampleStretchMode: e.target.value as PlanetSimParams['sampleStretchMode'] })}
+              style={{ flex: 1, fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px' }}
+            >
+              <option value="rate">Rate</option>
+              <option value="time">Time</option>
+              <option value="off">Off</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ width: 54, fontSize: 8, color: dim, textAlign: 'right' }}>source</span>
+            <select
+              value={source}
+              onChange={e => setPatch({ sampleOrbitSource: e.target.value })}
+              style={{ flex: 1, fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px' }}
+            >
+              <option value="current">Current</option>
+              <option value="predicted">Predicted</option>
+            </select>
+          </div>
+          <button
+            onClick={() => {
+              resetSlotParam(slotKey, 'sampleStretchMode')
+              resetSlotParam(slotKey, 'sampleOrbitSource')
+              resetSlotParam(slotKey, 'samplePitchCorrection')
+            }}
+            style={{ width: '100%', fontSize: 8, color: dim, background: 'transparent', border: `0.5px solid ${border}`, borderRadius: 4, padding: '5px 7px', cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            reset stretch
+          </button>
+        </div>
+
+        <div>
+          {sectionLabel('Target Duration')}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginBottom: 14 }}>
+            {metric('orig', bufDurSec > 0 ? `${bufDurSec.toFixed(2)}s` : '--')}
+            {metric('source', sourceSec !== null ? `${sourceSec.toFixed(2)}s` : '--', accent)}
+            {metric('rate', playbackRate !== null ? `${playbackRate.toFixed(3)}x` : '--', '#a78bfa')}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ width: 58, fontSize: 8, color: dim, textAlign: 'right' }}>loops</span>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={numer}
+              onChange={e => setPatch({ orbitLoopNumer: Math.max(1, Number(e.target.value)) })}
+              style={{ width: 58, fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px', fontFamily: 'monospace' }}
+            />
+            <span style={{ fontSize: 10, color: dim }}>/</span>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={denom}
+              onChange={e => setPatch({ orbitLoopDenom: Math.max(1, Number(e.target.value)) })}
+              style={{ width: 58, fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px', fontFamily: 'monospace' }}
+            />
+            <span style={{ fontSize: 8, color: dim }}>source interval</span>
+          </div>
+          <div style={{ fontSize: 8, color: dim, lineHeight: 1.45 }}>
+            Rate is calculated as original sample seconds times loop ratio divided by Orbit Step source interval.
+          </div>
+        </div>
+
+        <div style={{ borderLeft: `0.5px solid ${border}`, paddingLeft: 14 }}>
+          {sectionLabel('Orbit Step Source')}
+          {metric('full orbit T', fullT !== null ? `${fullT.toFixed(2)}s` : '--', dim2)}
+          <div style={{ height: 8 }} />
+          {metric('division', `${sourceDiv}x`, accent)}
+          <div style={{ fontSize: 8, color: dim, lineHeight: 1.45, marginTop: 10 }}>
+            If Orbit Step rate is 1/4, stretch now targets T * 1/4, not the full orbit.
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Generic slot expanded panel ────────────────────────────────────────────────
 
 function GenericSlotExpanded({ slotKey, cs, simple, onClose }: { slotKey: string; cs: ControlSet | null; simple: boolean; onClose?: () => void }) {
@@ -3211,6 +3567,104 @@ function GenericSlotExpanded({ slotKey, cs, simple, onClose }: { slotKey: string
         </div>
       ))}
     </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string | null; slotKey: string; simple: boolean; onClose?: () => void }) {
+  const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
+  const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
+  const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
+  const getBodyEffectiveParams2 = useControlSetStore(s => s.getBodyEffectiveParams)
+  const getBodyTriggerParamsList2 = useControlSetStore(s => s.getBodyTriggerParamsList)
+  const effectiveParams = bodyId ? getBodyEffectiveParams2(bodyId) : null
+  const triggerParams = bodyId ? (getBodyTriggerParamsList2(bodyId)[0] ?? null) : null
+  const bodies = usePlanetStore(s => s.bodies)
+  const G = usePlanetStore(s => s.simParams.G)
+  const body = bodyId ? (bodies.find(b => b.id === bodyId) ?? null) : null
+  const orbitStats = body ? computeOrbitStats(body, bodies, G) : null
+  const bufDurSec = bodyId ? (getBodyStretchSamplerEngine(bodyId)?.bufferDuration ?? 0) : 0
+  const fullT = orbitStats?.T_real ?? null
+  const sourceDiv = Math.max(0.0625, Number((triggerParams as Record<string, unknown> | null)?.orbitTriggerDivision ?? 1))
+  const sourceSec = fullT !== null ? fullT * sourceDiv : null
+  const numer = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopNumer ?? 1))
+  const denom = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopDenom ?? 1))
+  const stretchRatio = numer / denom
+  const playbackRate = bufDurSec > 0 && sourceSec !== null && sourceSec > 0 ? (bufDurSec * stretchRatio / sourceSec) : null
+  const accent = '#818cf8'
+  const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.38)'
+  const dim2 = simple ? 'rgba(0,0,0,0.64)' : 'rgba(255,255,255,0.64)'
+  const border = simple ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.08)'
+  const panel = simple ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.04)'
+  const setPatch = (patch: Partial<PlanetSimParams>) => setSlotOverride(slotKey, patch)
+  const sectionLabel = (label: string) => (
+    <div style={{ fontSize: 8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{label}</div>
+  )
+  const metric = (label: string, value: string, color = dim2) => (
+    <div style={{ border: `0.5px solid ${border}`, borderRadius: 5, background: panel, padding: '7px 8px' }}>
+      <div style={{ fontSize: 8, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 16, color, fontFamily: 'monospace', fontWeight: 800, lineHeight: 1 }}>{value}</div>
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px 4px 48px', borderBottom:`0.5px solid ${border}`, flexShrink:0 }}>
+        {onClose && <button onClick={onClose} style={{ fontSize:9, color:dim, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:'0 4px' }}>▼ close</button>}
+        <span style={{ fontSize:10, fontWeight:700, color:accent }}>⟿ Sampler</span>
+        <span style={{ fontSize:8, color:dim, marginLeft:4 }}>pitch-preserving time stretch</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 250px', gap: 16, padding: '12px 14px 12px 48px', minHeight: 180 }}>
+        <div style={{ borderRight: `0.5px solid ${border}`, paddingRight: 14 }}>
+          {sectionLabel('Loop ratio')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <span style={{ width: 54, fontSize: 8, color: dim, textAlign: 'right' }}>numer</span>
+            <input type="number" min={1} max={16} step={1}
+              value={numer}
+              onChange={e => setPatch({ orbitLoopNumer: Math.max(1, Math.min(16, Number(e.target.value))) })}
+              style={{ width: 44, fontSize: 11, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px' }} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <span style={{ width: 54, fontSize: 8, color: dim, textAlign: 'right' }}>denom</span>
+            <input type="number" min={1} max={16} step={1}
+              value={denom}
+              onChange={e => setPatch({ orbitLoopDenom: Math.max(1, Math.min(16, Number(e.target.value))) })}
+              style={{ width: 44, fontSize: 11, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px' }} />
+          </div>
+          <div style={{ fontSize: 9, color: dim, marginBottom: 10 }}>
+            Sample is stretched to fit {numer}/{denom} orbit{numer !== 1 ? 's' : ''}.
+          </div>
+          <button
+            onClick={() => { resetSlotParam(slotKey, 'orbitLoopNumer'); resetSlotParam(slotKey, 'orbitLoopDenom') }}
+            style={{ width: '100%', fontSize: 8, color: dim, background: 'transparent', border: `0.5px solid ${border}`, borderRadius: 4, padding: '5px 7px', cursor: 'pointer', fontFamily: 'inherit' }}
+          >reset loop ratio</button>
+        </div>
+        <div>
+          {sectionLabel('Info')}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {metric('Sample dur', bufDurSec > 0 ? `${bufDurSec.toFixed(2)}s` : '—')}
+            {metric('Target dur', sourceSec != null ? `${(sourceSec * stretchRatio).toFixed(2)}s` : '—')}
+            {metric('Rate', playbackRate != null ? `×${playbackRate.toFixed(3)}` : '—', accent)}
+            {metric('Orbit T', sourceSec != null ? `${sourceSec.toFixed(2)}s` : '—')}
+          </div>
+          <div style={{ fontSize: 8, color: dim, lineHeight: 1.5, marginTop: 10 }}>
+            preservesPitch: ピッチを維持したままブラウザのフェーズボコーダでテンポを変更。
+          </div>
+        </div>
+        <div>
+          {sectionLabel('Orbit source')}
+          <select
+            value={String((overrides as Record<string, unknown>).sampleOrbitSource ?? 'current')}
+            onChange={e => setPatch({ sampleOrbitSource: e.target.value })}
+            style={{ fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px', width: '100%' }}
+          >
+            <option value="current">Current</option>
+            <option value="predicted">Predicted (smoothed)</option>
+          </select>
+        </div>
+      </div>
     </div>
   )
 }
@@ -3273,7 +3727,7 @@ function SlotCard({
   const isNoiseOn = isNoisePad && effectiveNoiseType === 'noise'
 
   // ── One-shot active detection ──────────────────────────────────────────────
-  const isOneShot = cs.id === 'instrument-oneshot' || cs.id === 'instrument-oneshot-stretch'
+  const isOneShot = cs.id === 'instrument-oneshot' || cs.id === 'instrument-oneshot-stretch' || cs.id === 'instrument-sampler'
   const isWaveLab = cs.id === 'instrument-wave-lab'
 
   // ── Osc Synth active detection ─────────────────────────────────────────────
@@ -3331,10 +3785,12 @@ function SlotCard({
   // ── Manual trigger detection ───────────────────────────────────────────────
   const isManualTrigger    = cs.id === 'trigger-manual'
   const isChordTestTrigger = cs.id === 'trigger-chord-test'
-  const isArpTrigger       = cs.id === 'trigger-arpeggio'
+  const isArpTrigger       = cs.id === 'trigger-arpeggio' || cs.id === 'note-arpeggio'
 
   // ── Loaded samples (for sample dropdown) ──────────────────────────────────
   const loadedSamples = useProjectStore(s => s.project.samples)
+  const defaultSamples = loadedSamples.filter(isBuiltinSample)
+  const localSamples = loadedSamples.filter(sample => !isBuiltinSample(sample))
 
   return (
     <div style={{
@@ -3407,7 +3863,9 @@ function SlotCard({
 
       {/* Inline one-shot content — replaces the params loop for one-shot slots */}
       {isOneShot && (
-        <InlineOneShotContent bodyId={bodyId} slotKey={slotKey} simple={simple} accent={accent} isStretch={cs.id === 'instrument-oneshot-stretch'} />
+        <InlineOneShotContent bodyId={bodyId} slotKey={slotKey} simple={simple} accent={accent}
+          isStretch={cs.id === 'instrument-oneshot-stretch' || cs.id === 'instrument-sampler'}
+          isSamplerStretch={cs.id === 'instrument-sampler'} />
       )}
 
       {isWaveLab && (
@@ -3507,9 +3965,20 @@ function SlotCard({
                 style={{ flex: 1, minWidth: 0, fontSize: 8, border: bdr, borderRadius: 3, padding: '1px 2px', background: bg, color: loadedSamples.length ? inputCol : dimText, fontFamily: 'inherit' }}
               >
                 <option value="">— auto</option>
-                {loadedSamples.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
+                {defaultSamples.length > 0 && (
+                  <optgroup label="Default">
+                    {defaultSamples.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {localSamples.length > 0 && (
+                  <optgroup label="Local">
+                    {localSamples.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             )}
           </div>
@@ -4128,17 +4597,19 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
 
   // Per-slot key helpers
   function triggerKey(i: number)  { return isBodyMode ? `b:${bodyId}:trigger:${i}` : `g:trigger:${i}` }
+  function noteKey()              { return isBodyMode ? `b:${bodyId}:note`          : 'g:note'         }
   function instrumentKey()        { return isBodyMode ? `b:${bodyId}:instrument`    : 'g:instrument'   }
   function effectKey(i: number)   { return isBodyMode ? `b:${bodyId}:effect:${i}`  : `g:effect:${i}`  }
 
   // Body-level override status
   const bodyOv          = bodyRacks[bodyId] ?? {}
   const hasTriggerOv    = isBodyMode && (bodyOv.triggers   != null && bodyOv.triggers.length   > 0)
+  const hasNoteOv       = isBodyMode && (bodyOv.note       != null)
   const hasInstrumentOv = isBodyMode && (bodyOv.instrument != null)
   const hasEffectsOv    = isBodyMode && (bodyOv.effects    != null && bodyOv.effects.length    > 0)
 
   // ── Assign helpers ────────────────────────────────────────────────────────
-  function handleAssign(slot: 'trigger' | 'instrument' | 'effect', id: string) {
+  function handleAssign(slot: 'trigger' | 'note' | 'instrument' | 'effect', id: string) {
     const cs = getControlSetById(id)
     if (!cs) return
     if (slot === 'trigger') {
@@ -4147,6 +4618,9 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
     } else if (slot === 'effect') {
       if (isBodyMode) addBodyEffect(bodyId, id)
       else addGlobalEffect(id)
+    } else if (slot === 'note') {
+      if (isBodyMode) setBodySlot(bodyId, slot, id)
+      else setGlobalSlot(slot, id)
     } else {
       if (isBodyMode) setBodySlot(bodyId, slot, id)
       else setGlobalSlot(slot, id)
@@ -4163,7 +4637,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
     else removeGlobalEffect(index)
   }
 
-  function handleClear(slot: 'instrument', hasOv: boolean) {
+  function handleClear(slot: 'note' | 'instrument', hasOv: boolean) {
     if (isBodyMode) {
       if (hasOv) clearBodySlot(bodyId, slot)
       else setGlobalSlot(slot, null)
@@ -4172,7 +4646,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
     }
   }
 
-  function MakeUniqueButton({ slot }: { slot: 'triggers' | 'instrument' | 'effects' }) {
+  function MakeUniqueButton({ slot }: { slot: 'triggers' | 'note' | 'instrument' | 'effects' }) {
     return (
       <button
         title="Make this global rack slot unique for this body"
@@ -4262,9 +4736,10 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
       if (!id) return
       const cs = getControlSetById(id)
       if (!cs) return
-      const slot: 'trigger' | 'instrument' | 'effect' =
-        cs.category === 'trigger' ? 'trigger' :
-        cs.category === 'instrument' ? 'instrument' : 'effect'
+        const slot: 'trigger' | 'note' | 'instrument' | 'effect' =
+          cs.category === 'trigger' ? 'trigger' :
+          cs.category === 'note' ? 'note' :
+          cs.category === 'instrument' ? 'instrument' : 'effect'
       handleAssign(slot, id)
     } catch (err) {
       console.error('Control set drop failed', err)
@@ -4291,6 +4766,8 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
 
   // Slot info getters
   const triggerCsList = effectiveRack.triggers.map(id => getControlSetById(id))
+  const visibleTriggerEntries = triggerCsList.map((cs, i) => ({ cs, i })).filter(entry => entry.cs)
+  const noteCs = effectiveRack.note ? getControlSetById(effectiveRack.note) : null
   const instrumentCs  = effectiveRack.instrument ? getControlSetById(effectiveRack.instrument) : null
   const effectCsList  = effectiveRack.effects.map(id => getControlSetById(id))
 
@@ -4299,6 +4776,9 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
     const slots = [
       ...(triggerCsList.length > 0
         ? [{ icon: triggerCsList[0]?.icon ?? '…', name: triggerCsList[0]?.name ?? '…', col: triggerCsList[0]?.color ?? hdrCol }]
+        : []),
+      ...(noteCs
+        ? [{ icon: noteCs.icon, name: noteCs.name, col: noteCs.color }]
         : []),
       ...(instrumentCs
         ? [{ icon: instrumentCs.icon, name: instrumentCs.name, col: instrumentCs.color }]
@@ -4367,12 +4847,14 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
   // Find which CS is currently expanded by matching the slot key directly
   const expandedCs = expandedSlotKey
     ? (() => {
+        const noteActualKey = isBodyMode && hasNoteOv ? noteKey() : 'g:note'
         const instrumentActualKey = isBodyMode && hasInstrumentOv ? instrumentKey() : 'g:instrument'
         const allSlots = [
           ...triggerCsList.map((cs, i) => ({
             cs,
             key: isBodyMode && hasTriggerOv ? triggerKey(i) : `g:trigger:${i}`,
           })),
+          noteCs ? { cs: noteCs, key: noteActualKey } : null,
           instrumentCs ? { cs: instrumentCs, key: instrumentActualKey } : null,
           ...effectCsList.map((cs, i) => ({
             cs,
@@ -4409,7 +4891,13 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
           <div style={{ flex: 1, overflow: 'auto' }}>
             {expandedCs?.id === 'instrument-wave-lab' ? (
               <WaveLabInstrumentExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
-            ) : expandedCs?.id === 'trigger-arpeggio' ? (
+            ) : expandedCs?.id === 'instrument-oneshot-stretch' ? (
+              <OneShotStretchExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
+            ) : expandedCs?.id === 'instrument-sampler' ? (
+              <SamplerStretchExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
+            ) : expandedCs?.id === 'trigger-orbit-step' ? (
+              <OrbitStepExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
+            ) : (expandedCs?.id === 'trigger-arpeggio' || expandedCs?.id === 'note-arpeggio') ? (
               <ArpeggioExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
             ) : (
               <GenericSlotExpanded slotKey={expandedSlotKey} cs={expandedCs} simple={simple} onClose={() => setExpandedSlotKey(null)} />
@@ -4483,40 +4971,13 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
             scrollbarWidth: 'thin',
             scrollbarColor: simple ? 'rgba(0,0,0,0.12) transparent' : 'rgba(255,255,255,0.08) transparent',
           }}>
-            {selectedBody && selectedBody.type !== 'sun' && (
-              <div style={{
-                position: 'absolute',
-                inset: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                pointerEvents: 'none',
-                zIndex: 0,
-                overflow: 'hidden',
-              }}>
-                <RackBodySigil
-                  body={selectedBody}
-                  size={240}
-                  color={simple ? 'rgba(0,0,0,0.70)' : selectedBody.color}
-                  opacity={simple ? 0.055 : 0.075}
-                  strokeWidth={1.75}
-                  style={{
-                    position: 'relative',
-                    left: 'auto',
-                    top: 'auto',
-                    transform: 'none',
-                    filter: 'none',
-                  }}
-                />
-              </div>
-            )}
 
           {/* ── TRIGGER ── */}
           <div style={{ display: 'flex', alignItems: 'stretch', gap: 0 }}>
             <SectionLabel label="Trigger" simple={simple} highlighted={rackDragCat === 'trigger'} />
             <div style={{ width: 1, background: divCol, margin: '6px 0' }} />
             <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
-              {triggerCsList.length > 0 ? triggerCsList.map((cs, i) =>
+              {visibleTriggerEntries.length > 0 ? visibleTriggerEntries.map(({ cs, i }) =>
                 cs ? (
                   <div key={i} style={{ flexShrink: 0, width: 148, position: 'relative' }}>
                     <SlotCard cs={cs}
@@ -4533,7 +4994,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
               ) : (
                 <EmptySlot simple={simple} highlighted={rackDragCat === 'trigger'} />
               )}
-              {triggerCsList.length < MAX_TRIGGERS && triggerCsList.length > 0 && (
+              {triggerCsList.length < MAX_TRIGGERS && visibleTriggerEntries.length > 0 && (
                 <EmptySlot simple={simple} highlighted={rackDragCat === 'trigger'} />
               )}
               {isBodyMode && hasTriggerOv && triggerCsList.length > 0 && (
@@ -4545,14 +5006,43 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
             </div>
           </div>
 
-          {/* ── TRIGGER → INSTRUMENT signal bridge ── */}
+          {/* ── NOTE ── */}
+          <div style={{ display: 'flex', alignItems: 'stretch', gap: 0 }}>
+            <SectionLabel label="Note" simple={simple} highlighted={rackDragCat === 'note'} />
+            <div style={{ width: 1, background: divCol, margin: '6px 0' }} />
+            <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+              {noteCs ? (
+                <div style={{ flexShrink: 0, width: 148, position: 'relative' }}>
+                  <SlotCard cs={noteCs}
+                    slotKey={isBodyMode && !hasNoteOv ? 'g:note' : noteKey()}
+                    simple={simple}
+                    bodyId={isBodyMode ? bodyId : null}
+                    ghost={isBodyMode && !hasNoteOv}
+                    onClear={() => handleClear('note', hasNoteOv)}
+                    expandedSlotKey={expandedSlotKey}
+                    onToggleExpand={key => setExpandedSlotKey(prev => prev === key ? null : key)} />
+                  {isBodyMode && !hasNoteOv && <MakeUniqueButton slot="note" />}
+                </div>
+              ) : (
+                <EmptySlot simple={simple} highlighted={rackDragCat === 'note'} />
+              )}
+              {isBodyMode && hasNoteOv && noteCs && (
+                <button
+                  onClick={() => clearBodySlot(bodyId, 'note')}
+                  style={{ alignSelf: 'flex-end', fontSize: 7, color: hdrCol, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontFamily: 'inherit' }}
+                >↺ global</button>
+              )}
+            </div>
+          </div>
+
+          {/* ── TRIGGER / NOTE → INSTRUMENT signal bridge ── */}
           <TriggerSignalBridge bodyId={isBodyMode ? bodyId : null} simple={simple} />
 
           {/* ── INSTRUMENT ── */}
           <div style={{ display: 'flex', alignItems: 'stretch', gap: 0 }}>
             <SectionLabel label="Instrument" simple={simple} highlighted={rackDragCat === 'instrument'} />
             <div style={{ width: 1, background: divCol, margin: '6px 0' }} />
-            <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 4, minWidth: (instrumentCs?.id === 'instrument-oneshot' || instrumentCs?.id === 'instrument-oneshot-stretch') ? 220 : instrumentCs?.id === 'instrument-wave-lab' ? 230 : instrumentCs?.id === 'instrument-osc-synth' ? 210 : 160 }}>
+            <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 4, minWidth: (instrumentCs?.id === 'instrument-oneshot' || instrumentCs?.id === 'instrument-oneshot-stretch' || instrumentCs?.id === 'instrument-sampler') ? 220 : instrumentCs?.id === 'instrument-wave-lab' ? 230 : instrumentCs?.id === 'instrument-osc-synth' ? 210 : 160 }}>
               {instrumentCs ? (
                 <div style={{ position: 'relative' }}>
                   <SlotCard cs={instrumentCs}
