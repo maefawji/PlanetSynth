@@ -1434,7 +1434,7 @@ function InlineArpContent({
   )
 }
 
-function ArpeggioExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; slotKey: string; simple: boolean }) {
+function ArpeggioExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string | null; slotKey: string; simple: boolean; onClose?: () => void }) {
   const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
   const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
@@ -1506,6 +1506,12 @@ function ArpeggioExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; 
   )
 
   return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+    {/* Inner header */}
+    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px 4px 48px', borderBottom:`0.5px solid ${border}`, flexShrink:0 }}>
+      {onClose && <button onClick={onClose} style={{ fontSize:9, color:dim, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:'0 4px' }}>▼ close</button>}
+      <span style={{ fontSize:10, fontWeight:700, color:'#f59e0b' }}>♜ Arpeggio</span>
+    </div>
     <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 280px 200px', gap: 14, padding: '12px 14px 12px 48px', minHeight: 300 }}>
       <div style={{ borderRight: `0.5px solid ${border}`, paddingRight: 14 }}>
         {sectionLabel('Mode')}
@@ -1760,6 +1766,7 @@ function ArpeggioExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; 
           </svg>
         </div>
       </div>
+    </div>
     </div>
   )
 }
@@ -2651,7 +2658,7 @@ function WLSliderRow({ label, paramKey, min, max, step, fmt, srcKey, rateKey, sh
   )
 }
 
-function WaveLabInstrumentExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; slotKey: string; simple: boolean }) {
+function WaveLabInstrumentExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string | null; slotKey: string; simple: boolean; onClose?: () => void }) {
   const { getBodyEffectiveParams, getControlSetById, globalRack, rackParamOverrides, setSlotOverride } = useControlSetStore()
   const bodies = usePlanetStore(s => s.bodies)
   const G = usePlanetStore(s => s.simParams.G)
@@ -2726,7 +2733,15 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple }: { bodyId: string
 
   const engine = bodyId ? getBodyWaveLabEngine(bodyId) : null
 
+  const hdrColWL = simple ? 'rgba(0,0,0,0.28)' : 'rgba(255,255,255,0.22)'
+
   return (
+    <div style={{ display:'flex', flexDirection:'column', overflow:'hidden' }}>
+    {/* Inner header */}
+    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px 4px', borderBottom:`0.5px solid ${simple?'rgba(0,0,0,0.07)':'rgba(255,255,255,0.06)'}`, flexShrink:0 }}>
+      {onClose && <button onClick={onClose} style={{ fontSize:9, color:hdrColWL, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:'0 4px' }}>▼ close</button>}
+      <span style={{ fontSize:10, fontWeight:700, color:'#34d399' }}>∿ Wave Lab</span>
+    </div>
     <div style={{ display:'flex', gap:0, height: 380, overflow:'hidden' }}>
 
       {/* Left: signal selector / synthesis / oscilloscope */}
@@ -2824,6 +2839,7 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple }: { bodyId: string
           />
         </div>
       </div>
+    </div>
     </div>
   )
 }
@@ -2999,17 +3015,29 @@ function InlineWaveLabContent({
 
 // ── Generic slot expanded panel ────────────────────────────────────────────────
 
-function GenericSlotExpanded({ slotKey, cs, simple }: { slotKey: string; cs: ControlSet | null; simple: boolean }) {
+function GenericSlotExpanded({ slotKey, cs, simple, onClose }: { slotKey: string; cs: ControlSet | null; simple: boolean; onClose?: () => void }) {
   const { rackParamOverrides, setSlotOverride } = useControlSetStore()
   const overrides = rackParamOverrides[slotKey] ?? {}
   const dim  = simple ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'
 
-  if (!cs) return <div style={{ padding:16, fontSize:10, color:dim }}>No params</div>
+  const hdrCol = simple ? 'rgba(0,0,0,0.28)' : 'rgba(255,255,255,0.22)'
+
+  if (!cs) return (
+    <div style={{ padding:16, fontSize:10, color:dim }}>
+      {onClose && <button onClick={onClose} style={{fontSize:9,color:hdrCol,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',marginBottom:8,display:'block'}}>▼ close</button>}
+      No params
+    </div>
+  )
 
   const params = { ...cs.params, ...overrides }
   const numericParams = Object.entries(params).filter(([,v]) => typeof v === 'number')
 
   return (
+    <div>
+    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px 4px', borderBottom:`0.5px solid ${simple?'rgba(0,0,0,0.07)':'rgba(255,255,255,0.06)'}` }}>
+      {onClose && <button onClick={onClose} style={{fontSize:9,color:hdrCol,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:'0 4px'}}>▼ close</button>}
+      <span style={{fontSize:10,fontWeight:700,color:cs.color}}>{cs.icon} {cs.name}</span>
+    </div>
     <div style={{ padding:'10px 16px', display:'flex', flexWrap:'wrap', gap:'6px 24px', alignContent:'flex-start' }}>
       {numericParams.map(([key, val]) => (
         <div key={key} style={{ display:'flex', alignItems:'center', gap:6, minWidth:240 }}>
@@ -3020,6 +3048,7 @@ function GenericSlotExpanded({ slotKey, cs, simple }: { slotKey: string; cs: Con
           <span style={{ fontSize:8.5, fontFamily:'monospace', color:cs.color, width:40, textAlign:'right', flexShrink:0 }}>{Number(val).toFixed(2)}</span>
         </div>
       ))}
+    </div>
     </div>
   )
 }
@@ -4221,27 +4250,14 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
           overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
         }}>
-          {/* Header */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px 4px',
-            borderBottom: `0.5px solid ${divCol}`, flexShrink: 0,
-          }}>
-            <button onClick={() => setExpandedSlotKey(null)}
-              style={{ fontSize: 9, color: hdrCol, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '0 4px' }}>
-              ▼ close
-            </button>
-            {expandedCs && (
-              <span style={{ fontSize: 10, fontWeight: 700, color: expandedCs.color }}>{expandedCs.icon} {expandedCs.name}</span>
-            )}
-          </div>
-          {/* Content: custom expanded editors where available, generic params otherwise */}
+          {/* Content — close button lives inside each component */}
           <div style={{ flex: 1, overflow: 'auto' }}>
             {expandedCs?.id === 'instrument-wave-lab' ? (
-              <WaveLabInstrumentExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} />
+              <WaveLabInstrumentExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
             ) : expandedCs?.id === 'trigger-arpeggio' ? (
-              <ArpeggioExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} />
+              <ArpeggioExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
             ) : (
-              <GenericSlotExpanded slotKey={expandedSlotKey} cs={expandedCs} simple={simple} />
+              <GenericSlotExpanded slotKey={expandedSlotKey} cs={expandedCs} simple={simple} onClose={() => setExpandedSlotKey(null)} />
             )}
           </div>
         </div>
