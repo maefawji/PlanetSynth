@@ -49,6 +49,12 @@ let _liveBodiesSnap: LiveBodySnap[] = []
 let _simParamsSnap: Pick<PlanetSimParams, 'G' | 'epsilon' | 'dt'> = { G: 1, epsilon: 5, dt: 0.2 }
 const _trailsSnap = new Map<string, TrailRing>()
 
+// Module-level ref so clearStardustDots can be called from outside
+let _stardustDotsRefExternal: React.MutableRefObject<TriggerStarMarker[]> | null = null
+export function clearStardustDots() {
+  if (_stardustDotsRefExternal) _stardustDotsRefExternal.current = []
+}
+
 export function getPlanetLiveBodySnapshot(): LiveBodySnap[] {
   return _liveBodiesSnap.map(b => ({ ...b }))
 }
@@ -546,6 +552,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const arpPrevNoteRef  = useRef<Map<string, number[]>>(new Map())
   const lastAutoSpawnMsRef = useRef(performance.now())
   const triggerStarMarkersRef = useRef<TriggerStarMarker[]>([])
+  // Stardust: persistent dots left after trigger star animations
+  const stardustDotsRef = useRef<TriggerStarMarker[]>([])
+  // expose for external clear
+  _stardustDotsRefExternal = stardustDotsRef
 
   // Sync storeBodiesRef + purge deleted bodies from live simulation
   useEffect(() => {
@@ -564,6 +574,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
         trailsRef.current.delete(lb.id)
         bodyOscilloscopeRef.current.delete(lb.id)
         triggerStarMarkersRef.current = triggerStarMarkersRef.current.filter(m => m.bodyId !== lb.id)
+        stardustDotsRef.current = stardustDotsRef.current.filter(m => m.bodyId !== lb.id)
         prevAngleRef.current.delete(lb.id)
         lfoAccumRef.current.delete(lb.id)
         lastTriggerSimTimeRef.current.delete(lb.id)
@@ -658,6 +669,14 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     }
     const maxCount = Math.max(1, Math.floor(sp.triggerStarMaxCount || 1))
     triggerStarMarkersRef.current = [...triggerStarMarkersRef.current, marker].slice(-maxCount)
+    // 星屑モード: 星フラッシュに加え、その位置に小さな点を永続的に残す
+    if ((sp.triggerStarShape ?? 'star') === 'dot') {
+      const STARDUST_MAX = 2000
+      stardustDotsRef.current = [
+        ...stardustDotsRef.current,
+        { ...marker, id: `dust:${marker.id}` },
+      ].slice(-STARDUST_MAX)
+    }
   }
 
   // ── Initialize / reinitialize ─────────────────────────────────────────────
@@ -2263,21 +2282,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 const fade = Math.max(0, 1 - Math.pow(Math.max(0, progress - fadeStart) / fadeSpan, 1.6))
                 const base = Math.max(1, storeParams.triggerStarSize) / zoom
                 const color = monochromeMode && !paperCanvasKeepBodyColors ? monoInk : marker.color
-                const isDot = (storeParams.triggerStarShape ?? 'star') === 'dot'
-
-                if (isDot) {
-                  // Dot mode: simple expanding circle
-                  const dotR = base * (0.4 + burst * 0.6)
-                  return (
-                    <circle
-                      key={marker.id}
-                      cx={marker.x} cy={marker.y}
-                      r={dotR}
-                      fill={color}
-                      opacity={fade * (monochromeMode ? paperMainOpacity : simple ? 0.55 : 0.75)}
-                    />
-                  )
-                }
+                // 星屑モードでも通常の十字フラッシュを描画（点は別途残す）
 
                 const outer = base * (0.45 + burst * Math.max(0.2, storeParams.triggerStarSpread))
                 const inner = base * Math.max(0, burst * 0.82 - 0.24)
@@ -2318,6 +2323,25 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                       opacity={monochromeMode ? paperMainOpacity : simple ? 0.45 : 0.65}
                     />
                   </g>
+                )
+              })}
+            </g>
+          )}
+
+          {/* 星屑ドット — 星屑モード時にトリガー位置に永続的な小さな点を残す */}
+          {storeParams.showTriggerStars && (storeParams.triggerStarShape ?? 'star') === 'dot' && stardustDotsRef.current.length > 0 && (
+            <g style={{ pointerEvents: 'none' }}>
+              {stardustDotsRef.current.map(dot => {
+                const dustColor = monochromeMode && !paperCanvasKeepBodyColors ? monoInk : dot.color
+                const dustR = Math.max(0.5, storeParams.triggerStarSize * 0.18) / zoom
+                return (
+                  <circle
+                    key={dot.id}
+                    cx={dot.x} cy={dot.y}
+                    r={dustR}
+                    fill={dustColor}
+                    opacity={monochromeMode ? paperSubtleOpacity : simple ? 0.35 : 0.5}
+                  />
                 )
               })}
             </g>

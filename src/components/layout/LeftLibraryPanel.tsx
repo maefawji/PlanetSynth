@@ -3,6 +3,7 @@ import { Atom, ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizonta
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { usePlanetStore, type PlanetSimParams } from '../../store/planetStore'
 import { CollisionPanel } from '../planet/CollisionPanel'
+import { clearStardustDots } from '../planet/PlanetCanvas'
 import { useWholeInstrumentStore } from '../../store/wholeInstrumentStore'
 import { useOrbitHubStore } from '../../store/orbitHubStore'
 import {
@@ -2611,7 +2612,7 @@ function CanvasSettingsPanel() {
             <input type="checkbox"
               checked={(simParams.triggerStarShape ?? 'star') === 'dot'}
               onChange={e => updateSimParams({ triggerStarShape: e.target.checked ? 'dot' : 'star' })} />
-            <span style={{ fontSize: 10, color: t.textMid }}>Dot mode</span>
+            <span style={{ fontSize: 10, color: t.textMid }}>星屑を残す</span>
           </label>
           <NumberSetting label="Size" value={simParams.triggerStarSize} min={1} step={1}
             onChange={triggerStarSize => updateSimParams({ triggerStarSize })} />
@@ -2627,6 +2628,14 @@ function CanvasSettingsPanel() {
             onChange={triggerStarGlow => updateSimParams({ triggerStarGlow })} />
           <NumberSetting label="Fade" value={simParams.triggerStarFadeStart} min={0} max={0.95} step={0.05}
             onChange={triggerStarFadeStart => updateSimParams({ triggerStarFadeStart })} />
+          {(simParams.triggerStarShape ?? 'star') === 'dot' && (
+            <div style={{ paddingLeft: 12, marginTop: 4 }}>
+              <button onClick={clearStardustDots} style={{
+                fontSize: 9, padding: '2px 10px', borderRadius: 4, fontFamily: 'inherit', cursor: 'pointer',
+                border: `0.5px solid ${t.divider}`, background: 'transparent', color: t.textDim,
+              }}>星屑をクリア</button>
+            </div>
+          )}
         </SettingsGroup>
 
         <SettingsGroup label="Body Oscilloscope Rings">
