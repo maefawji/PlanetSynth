@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { usePlanetStore, type PlanetBody } from '../../store/planetStore'
 import { computeOrbitTelemetry } from '../../lib/orbitTelemetry'
-import { WHOLE_ORBIT_SOURCES } from '../../lib/wholeOrbitSources'
+import { WHOLE_ORBIT_SOURCES, WHOLE_ORBIT_SOURCES_EXTENDED } from '../../lib/wholeOrbitSources'
 import { getPlanetLiveBodySnapshot } from '../planet/PlanetCanvas'
 
 type LivePlanetBody = PlanetBody & { ax?: number; ay?: number }
@@ -44,6 +44,7 @@ export function OrbitHubView() {
   const avgBuf = useRef<AvgBuffers>(new Map())
   const [avgSnap, setAvgSnap] = useState<AvgBuffers>(new Map())
   const [showAvg, setShowAvg] = useState(false)
+  const [showExtended, setShowExtended] = useState(false)
 
   useEffect(() => {
     let raf = 0
@@ -97,7 +98,15 @@ export function OrbitHubView() {
 
       <div style={{ minHeight: 0, display: 'grid', gridTemplateColumns: '340px 1fr 260px', gap: 14, padding: 14 }}>
         <section style={{ minHeight: 0, border: `0.5px solid ${border}`, background: panel, borderRadius: mono ? 1 : 8, padding: 12, overflow: 'auto' }}>
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: dim, marginBottom: 10 }}>Whole Source Bank</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: dim }}>Whole Source Bank</div>
+            <button onClick={() => setShowExtended(v => !v)} style={{
+              fontSize: 8, padding: '2px 8px', borderRadius: 4, fontFamily: 'inherit', cursor: 'pointer',
+              border: `0.5px solid ${showExtended ? '#a78bfa88' : border}`,
+              background: showExtended ? 'rgba(167,139,250,0.12)' : 'transparent',
+              color: showExtended ? '#a78bfa' : dim,
+            }}>{showExtended ? '＋ extended ON' : '＋ extended'}</button>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {WHOLE_ORBIT_SOURCES.map(source => {
               const norm = source.value(telemetry)
@@ -116,6 +125,31 @@ export function OrbitHubView() {
               )
             })}
           </div>
+          {showExtended && (
+            <>
+              <div style={{ fontSize: 9, fontWeight: 700, color: '#a78bfa', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 14, marginBottom: 8, borderTop: `0.5px solid ${border}`, paddingTop: 10 }}>
+                Extended — size · rotation · tension · disorder
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {WHOLE_ORBIT_SOURCES_EXTENDED.map(source => {
+                  const norm = source.value(telemetry)
+                  const raw = source.rawValue(telemetry)
+                  return (
+                    <div key={source.key} style={{ border: `0.5px solid ${border}`, borderRadius: mono ? 1 : 7, padding: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: source.color }}>{source.label}</span>
+                        <span style={{ fontSize: 10, fontFamily: 'monospace', color: fg }}>{norm.toFixed(2)}</span>
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 8, color: dim, fontFamily: 'monospace', lineHeight: 1.4 }}>
+                        {raw.toFixed(2)} · {source.detail}
+                      </div>
+                      <div style={{ marginTop: 6 }}><Meter value={norm} color={source.color} /></div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </section>
 
         <section style={{ minHeight: 0, border: `0.5px solid ${border}`, background: panel, borderRadius: mono ? 1 : 8, padding: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

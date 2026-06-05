@@ -94,7 +94,85 @@ export const WHOLE_ORBIT_SOURCES: WholeOrbitSourceDef[] = [
   },
 ]
 
-export const WHOLE_ORBIT_SOURCE_MAP = new Map(WHOLE_ORBIT_SOURCES.map(source => [source.key, source]))
+// ── Extended sources (heavier computation, but still O(n²) — fine for n<50) ──
+
+export const WHOLE_ORBIT_SOURCES_EXTENDED: WholeOrbitSourceDef[] = [
+  {
+    key: 'mean-radius',
+    label: 'mean radius',
+    rawLabel: 'mean dist from sun',
+    color: '#34d399',
+    value: t => t.whole.norm.meanRadius,
+    rawValue: t => t.whole.meanRadius,
+    detail: 'mean |r| / 1000  →  pitch / LFO rate',
+  },
+  {
+    key: 'radius-spread',
+    label: 'radius spread',
+    rawLabel: 'std-dev of radii',
+    color: '#60a5fa',
+    value: t => t.whole.norm.radiusSpread,
+    rawValue: t => t.whole.radiusSpread,
+    detail: 'σ(r) / 500  →  filter cutoff',
+  },
+  {
+    key: 'center-offset',
+    label: 'center offset',
+    rawLabel: 'CoM distance from sun',
+    color: '#22d3ee',
+    value: t => t.whole.norm.centerOffset,
+    rawValue: t => t.whole.centerOffset,
+    detail: '|CoM – sun| / 600  →  pan / LFO depth',
+  },
+  {
+    key: 'angular-momentum',
+    label: 'angular mom.',
+    rawLabel: 'Σ m(xVy−yVx) / M',
+    color: '#a78bfa',
+    value: t => t.whole.norm.angularMomentum,
+    rawValue: t => t.whole.angularMomentum,
+    detail: 'norm 0–2000  →  rotation / phaser',
+  },
+  {
+    key: 'phase-entropy',
+    label: 'phase entropy',
+    rawLabel: 'angle bin entropy',
+    color: '#f472b6',
+    value: t => t.whole.norm.phaseEntropy,
+    rawValue: t => t.whole.phaseEntropy,
+    detail: 'Shannon H (8-bin) [0,1]  →  noise / reverb',
+  },
+  {
+    key: 'close-pairs',
+    label: 'close pairs',
+    rawLabel: 'pairs < 200 units',
+    color: '#fb923c',
+    value: t => t.whole.norm.closePairCount,
+    rawValue: t => t.whole.closePairCount,
+    detail: 'count / 6  →  trigger density',
+  },
+  {
+    key: 'kinetic-energy',
+    label: 'kinetic energy',
+    rawLabel: 'Σ ½mv²',
+    color: '#fbbf24',
+    value: t => t.whole.norm.kineticEnergy,
+    rawValue: t => t.whole.kineticEnergy,
+    detail: 'log1p(KE) / log1p(50k)  →  brightness / level',
+  },
+  {
+    key: 'tension',
+    label: 'tension',
+    rawLabel: '1 / nearest distance',
+    color: '#f87171',
+    value: t => t.whole.norm.tension,
+    rawValue: t => t.whole.tension,
+    detail: '(1/nearest) / 0.05  →  distortion / transient',
+  },
+]
+
+export const ALL_WHOLE_ORBIT_SOURCES = [...WHOLE_ORBIT_SOURCES, ...WHOLE_ORBIT_SOURCES_EXTENDED]
+export const WHOLE_ORBIT_SOURCE_MAP = new Map(ALL_WHOLE_ORBIT_SOURCES.map(source => [source.key, source]))
 
 export function wholeOrbitSourceDef(source: WholeInstrumentSource): WholeOrbitSourceDef {
   return WHOLE_ORBIT_SOURCE_MAP.get(source) ?? WHOLE_ORBIT_SOURCES[0]

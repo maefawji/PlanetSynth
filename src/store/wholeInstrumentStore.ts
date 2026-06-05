@@ -1,7 +1,10 @@
 import { create } from 'zustand'
 
 export type WholeInstrumentType = 'off' | 'wave-drone' | 'sampler'
-export type WholeInstrumentSource = 'count' | 'mass' | 'speed' | 'spread' | 'z' | 'nearest' | 'center-x' | 'center-y'
+export type WholeInstrumentSource =
+  | 'count' | 'mass' | 'speed' | 'spread' | 'z' | 'nearest' | 'center-x' | 'center-y'
+  | 'mean-radius' | 'radius-spread' | 'center-offset' | 'angular-momentum'
+  | 'phase-entropy' | 'close-pairs' | 'kinetic-energy' | 'tension'
 
 export interface WholeInstrumentSettings {
   type: WholeInstrumentType
