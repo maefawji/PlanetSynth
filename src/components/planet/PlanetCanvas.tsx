@@ -2691,11 +2691,11 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
             flexDirection: 'column',
             alignItems: 'center',
             gap: 7,
-            padding: '5px 4px',
-            borderRadius: simple ? 3 : 8,
-            background: simple ? 'rgba(255,255,255,0.58)' : 'rgba(8,8,14,0.26)',
-            border: `0.5px solid ${simple ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)'}`,
-            backdropFilter: 'blur(6px)',
+            padding: '2px 0',
+            borderRadius: 0,
+            background: 'transparent',
+            border: 'none',
+            backdropFilter: 'none',
             overflowY: 'auto',
             overflowX: 'hidden',
             scrollbarWidth: 'none',
@@ -2710,30 +2710,30 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 type="button"
                 title={`${index + 1}. ${body.name}`}
                 aria-label={`Select ${body.name}`}
-                ref={el => { if (el && selected) el.scrollIntoView({ block: 'nearest' }) }}
                 onMouseDown={e => e.stopPropagation()}
+                onMouseUp={e => e.currentTarget.blur()}
                 onClick={e => {
                   e.stopPropagation()
                   setSelectedBodyId(selected ? null : body.id)
+                  e.currentTarget.blur()
                 }}
                 style={{
                   width: 24,
                   height: 24,
                   borderRadius: '50%',
                   border: selected
-                    ? `1.5px solid ${monochromeMode ? monoInk : '#fff'}`
-                    : `0.5px solid ${bodyColor}88`,
-                  background: selected
-                    ? (simple ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.13)')
-                    : (simple ? 'rgba(255,255,255,0.62)' : 'rgba(12,12,18,0.58)'),
+                    ? `1.5px dashed ${bodyColor}`
+                    : 'none',
+                  background: 'transparent',
                   boxShadow: selected
-                    ? `0 0 0 2px ${bodyColor}55, 0 0 10px ${bodyColor}66`
-                    : `0 0 6px ${bodyColor}33`,
+                    ? `0 0 10px ${bodyColor}55`
+                    : 'none',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: 0,
                   cursor: 'pointer',
+                  outline: 'none',
                 }}
               >
                 <span

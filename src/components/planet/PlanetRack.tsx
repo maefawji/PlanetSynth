@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties, type ReactNode } from 'react'
 import { usePlanetStore } from '../../store/planetStore'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import type { PlanetBody, PlanetSimParams } from '../../store/planetStore'
@@ -189,7 +189,21 @@ function bodySigilGrammar(body: PlanetBody): SigilGrammar {
   return body.sigilGrammar ?? randomGrammar(stableSigilSeed(`${body.id}:${body.name}`), {})
 }
 
-function RackBodySigil({ body, size = 38 }: { body: PlanetBody; size?: number }) {
+function RackBodySigil({
+  body,
+  size = 38,
+  color = '#fff',
+  opacity = 1,
+  strokeWidth = 2.15,
+  style,
+}: {
+  body: PlanetBody
+  size?: number
+  color?: string
+  opacity?: number
+  strokeWidth?: number
+  style?: CSSProperties
+}) {
   const sigil = useMemo(
     () => generateFromGrammar(bodySigilGrammar(body)),
     [body.id, body.name, body.sigilGrammar],
@@ -209,6 +223,8 @@ function RackBodySigil({ body, size = 38 }: { body: PlanetBody; size?: number })
         pointerEvents: 'none',
         overflow: 'visible',
         filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.38))',
+        opacity,
+        ...style,
       }}
     >
       {sigil.shapes.map((shape, index) => {
@@ -216,8 +232,8 @@ function RackBodySigil({ body, size = 38 }: { body: PlanetBody; size?: number })
           key: index,
           opacity: 1,
         }
-        const stroke = shape.renderMode === 'fill' ? 'none' : '#fff'
-        const fill = shape.renderMode === 'stroke' ? 'none' : '#fff'
+        const stroke = shape.renderMode === 'fill' ? 'none' : color
+        const fill = shape.renderMode === 'stroke' ? 'none' : color
         if (shape.kind === 'circle') {
           return (
             <circle
@@ -227,7 +243,7 @@ function RackBodySigil({ body, size = 38 }: { body: PlanetBody; size?: number })
               r={shape.r}
               fill={fill}
               stroke={stroke}
-              strokeWidth={2.15}
+              strokeWidth={strokeWidth}
             />
           )
         }
@@ -238,7 +254,7 @@ function RackBodySigil({ body, size = 38 }: { body: PlanetBody; size?: number })
               points={shape.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')}
               fill={fill}
               stroke={stroke}
-              strokeWidth={2.15}
+              strokeWidth={strokeWidth}
               strokeLinejoin="round"
             />
           )
@@ -249,7 +265,7 @@ function RackBodySigil({ body, size = 38 }: { body: PlanetBody; size?: number })
             d={shape.d}
             fill={fill}
             stroke={stroke}
-            strokeWidth={2.15}
+            strokeWidth={strokeWidth}
             strokeLinecap="round"
             strokeLinejoin="round"
           />
@@ -730,6 +746,53 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
 
   const border = simple ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.06)'
 
+  function renderTrailPreview() {
+    if (!body || !trailPts || trailPts.length < 2) return null
+    let minX = trailPts[0].x, maxX = trailPts[0].x, minY = trailPts[0].y, maxY = trailPts[0].y
+    for (const p of trailPts) {
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
+    }
+    const pad = 6, bw = maxX - minX || 1, bh = maxY - minY || 1
+    const svgW = 156, svgH = 84
+    const scale = Math.min((svgW - pad * 2) / bw, (svgH - pad * 2) / bh)
+    const drawW = bw * scale, drawH = bh * scale
+    const ox = (svgW - drawW) / 2 - minX * scale
+    const oy = (svgH - drawH) / 2 - minY * scale
+    const pts = trailPts.map(p => `${(p.x * scale + ox).toFixed(1)},${(p.y * scale + oy).toFixed(1)}`).join(' ')
+    const cur = trailPts[trailPts.length - 1]
+    const cx = cur.x * scale + ox, cy = cur.y * scale + oy
+
+    function copyTrail() {
+      const json = JSON.stringify({ body: body.name, n: trailPts.length, points: trailPts })
+      const ta = document.createElement('textarea')
+      ta.value = json
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0.01;pointer-events:none'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      navigator.clipboard?.writeText(json).catch(() => {})
+    }
+
+    return (
+      <div style={{ margin: '2px 0', position: 'relative' }}>
+        <svg width={svgW} height={svgH}
+          viewBox={`0 0 ${svgW.toFixed(1)} ${svgH.toFixed(1)}`}
+          onClick={copyTrail}
+          style={{ display: 'block', borderRadius: 3, background: 'transparent', cursor: 'copy' }}
+        >
+          <polyline points={pts} fill="none" stroke={body.color} strokeOpacity={0.7} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+          <circle cx={cx.toFixed(1)} cy={cy.toFixed(1)} r={2.5} fill={body.color} opacity={0.9} />
+        </svg>
+        <div style={{ fontSize: 6, color: dimText, opacity: 0.5, textAlign: 'right', marginTop: 1 }}>
+          click to copy · {trailPts.length} pts
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ width: 172, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'row' }}>
     {/* ── main scrollable content ── */}
@@ -787,6 +850,10 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
       {!body ? (
         <div style={{ fontSize: 7, color: dimText, fontStyle: 'italic', lineHeight: 1.55 }}>no body selected</div>
       ) : (<>
+        {renderTrailPreview()}
+
+        <div style={{ height: 0.5, background: divLine, margin: '1px 0' }} />
+
         <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
           {([
             { key: 'T',   value: orbitStats ? `${orbitStats.T_real.toFixed(1)}s` : '—', title: 'orbital period' },
@@ -847,52 +914,6 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
 
 
         {/* ── Orbit preview — trail data already computed by canvas ── */}
-        {(() => {
-          if (!trailPts || trailPts.length < 2) return null
-          let minX = trailPts[0].x, maxX = trailPts[0].x, minY = trailPts[0].y, maxY = trailPts[0].y
-          for (const p of trailPts) {
-            if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
-            if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
-          }
-          const pad = 6, bw = maxX - minX || 1, bh = maxY - minY || 1
-          const svgW = 156, svgH = 84
-          const scale = Math.min((svgW - pad * 2) / bw, (svgH - pad * 2) / bh)
-          const drawW = bw * scale, drawH = bh * scale
-          const ox = (svgW - drawW) / 2 - minX * scale
-          const oy = (svgH - drawH) / 2 - minY * scale
-          const pts = trailPts.map(p => `${(p.x * scale + ox).toFixed(1)},${(p.y * scale + oy).toFixed(1)}`).join(' ')
-          const cur = trailPts[trailPts.length - 1]
-          const cx = cur.x * scale + ox, cy = cur.y * scale + oy
-
-          function copyTrail() {
-            const json = JSON.stringify({ body: body.name, n: trailPts.length, points: trailPts })
-            const ta = document.createElement('textarea')
-            ta.value = json
-            ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0.01;pointer-events:none'
-            document.body.appendChild(ta)
-            ta.focus()
-            ta.select()
-            document.execCommand('copy')
-            document.body.removeChild(ta)
-            navigator.clipboard?.writeText(json).catch(() => {})
-          }
-
-          return (
-            <div style={{ margin: '2px 0', position: 'relative' }}>
-              <svg width={svgW} height={svgH}
-                viewBox={`0 0 ${svgW.toFixed(1)} ${svgH.toFixed(1)}`}
-                onClick={copyTrail}
-                style={{ display: 'block', borderRadius: 3, background: 'transparent', cursor: 'copy' }}
-              >
-                <polyline points={pts} fill="none" stroke={body.color} strokeOpacity={0.7} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-                <circle cx={cx.toFixed(1)} cy={cy.toFixed(1)} r={2.5} fill={body.color} opacity={0.9} />
-              </svg>
-              <div style={{ fontSize: 6, color: dimText, opacity: 0.5, textAlign: 'right', marginTop: 1 }}>
-                click to copy · {trailPts.length} pts
-              </div>
-            </div>
-          )
-        })()}
 
         {showLiveData && liveStats && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 2 }}>
@@ -3855,7 +3876,7 @@ function UniverseRackIndicator({ simple }: { simple: boolean }) {
 }
 
 function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }: { simple: boolean; inspectorExpanded: boolean; onToggleInspector: () => void }) {
-  const { bodies, simParams, selectedBodyId, updateSimParams, cameraFollowBodyId, setCameraFollowBodyId } = usePlanetStore()
+  const { bodies, simParams, selectedBodyId, setSelectedBodyId, updateSimParams, cameraFollowBodyId, setCameraFollowBodyId } = usePlanetStore()
   const body = selectedBodyId ? bodies.find(b => b.id === selectedBodyId) : null
   const border   = simple ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.06)'
   const accentCol = simple ? '#2563eb' : '#7c3aed'
@@ -3908,15 +3929,30 @@ function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }
             alignItems: 'center', justifyContent: 'center',
             padding: '12px 8px', gap: 8, minWidth: 0,
           }}>
-            {/* Large color dot */}
-            <div style={{ width: 70, height: 70, flexShrink: 0, position: 'relative' }}>
-              <svg viewBox="0 0 70 70" width="70" height="70" style={{ display: 'block', overflow: 'visible' }}>
+            {/* Large rack sigil */}
+            <button
+              type="button"
+              onClick={() => setSelectedBodyId(body.id)}
+              title={`Select ${body.name}`}
+              style={{
+                width: 90,
+                height: 90,
+                flexShrink: 0,
+                position: 'relative',
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
+                cursor: 'pointer',
+                outline: 'none',
+              }}
+            >
+              <svg viewBox="0 0 90 90" width="90" height="90" style={{ display: 'block', overflow: 'visible', pointerEvents: 'none' }}>
                 {simParams.showRackBodyOscilloscope && oscData && (
                   <path
                     d={circularRackOscilloscopePath(
-                      35,
-                      35,
-                      24 + Math.max(0, simParams.rackBodyOscilloscopeGap) * 0.6,
+                      45,
+                      45,
+                      35 + Math.max(0, simParams.rackBodyOscilloscopeGap) * 0.6,
                       Math.max(0, simParams.rackBodyOscilloscopeHeight) * 0.7,
                       oscData,
                     )}
@@ -3927,19 +3963,15 @@ function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }
                     vectorEffect="non-scaling-stroke"
                   />
                 )}
-                <circle
-                  cx="35"
-                  cy="35"
-                  r="24"
-                  fill={body.color}
-                  style={{ filter: `drop-shadow(0 0 8px ${body.color}88)` }}
-                />
-                {body.type === 'sun' && (
-                  <text x="35" y="43" textAnchor="middle" fontSize="24" fill="rgba(255,255,255,0.85)">☀</text>
-                )}
               </svg>
-              {body.type !== 'sun' && <RackBodySigil body={body} size={50} />}
-            </div>
+              <RackBodySigil
+                body={body}
+                size={78}
+                color={body.color}
+                strokeWidth={2.65}
+                style={{ filter: `drop-shadow(0 0 8px ${body.color}66)` }}
+              />
+            </button>
 
             {/* Name */}
             <div style={{ textAlign: 'center' }}>
@@ -4446,10 +4478,38 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
           {/* ── Scrollable slots area (Trigger → Mixer) ── */}
           <div style={{
             flex: 1, display: 'flex', alignItems: 'stretch',
+            position: 'relative',
             overflowX: 'auto', overflowY: 'hidden',
             scrollbarWidth: 'thin',
             scrollbarColor: simple ? 'rgba(0,0,0,0.12) transparent' : 'rgba(255,255,255,0.08) transparent',
           }}>
+            {selectedBody && selectedBody.type !== 'sun' && (
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                pointerEvents: 'none',
+                zIndex: 0,
+                overflow: 'hidden',
+              }}>
+                <RackBodySigil
+                  body={selectedBody}
+                  size={240}
+                  color={simple ? 'rgba(0,0,0,0.70)' : selectedBody.color}
+                  opacity={simple ? 0.055 : 0.075}
+                  strokeWidth={1.75}
+                  style={{
+                    position: 'relative',
+                    left: 'auto',
+                    top: 'auto',
+                    transform: 'none',
+                    filter: 'none',
+                  }}
+                />
+              </div>
+            )}
 
           {/* ── TRIGGER ── */}
           <div style={{ display: 'flex', alignItems: 'stretch', gap: 0 }}>
