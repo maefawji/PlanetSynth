@@ -2592,6 +2592,14 @@ function CanvasSettingsPanel() {
             <span style={{ fontSize: 10, color: t.textMid }}>Predicted orbit on drag</span>
           </label>
           <label style={checkboxRowStyle}>
+            <input
+              type="checkbox"
+              checked={settings.showCanvasBodyList}
+              onChange={e => update({ showCanvasBodyList: e.target.checked })}
+            />
+            <span style={{ fontSize: 10, color: t.textMid }}>Canvas body list</span>
+          </label>
+          <label style={checkboxRowStyle}>
             <input type="checkbox" checked={simParams.bodyRadiusFromMass}
               onChange={e => updateSimParams({ bodyRadiusFromMass: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Size from mass</span>

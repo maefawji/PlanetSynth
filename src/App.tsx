@@ -17,7 +17,6 @@ import { WaveLabInstrumentLayer } from './components/planet/WaveLabInstrumentLay
 import { WholeInstrumentLayer } from './components/planet/WholeInstrumentLayer'
 import { SamplerInstrumentPanel } from './components/sampler/SamplerInstrumentPanel'
 import { OneShotSamplerPanel } from './components/sampler/OneShotSamplerPanel'
-import { ChordGeometryLab } from './components/chord/ChordGeometryLab'
 import { DevRouteView } from './components/dev/DevRouteView'
 import { OscView } from './components/osc/OscView'
 import { WaveLabView } from './components/wave/WaveLabView'
@@ -25,6 +24,7 @@ import { WholeInstrumentDevView } from './components/whole/WholeInstrumentDevVie
 import { OrbitHubView } from './components/orbit/OrbitHubView'
 import { TransformLabView } from './components/transform/TransformLabView'
 import { SampleModeView } from './components/sample/SampleModeView'
+import { SigilView } from './components/sigil/SigilView'
 import type { PlanetTool } from './components/planet/PlanetCanvas'
 import { MobileHud } from './components/layout/MobileHud'
 import { usePlanetStore } from './store/planetStore'
@@ -50,7 +50,7 @@ import { initToneContext } from './audio/audioLatencySettings'
 // Apply saved audio latency setting before any Tone.start() call
 initToneContext()
 
-type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub' | 'transform-lab' | 'sample'
+type AppMode = 'planet' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub' | 'transform-lab' | 'sample' | 'sigil'
 
 const RACK_MIN = 120
 const RACK_MAX = 340
@@ -196,10 +196,7 @@ export default function App() {
       <WaveLabInstrumentLayer />
       <WholeInstrumentLayer />
 
-      {appMode === 'chord-lab' ? (
-        /* ── Chord Geometry Lab ─────────────────────────────────────────── */
-        <ChordGeometryLab />
-      ) : appMode === 'osc' ? (
+      {appMode === 'osc' ? (
         /* ── Osc Mode: Ambient Oscillator dev view ──────────────────────── */
         <OscView />
       ) : appMode === 'dev' ? (
@@ -241,6 +238,9 @@ export default function App() {
       ) : appMode === 'sample' ? (
         /* ── Sample Mode ─────────────────────────────────────────────────── */
         <SampleModeView />
+      ) : appMode === 'sigil' ? (
+        /* ── Sigil Mode ──────────────────────────────────────────────────── */
+        <SigilView />
       ) : (
         /* ── Planet mode ────────────────────────────────────────────────── */
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
@@ -253,7 +253,7 @@ export default function App() {
 
             {/* Canvas area */}
             <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: monoUi ? monoBg : paperTheme ? '#fff' : '#0a0a0f' }}>
-              <PlanetCanvas tool={planetTool} onSelectTool={() => setPlanetTool('select')} />
+              <PlanetCanvas tool={planetTool} onSelectTool={() => setPlanetTool('select')} rightPanelWidth={rightCollapsed ? 34 : 260} />
 
               {/* Planet toolbar — top-left */}
               <div style={{
@@ -366,15 +366,25 @@ export default function App() {
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Mixer panel (right) */}
-            <RightInspector
-              mode="planet"
-              planetTool={planetTool}
-              collapsed={rightCollapsed}
-              onToggleCollapsed={() => setRightCollapsed(v => !v)}
-            />
+              {/* Mixer panel overlays the canvas so opening it does not resize or shift the canvas. */}
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 20,
+                display: 'flex',
+                pointerEvents: 'auto',
+              }}>
+                <RightInspector
+                  mode="planet"
+                  planetTool={planetTool}
+                  collapsed={rightCollapsed}
+                  onToggleCollapsed={() => setRightCollapsed(v => !v)}
+                />
+              </div>
+            </div>
 
             {/* Sampler instrument editor panel — temporarily hidden */}
             {false && samplerPanel && (

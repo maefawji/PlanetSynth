@@ -24,6 +24,7 @@ interface CanvasSettingsState {
   canvasBackgroundImageOpacity: number
   canvasBackgroundImageFit: 'cover' | 'contain' | 'stretch'
   canvasBackgroundImageColorInMonochrome: boolean
+  showCanvasBodyList: boolean
   /** Show the mode-switcher bar in TopBar (planet / chord-lab / osc / dev). Default: hidden. */
   showModeBar: boolean
   updateCanvasSettings: (settings: Partial<Omit<CanvasSettingsState, 'updateCanvasSettings'>>) => void
@@ -53,6 +54,7 @@ export const useCanvasSettingsStore = create<CanvasSettingsState>(set => ({
   canvasBackgroundImageOpacity: 0.35,
   canvasBackgroundImageFit: 'cover',
   canvasBackgroundImageColorInMonochrome: false,
+  showCanvasBodyList: true,
   showModeBar: true,
   updateCanvasSettings(settings) {
     set(settings)

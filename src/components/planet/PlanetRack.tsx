@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react'
 import { usePlanetStore } from '../../store/planetStore'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
-import type { PlanetSimParams } from '../../store/planetStore'
+import type { PlanetBody, PlanetSimParams } from '../../store/planetStore'
 import { useProjectStore } from '../../store/projectStore'
 import {
   useControlSetStore,
@@ -15,7 +15,6 @@ import { getPlanetLiveBodySnapshot, planetBodyStatsCache, getBodyTrailPoints, ty
 import { getBodyWaveLabEngine, subscribeWaveLabWaveformRefresh } from './WaveLabInstrumentLayer'
 import { PlanetBodyInspector, NextBodyInspector } from '../layout/RightInspector'
 import { draggingControlSetId, setDraggingControlSetId } from '../../lib/dragControlSet'
-import { getBodyOutputLevel } from '../../audio/bodyOutputMeter'
 import { computeBodyRackOutputSpatial } from '../../audio/bodyRackOutput'
 import { getBodyTriggerAge, markBodyTriggered } from '../../audio/intersectionSynth'
 import { sendMidiNote, getMidiSendAge, getMidiReceiveAge, getLastMidiSendInfo, getLastMidiReceiveInfo, isMidiReady } from '../../audio/midiManager'
@@ -25,6 +24,8 @@ import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
 import { getBusOscilloscopeData } from '../../audio/rackBusMixer'
 import { useArpProgressionStore } from '../../store/arpProgressionStore'
+import { generateFromGrammar, randomGrammar } from '../../sigil/sigilGenerator'
+import type { SigilGrammar } from '../../sigil/sigilGenerator'
 
 // ── Param editor config ───────────────────────────────────────────────────────
 
@@ -173,6 +174,89 @@ const SAMPLER_2COL_LABELS: Record<string, string> = {
   samplerReverse:   'rev',
   samplerRelease:   'rel',
   samplerReverbMix: 'rvb',
+}
+
+function stableSigilSeed(input: string): number {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return hash >>> 0
+}
+
+function bodySigilGrammar(body: PlanetBody): SigilGrammar {
+  return body.sigilGrammar ?? randomGrammar(stableSigilSeed(`${body.id}:${body.name}`), {})
+}
+
+function RackBodySigil({ body, size = 38 }: { body: PlanetBody; size?: number }) {
+  const sigil = useMemo(
+    () => generateFromGrammar(bodySigilGrammar(body)),
+    [body.id, body.name, body.sigilGrammar],
+  )
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      width={size}
+      height={size}
+      aria-hidden="true"
+      style={{
+        position: 'absolute',
+        left: '50%',
+        top: '50%',
+        transform: 'translate(-50%, -50%)',
+        display: 'block',
+        pointerEvents: 'none',
+        overflow: 'visible',
+        filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.38))',
+      }}
+    >
+      {sigil.shapes.map((shape, index) => {
+        const common = {
+          key: index,
+          opacity: 1,
+        }
+        const stroke = shape.renderMode === 'fill' ? 'none' : '#fff'
+        const fill = shape.renderMode === 'stroke' ? 'none' : '#fff'
+        if (shape.kind === 'circle') {
+          return (
+            <circle
+              {...common}
+              cx={shape.cx}
+              cy={shape.cy}
+              r={shape.r}
+              fill={fill}
+              stroke={stroke}
+              strokeWidth={2.15}
+            />
+          )
+        }
+        if (shape.kind === 'polygon') {
+          return (
+            <polygon
+              {...common}
+              points={shape.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')}
+              fill={fill}
+              stroke={stroke}
+              strokeWidth={2.15}
+              strokeLinejoin="round"
+            />
+          )
+        }
+        return (
+          <path
+            {...common}
+            d={shape.d}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={2.15}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )
+      })}
+    </svg>
+  )
 }
 /** Ordered flat list for the grid (left→right, top→bottom). Empty string = empty cell. */
 const SAMPLER_2COL_ORDER = [
@@ -3779,13 +3863,11 @@ function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }
   const dimCol    = simple ? 'rgba(0,0,0,0.4)'  : 'rgba(255,255,255,0.35)'
   const btnBg     = simple ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.07)'
 
-  const [level, setLevel] = useState(0)
   const [oscData, setOscData] = useState<Float32Array | null>(null)
   const rafRef = useRef<number>(0)
   useEffect(() => {
-    if (!body) { setLevel(0); setOscData(null); return }
+    if (!body) { setOscData(null); return }
     const poll = () => {
-      setLevel(getBodyOutputLevel(body.id))
       if (simParams.showRackBodyOscilloscope) {
         const data = getBusOscilloscopeData(body.id)
         setOscData(data ? new Float32Array(data) : null)
@@ -3800,13 +3882,10 @@ function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }
 
   const isSP        = body ? simParams.standpointBodyId === body.id : false
   const isFollowing = body ? cameraFollowBodyId === body.id : false
-  const dB          = level > 0.0001 ? 20 * Math.log10(level) : -100
-  const meterPct    = Math.max(0, Math.min(100, (Math.max(-60, dB) + 60) / 60 * 100))
-  const meterColor  = level > 0.7 ? '#fbbf24' : level > 0.01 ? '#22c55e' : 'rgba(34,197,94,0.25)'
 
   return (
     <div style={{
-      width: 110, flexShrink: 0, minHeight: 0,
+      width: 128, flexShrink: 0, minHeight: 0,
       display: 'flex', flexDirection: 'column',
       borderRight: `0.5px solid ${border}`,
     }}>
@@ -3827,17 +3906,17 @@ function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }
           <div style={{
             flex: 1, display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center',
-            padding: '12px 6px', gap: 8, minWidth: 0,
+            padding: '12px 8px', gap: 8, minWidth: 0,
           }}>
             {/* Large color dot */}
-            <div style={{ width: 54, height: 54, flexShrink: 0, position: 'relative' }}>
-              <svg viewBox="0 0 54 54" width="54" height="54" style={{ display: 'block', overflow: 'visible' }}>
+            <div style={{ width: 70, height: 70, flexShrink: 0, position: 'relative' }}>
+              <svg viewBox="0 0 70 70" width="70" height="70" style={{ display: 'block', overflow: 'visible' }}>
                 {simParams.showRackBodyOscilloscope && oscData && (
                   <path
                     d={circularRackOscilloscopePath(
-                      27,
-                      27,
-                      18 + Math.max(0, simParams.rackBodyOscilloscopeGap) * 0.6,
+                      35,
+                      35,
+                      24 + Math.max(0, simParams.rackBodyOscilloscopeGap) * 0.6,
                       Math.max(0, simParams.rackBodyOscilloscopeHeight) * 0.7,
                       oscData,
                     )}
@@ -3849,16 +3928,17 @@ function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }
                   />
                 )}
                 <circle
-                  cx="27"
-                  cy="27"
-                  r="18"
+                  cx="35"
+                  cy="35"
+                  r="24"
                   fill={body.color}
                   style={{ filter: `drop-shadow(0 0 8px ${body.color}88)` }}
                 />
                 {body.type === 'sun' && (
-                  <text x="27" y="33" textAnchor="middle" fontSize="18" fill="rgba(255,255,255,0.85)">☀</text>
+                  <text x="35" y="43" textAnchor="middle" fontSize="24" fill="rgba(255,255,255,0.85)">☀</text>
                 )}
               </svg>
+              {body.type !== 'sun' && <RackBodySigil body={body} size={50} />}
             </div>
 
             {/* Name */}
@@ -3876,20 +3956,6 @@ function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }
                   {body.catalogId}
                 </div>
               )}
-            </div>
-
-            {/* Type badge */}
-            <div style={{
-              fontSize: 8, fontWeight: 600, color: dimCol,
-              background: btnBg, borderRadius: 3,
-              padding: '2px 6px', textTransform: 'capitalize',
-            }}>
-              {body.type}
-            </div>
-
-            {/* Level meter */}
-            <div style={{ width: '80%', height: 3, background: simple ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{ width: `${meterPct}%`, height: '100%', background: meterColor, borderRadius: 2, transition: 'width 55ms linear' }} />
             </div>
 
             {/* Action buttons */}

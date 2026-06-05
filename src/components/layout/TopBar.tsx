@@ -38,7 +38,7 @@ function resolveBodySamplerSample(bodyId: string, _legacyBodySampleId: string | 
   return samples[stableIndexFromId(bodyId, samples.length)] ?? null
 }
 
-type AppMode = 'planet' | 'chord-lab' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub' | 'transform-lab' | 'sample'
+type AppMode = 'planet' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub' | 'transform-lab' | 'sample' | 'sigil'
 
 const SHOW_RETRIGGER_BUTTON = false
 
@@ -352,13 +352,13 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
         <div style={{ display: 'flex', gap: 2, background: t.sectionBg, borderRadius: mono ? 1 : 6, padding: 2, border: `0.5px solid ${t.panelBorder}` }}>
           {([
             ['planet',    '⬤ Planet'],
-            ['chord-lab', '⬡ Chord Lab'],
             ['dev',       '⬡ Dev'],
             ['wave-lab',  '∿ Wave Lab'],
             ['whole-lab', '◌ Whole Lab'],
             ['orbit-hub', '◎ Orbit Hub'],
             ['transform-lab', '◇ Transform'],
             ['sample', '▤ Samples'],
+            ['sigil',  '✦ Sigil'],
           ] as [AppMode, string][]).map(([mode, label]) => (
             <button
               key={mode}

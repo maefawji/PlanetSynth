@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { SigilGrammar } from '../sigil/sigilGenerator'
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
@@ -77,6 +78,8 @@ export interface PlanetBody {
   midiNote: number
   /** MIDI OUT: velocity to send when triggered (1–127) */
   midiVelocity: number
+  /** Visual sigil generated when this planet is created. */
+  sigilGrammar?: SigilGrammar
 }
 
 export interface PlanetSimParams {

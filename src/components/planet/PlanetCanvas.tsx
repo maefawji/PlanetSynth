@@ -37,6 +37,8 @@ import { sendMidiNote } from '../../audio/midiManager'
 import { unlockMobileAudio } from '../../audio/mobileAudioUnlock'
 import { generateStarIdentity, collectExistingIdentities } from '../../lib/starNaming'
 import { useArpProgressionStore } from '../../store/arpProgressionStore'
+import { randomGrammar, randomSeed } from '../../sigil/sigilGenerator'
+import type { SigilGrammar } from '../../sigil/sigilGenerator'
 
 export type PlanetTool = 'select' | 'add-sun' | 'add-planet' | 'probe'
 
@@ -86,6 +88,10 @@ const ARP_MAJOR_DEGREES = [
   { pc: 9,  quality: 'Min7' },
   { pc: 11, quality: 'Dim' },
 ]
+
+function createPlanetSigilGrammar(): SigilGrammar {
+  return randomGrammar(randomSeed(), {})
+}
 const ARP_MINOR_DEGREES = [
   { pc: 0,  quality: 'Min7' },
   { pc: 2,  quality: 'Dim' },
@@ -494,7 +500,7 @@ function circularOscilloscopePath(
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false }: { tool?: PlanetTool; onSelectTool?: () => void; mobileMode?: boolean }) {
+export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false, rightPanelWidth = 0 }: { tool?: PlanetTool; onSelectTool?: () => void; mobileMode?: boolean; rightPanelWidth?: number }) {
   // Keep onSelectTool in a ref so the keydown closure doesn't need it in deps
   const onSelectToolRef = useRef(onSelectTool)
   useEffect(() => { onSelectToolRef.current = onSelectTool }, [onSelectTool])
@@ -517,6 +523,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const canvasBackgroundImageOpacity = useCanvasSettingsStore(s => s.canvasBackgroundImageOpacity)
   const canvasBackgroundImageFit = useCanvasSettingsStore(s => s.canvasBackgroundImageFit)
   const canvasBackgroundImageColorInMonochrome = useCanvasSettingsStore(s => s.canvasBackgroundImageColorInMonochrome)
+  const showCanvasBodyList = useCanvasSettingsStore(s => s.showCanvasBodyList)
 
   // ── Simulation refs (declared first so all effects can use them) ─────────
   const storeBodiesRef    = useRef<PlanetBody[]>(storeBodies)
@@ -817,7 +824,6 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   // ── RAF loop ──────────────────────────────────────────────────────────────
   useEffect(() => {
     let rafId: number
-
     function frame() {
       // Frame-time tracking for orbit-stretch rate computation
       const nowMs = performance.now()
@@ -983,9 +989,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
             }
           }
 
-          // Body-body rendezvous — check each pair using the effective rdDist for the pair
-          const collExcludeSun = Boolean(sp.collisionExcludeSun ?? true)
-          const collSpawnStar  = Boolean(sp.collisionSpawnStar  ?? true)
+          // Body-body rendezvous — check each pair using global collision distance
+          const collExcludeSun = Boolean(params.collisionExcludeSun ?? true)
+          const collSpawnStar  = Boolean(params.collisionSpawnStar  ?? true)
+          const globalRdDist   = params.rendezvousDistance ?? 0
           for (let i = 0; i < bodies.length; i++) {
             for (let j = i + 1; j < bodies.length; j++) {
               const bi = bodies[i], bj = bodies[j]
@@ -994,12 +1001,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 const sbi2 = sbMap.get(bi.id), sbj2 = sbMap.get(bj.id)
                 if (sbi2?.fixed || sbj2?.fixed) continue
               }
-              // Use the larger of the two bodies' effective rendezvous distance
-              const biOverride = bpCache.get(bi.id) ?? {}
-              const bjOverride = bpCache.get(bj.id) ?? {}
-              const rdDistI = (biOverride.rendezvousDistance as number | undefined) ?? 0
-              const rdDistJ = (bjOverride.rendezvousDistance as number | undefined) ?? 0
-              const rdDist  = Math.max(rdDistI, rdDistJ)
+              const rdDist = globalRdDist
               if (rdDist <= 0) continue
               const dx = bj.x - bi.x, dy = bj.y - bi.y
               const dist = Math.sqrt(dx * dx + dy * dy)
@@ -1026,8 +1028,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           // Body-probe rendezvous (when probe is active)
           if (toolRef.current === 'probe' && mp) {
             for (const b of bodies) {
-              const bOverride = bpCache.get(b.id) ?? {}
-              const rdDist = (bOverride.rendezvousDistance as number | undefined) ?? 0
+              const rdDist = globalRdDist
               if (rdDist <= 0) continue
               const dx = mp.x - b.x, dy = mp.y - b.y
               const dist = Math.sqrt(dx * dx + dy * dy)
@@ -1746,6 +1747,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       fixed: defs.fixed,
       standpointFacingAngle: isSun ? 270 : undefined,
       color: resolvedColor,
+      sigilGrammar: isSun ? undefined : createPlanetSigilGrammar(),
       sampleId: null,
       orbitLoopNumer: 1, orbitLoopDenom: 1,
       effectorType: 'none',
@@ -1889,6 +1891,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       x, y, vx, vy,
       fixed: false,
       color,
+      sigilGrammar: createPlanetSigilGrammar(),
       sampleId: null,
       orbitLoopNumer: 1, orbitLoopDenom: 1,
       effectorType: 'none',
@@ -2199,7 +2202,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   return (
     <div
       ref={containerRef}
-      style={{ width: '100%', height: '100%', overflow: 'hidden', background: bgColor, userSelect: 'none' }}
+      style={{ width: '100%', height: '100%', overflow: 'hidden', background: bgColor, userSelect: 'none', position: 'relative' }}
     >
       <svg
         ref={svgRef}
@@ -2675,6 +2678,79 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           )
         })()}
       </svg>
+      {showCanvasBodyList && storeBodies.length > 0 && (
+        <div
+          aria-label="Canvas body list"
+          style={{
+            position: 'absolute',
+            top: 52,
+            bottom: 8,
+            right: rightPanelWidth + 8,
+            zIndex: 5,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 7,
+            padding: '5px 4px',
+            borderRadius: simple ? 3 : 8,
+            background: simple ? 'rgba(255,255,255,0.58)' : 'rgba(8,8,14,0.26)',
+            border: `0.5px solid ${simple ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)'}`,
+            backdropFilter: 'blur(6px)',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            scrollbarWidth: 'none',
+          }}
+        >
+          {storeBodies.map((body, index) => {
+            const selected = body.id === selectedBodyId
+            const bodyColor = monochromeMode && !paperCanvasKeepBodyColors ? monoInk : body.color
+            return (
+              <button
+                key={body.id}
+                type="button"
+                title={`${index + 1}. ${body.name}`}
+                aria-label={`Select ${body.name}`}
+                ref={el => { if (el && selected) el.scrollIntoView({ block: 'nearest' }) }}
+                onMouseDown={e => e.stopPropagation()}
+                onClick={e => {
+                  e.stopPropagation()
+                  setSelectedBodyId(selected ? null : body.id)
+                }}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  border: selected
+                    ? `1.5px solid ${monochromeMode ? monoInk : '#fff'}`
+                    : `0.5px solid ${bodyColor}88`,
+                  background: selected
+                    ? (simple ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.13)')
+                    : (simple ? 'rgba(255,255,255,0.62)' : 'rgba(12,12,18,0.58)'),
+                  boxShadow: selected
+                    ? `0 0 0 2px ${bodyColor}55, 0 0 10px ${bodyColor}66`
+                    : `0 0 6px ${bodyColor}33`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                  cursor: 'pointer',
+                }}
+              >
+                <span
+                  style={{
+                    width: body.type === 'sun' ? 14 : 10,
+                    height: body.type === 'sun' ? 14 : 10,
+                    borderRadius: '50%',
+                    background: bodyColor,
+                    boxShadow: `0 0 7px ${bodyColor}88`,
+                    display: 'block',
+                  }}
+                />
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
