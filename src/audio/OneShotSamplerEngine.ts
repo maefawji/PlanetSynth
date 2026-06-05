@@ -49,6 +49,11 @@ export class OneShotSamplerEngine {
   /** Called whenever state transitions. Safe to reassign at any time. */
   onStateChange?: (s: OneShotState) => void
 
+  /** Normalized start offset [0,1]. Applies on next trigger(). */
+  startOffset = 0
+  /** Normalized end offset [0,1]. 1 = play to end. Applies on next trigger(). */
+  endOffset   = 1
+
   // ── Internal helpers ────────────────────────────────────────────────────────
 
   private _setState(s: OneShotState): void {

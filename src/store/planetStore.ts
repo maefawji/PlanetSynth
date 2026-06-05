@@ -106,6 +106,9 @@ export interface PlanetSimParams {
   paused: boolean
   simpleTheme: boolean       // light-background canvas look
   rendezvousDistance: number // world-units threshold that triggers body sounds
+  collisionExcludeSun: boolean    // exclude fixed/sun bodies from collision checks
+  collisionSpawnStar: boolean     // spawn trigger star on collision event
+  collisionShowCircles: boolean   // show collision radius circles on canvas
   orbitTriggerMode: 'none' | 'orbit-complete'  // retrigger sample each completed orbit
   orbitTriggerDivision: number   // orbit fraction per trigger: 2=every2orbits, 0.5=twice/orbit
   orbitTriggerType: 'periodic' | 'cumulative' | 'tperiod'  // periodic=every N orbits; cumulative=charge→fire; tperiod=T seconds after last trigger
@@ -428,6 +431,9 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   // The rack system's trigger CS drives triggers; simParams are the fallback.
   // Keeping these OFF ensures "empty trigger slot = no trigger".
   rendezvousDistance: 0,
+  collisionExcludeSun: true,
+  collisionSpawnStar: true,
+  collisionShowCircles: true,
   orbitTriggerMode: 'none',
   orbitTriggerDivision: 1,
   orbitTriggerType: 'cumulative',

@@ -965,9 +965,16 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           }
 
           // Body-body rendezvous — check each pair using the effective rdDist for the pair
+          const collExcludeSun = Boolean(sp.collisionExcludeSun ?? true)
+          const collSpawnStar  = Boolean(sp.collisionSpawnStar  ?? true)
           for (let i = 0; i < bodies.length; i++) {
             for (let j = i + 1; j < bodies.length; j++) {
               const bi = bodies[i], bj = bodies[j]
+              // Skip fixed (sun) bodies if exclude is enabled
+              if (collExcludeSun) {
+                const sbi2 = sbMap.get(bi.id), sbj2 = sbMap.get(bj.id)
+                if (sbi2?.fixed || sbj2?.fixed) continue
+              }
               // Use the larger of the two bodies' effective rendezvous distance
               const biOverride = bpCache.get(bi.id) ?? {}
               const bjOverride = bpCache.get(bj.id) ?? {}
@@ -988,6 +995,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 const vol  = Math.max(0.2, Math.min(1.0, 1.0 - dist / (rdDist * 2)))
                 fireOrToggle(bi.id, sbi?.sampleId ?? null, rate, vol)
                 fireOrToggle(bj.id, sbj?.sampleId ?? null, rate, vol)
+                if (collSpawnStar) {
+                  markTriggeredOnCanvas(bi.id)
+                  markTriggeredOnCanvas(bj.id)
+                }
               }
               prevIn.set(key, isIn)
             }
@@ -2500,7 +2511,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                     )
                   })
                 })()}
-                {hasSample && storeParams.rendezvousDistance > 0 && (
+                {hasSample && storeParams.rendezvousDistance > 0 && storeParams.collisionShowCircles !== false && (
                   <circle cx={b.x} cy={b.y} r={storeParams.rendezvousDistance} fill="none"
                     stroke={inkColor} strokeWidth={worldStroke(0.33)} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.18}
                     strokeDasharray={`${8 / zoom} ${6 / zoom}`} />

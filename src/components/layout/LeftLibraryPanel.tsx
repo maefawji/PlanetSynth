@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { Atom, ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio, CircleHelp, Sparkles, Radar } from 'lucide-react'
+import { Atom, ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio, CircleHelp, Sparkles, Radar, Zap } from 'lucide-react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { usePlanetStore, type PlanetSimParams } from '../../store/planetStore'
+import { CollisionPanel } from '../planet/CollisionPanel'
 import { useWholeInstrumentStore } from '../../store/wholeInstrumentStore'
 import { useOrbitHubStore } from '../../store/orbitHubStore'
 import {
@@ -43,6 +44,7 @@ interface LeftLibraryPanelProps {
 type LeftPanelId =
   | 'canvas' | 'universe-presets' | 'planet-presets' | 'planet-samples'
   | 'planet-triggers'
+  | 'planet-collision'
   | 'planet-auto'
   | 'planet-controls-trigger' | 'planet-controls-instrument' | 'planet-controls-effect'
   | 'planet-localization' | 'planet-adsr'
@@ -257,6 +259,13 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
           <SlidersHorizontal size={14} />
         </RailButton>
         <RailButton
+          active={activePanel === 'planet-collision' && !collapsed}
+          title="Collision / Rendezvous"
+          onClick={() => handleSelectPanel('planet-collision')}
+        >
+          <Zap size={14} />
+        </RailButton>
+        <RailButton
           active={activePanel === 'planet-auto' && !collapsed}
           title="Auto Spawn"
           onClick={() => handleSelectPanel('planet-auto')}
@@ -366,6 +375,9 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
       )}
       {!collapsed && activePanel === 'planet-triggers' && (
         <PlanetTriggersPanel />
+      )}
+      {!collapsed && activePanel === 'planet-collision' && (
+        <CollisionPanel />
       )}
       {!collapsed && activePanel === 'planet-auto' && (
         <PlanetAutoSpawnPanel />
