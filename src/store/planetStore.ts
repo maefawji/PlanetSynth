@@ -363,7 +363,7 @@ const BODY_EFFECTOR_DEFAULTS = {
   micSelfGain: 1.0,
   micPickupGain: 1.0,
   muted: false,
-  volume: 0.501,  // -6 dB (linear: 10^(-6/20) ≈ 0.501)
+  volume: 0.7,  // ≈ -3.1 dB (linear 0–1)
 }
 
 export const DEFAULT_BODIES: PlanetBody[] = [
