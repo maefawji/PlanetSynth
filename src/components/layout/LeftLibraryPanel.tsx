@@ -2595,7 +2595,13 @@ function CanvasSettingsPanel() {
               onChange={e => updateSimParams({ showTriggerStars: e.target.checked })} />
             <span style={{ fontSize: 10, color: t.textMid }}>Show trigger stars</span>
           </label>
-          <NumberSetting label="Star size" value={simParams.triggerStarSize} min={1} step={1}
+          <label style={checkboxRowStyle}>
+            <input type="checkbox"
+              checked={(simParams.triggerStarShape ?? 'star') === 'dot'}
+              onChange={e => updateSimParams({ triggerStarShape: e.target.checked ? 'dot' : 'star' })} />
+            <span style={{ fontSize: 10, color: t.textMid }}>Dot mode</span>
+          </label>
+          <NumberSetting label="Size" value={simParams.triggerStarSize} min={1} step={1}
             onChange={triggerStarSize => updateSimParams({ triggerStarSize })} />
           <NumberSetting label="Max count" value={simParams.triggerStarMaxCount} min={1} step={10}
             onChange={triggerStarMaxCount => updateSimParams({ triggerStarMaxCount })} />

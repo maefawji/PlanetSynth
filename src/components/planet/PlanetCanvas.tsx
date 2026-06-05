@@ -2251,6 +2251,23 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 const fadeSpan = Math.max(0.05, 1 - fadeStart)
                 const fade = Math.max(0, 1 - Math.pow(Math.max(0, progress - fadeStart) / fadeSpan, 1.6))
                 const base = Math.max(1, storeParams.triggerStarSize) / zoom
+                const color = monochromeMode && !paperCanvasKeepBodyColors ? monoInk : marker.color
+                const isDot = (storeParams.triggerStarShape ?? 'star') === 'dot'
+
+                if (isDot) {
+                  // Dot mode: simple expanding circle
+                  const dotR = base * (0.4 + burst * 0.6)
+                  return (
+                    <circle
+                      key={marker.id}
+                      cx={marker.x} cy={marker.y}
+                      r={dotR}
+                      fill={color}
+                      opacity={fade * (monochromeMode ? paperMainOpacity : simple ? 0.55 : 0.75)}
+                    />
+                  )
+                }
+
                 const outer = base * (0.45 + burst * Math.max(0.2, storeParams.triggerStarSpread))
                 const inner = base * Math.max(0, burst * 0.82 - 0.24)
                 const strokeWidth = Math.max(0.1, storeParams.triggerStarLineWidth) / zoom
@@ -2267,7 +2284,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                       <line
                         key={`glow-${i}`}
                         x1={x1} y1={y1} x2={x2} y2={y2}
-                        stroke={monochromeMode && !paperCanvasKeepBodyColors ? monoInk : marker.color}
+                        stroke={color}
                         strokeWidth={glowWidth}
                         strokeLinecap="round"
                         strokeOpacity={monochromeMode ? paperSubtleOpacity : simple ? 0.12 : 0.20}
@@ -2277,17 +2294,16 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                       <line
                         key={i}
                         x1={x1} y1={y1} x2={x2} y2={y2}
-                        stroke={monochromeMode && !paperCanvasKeepBodyColors ? monoInk : marker.color}
+                        stroke={color}
                         strokeWidth={strokeWidth}
                         strokeLinecap="round"
                         strokeOpacity={monochromeMode ? paperLineOpacity : simple ? 0.74 : 0.88}
                       />
                     ))}
                     <circle
-                      cx={marker.x}
-                      cy={marker.y}
+                      cx={marker.x} cy={marker.y}
                       r={base * Math.max(0, 0.36 - progress * 0.7)}
-                      fill={monochromeMode && !paperCanvasKeepBodyColors ? monoInk : marker.color}
+                      fill={color}
                       opacity={monochromeMode ? paperMainOpacity : simple ? 0.45 : 0.65}
                     />
                   </g>
