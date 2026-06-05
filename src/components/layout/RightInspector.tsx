@@ -230,6 +230,7 @@ function MixerBodyRow({ b, selected, soloed, onSelect, onRemove, onToggleMute, o
           onPointerDown={e => preventTrackVolumeJump(e, vol)}
           onChange={e => onVolumeChange(parseFloat(e.target.value))}
           onClick={e => e.stopPropagation()}
+          title={vol > 0.0001 ? `${(20 * Math.log10(vol)).toFixed(1)} dB` : '-∞ dB'}
           className={`planet-fader${isMuted ? ' muted' : ''}`}
           style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 1.5, flexShrink: 0 }}>
@@ -239,8 +240,9 @@ function MixerBodyRow({ b, selected, soloed, onSelect, onRemove, onToggleMute, o
             </div>
           ))}
         </div>
-        <span style={{ fontSize: 7.5, fontFamily: 'monospace', color: level > 0.001 ? (level > 0.7 ? '#f59e0b' : t.textMid) : t.textDim, width: 18, textAlign: 'right', flexShrink: 0, lineHeight: 1 }}>
-          {level > 0.001 ? `${Math.round(dB)}` : '—'}
+        <span style={{ fontSize: 7.5, fontFamily: 'monospace', color: level > 0.001 ? (level > 0.7 ? '#f59e0b' : t.textMid) : t.textDim, width: 18, textAlign: 'right', flexShrink: 0, lineHeight: 1 }}
+          title={level > 0.001 ? `signal: ${dB.toFixed(1)} dB` : `fader: ${(20 * Math.log10(vol)).toFixed(1)} dB`}>
+          {level > 0.001 ? `${Math.round(dB)}` : `${(20 * Math.log10(Math.max(0.0001, vol))).toFixed(0)}`}
         </span>
       </div>
     </div>

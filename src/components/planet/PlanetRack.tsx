@@ -532,7 +532,7 @@ function RackMixerColumn({ bodyId, simple }: { bodyId: string | null; simple: bo
       {/* dB readout + pan */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
         <div style={{ fontSize: 7, color: displayCol, fontFamily: 'monospace', lineHeight: 1, minWidth: 22, textAlign: 'center' }}>
-          {vuLevel > 0.001 ? dBLabel : `${Math.round(displayNum * 100)}`}
+          {vuLevel > 0.001 ? dBLabel : `${(20 * Math.log10(Math.max(0.0001, vol))).toFixed(0)}`}
         </div>
         {/* Pan indicator (only when standpoint stereo active) */}
         {spActive && (
