@@ -321,6 +321,10 @@ export function TransformLabView() {
             maxZoom={1.6}
             deleteKeyCode="Backspace"
             style={{ background: mono ? bg : '#080a12' }}
+            zoomOnPinch={true}
+            panOnDrag={[1, 2]}
+            panOnScroll={false}
+            zoomOnScroll={true}
           >
             <Background gap={24} size={1} color={mono ? border : 'rgba(148,163,184,0.08)'} />
             <Controls showInteractive={false} />

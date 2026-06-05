@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { usePlanetStore, type PlanetBody } from '../../store/planetStore'
 import { computeOrbitTelemetry } from '../../lib/orbitTelemetry'
@@ -6,6 +6,26 @@ import { WHOLE_ORBIT_SOURCES } from '../../lib/wholeOrbitSources'
 import { getPlanetLiveBodySnapshot } from '../planet/PlanetCanvas'
 
 type LivePlanetBody = PlanetBody & { ax?: number; ay?: number }
+
+// Rolling average buffer per body per metric
+type BodyMetricKey = 'x' | 'y' | 'z' | 'vx' | 'vy' | 'speed' | 'distance' | 'angleDeg'
+const AVG_WINDOW = 120 // ~2s at 60fps
+type AvgBuffers = Map<string, Map<BodyMetricKey, number[]>>
+
+function pushAvg(buf: AvgBuffers, id: string, key: BodyMetricKey, val: number) {
+  if (!buf.has(id)) buf.set(id, new Map())
+  const m = buf.get(id)!
+  if (!m.has(key)) m.set(key, [])
+  const arr = m.get(key)!
+  arr.push(val)
+  if (arr.length > AVG_WINDOW) arr.shift()
+}
+
+function getAvg(buf: AvgBuffers, id: string, key: BodyMetricKey): number | null {
+  const arr = buf.get(id)?.get(key)
+  if (!arr || arr.length === 0) return null
+  return arr.reduce((s, v) => s + v, 0) / arr.length
+}
 
 function Meter({ value, color }: { value: number; color: string }) {
   const pct = Math.max(0, Math.min(100, value * 100))
@@ -21,17 +41,33 @@ export function OrbitHubView() {
   const mono = useCanvasSettingsStore(s => s.monochromeMode)
   const inverted = useCanvasSettingsStore(s => s.monochromeInverted)
   const [liveBodies, setLiveBodies] = useState<LivePlanetBody[]>(storeBodies)
+  const avgBuf = useRef<AvgBuffers>(new Map())
+  const [avgSnap, setAvgSnap] = useState<AvgBuffers>(new Map())
+  const [showAvg, setShowAvg] = useState(false)
 
   useEffect(() => {
     let raf = 0
+    let frameCount = 0
     function frame() {
       const live = getPlanetLiveBodySnapshot()
       const byId = new Map(storeBodies.map(b => [b.id, b]))
-      setLiveBodies(live.length > 0
+      const bodies = live.length > 0
         ? live.map(b => ({ ...(byId.get(b.id) ?? {
             id: b.id, name: b.id, type: 'planet' as const, color: '#888', sampleId: null,
           }), ...b, z: byId.get(b.id)?.z ?? b.z ?? 0 }))
-        : storeBodies)
+        : storeBodies
+      setLiveBodies(bodies)
+      // update rolling buffers
+      for (const b of bodies) {
+        const tel = b as Record<string, number>
+        for (const key of ['x','y','z','vx','vy','speed','distance','angleDeg'] as BodyMetricKey[]) {
+          const v = tel[key]
+          if (typeof v === 'number') pushAvg(avgBuf.current, b.id, key, v)
+        }
+      }
+      // snapshot avg every 10 frames
+      frameCount++
+      if (frameCount % 10 === 0) setAvgSnap(new Map(avgBuf.current))
       raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
@@ -83,24 +119,49 @@ export function OrbitHubView() {
         </section>
 
         <section style={{ minHeight: 0, border: `0.5px solid ${border}`, background: panel, borderRadius: mono ? 1 : 8, padding: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: dim, marginBottom: 10 }}>Per Body Telemetry</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: dim }}>Per Body Telemetry</div>
+            <button onClick={() => setShowAvg(v => !v)} style={{
+              fontSize: 8, padding: '2px 8px', borderRadius: 4, fontFamily: 'inherit', cursor: 'pointer',
+              border: `0.5px solid ${showAvg ? '#22d3ee88' : border}`,
+              background: showAvg ? 'rgba(34,211,238,0.12)' : 'transparent',
+              color: showAvg ? '#22d3ee' : dim,
+            }}>{showAvg ? '⌀ avg ON' : '⌀ avg'}</button>
+            {showAvg && <span style={{ fontSize: 8, color: dim, fontFamily: 'monospace' }}>~{AVG_WINDOW} frames</span>}
+          </div>
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto', border: `0.5px solid ${border}`, borderRadius: mono ? 1 : 6 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
               <thead style={{ position: 'sticky', top: 0, background: panel }}>
-                <tr>{['body', 'type', 'm', 'x', 'y', 'z', 'vx', 'vy', 'speed', 'dist', 'angle'].map(h => (
-                  <th key={h} style={{ textAlign: h === 'body' ? 'left' : 'right', padding: '7px 8px', color: dim, fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: `0.5px solid ${border}` }}>{h}</th>
-                ))}</tr>
+                <tr>
+                  {['body','type','m','x','y','z','vx','vy','speed','dist','angle'].map(h => (
+                    <th key={h} style={{ textAlign: h === 'body' ? 'left' : 'right', padding: '7px 8px', color: dim, fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: `0.5px solid ${border}` }}>{h}</th>
+                  ))}
+                  {showAvg && (['⌀x','⌀y','⌀spd','⌀dist'].map(h => (
+                    <th key={h} style={{ textAlign: 'right', padding: '7px 8px', color: '#22d3ee88', fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: `0.5px solid ${border}` }}>{h}</th>
+                  )))}
+                </tr>
               </thead>
               <tbody>
-                {telemetry.bodies.map(body => (
-                  <tr key={body.id}>
-                    <td style={{ padding: '6px 8px', borderBottom: `0.5px solid ${border}`, fontWeight: 800 }}>{body.name}</td>
-                    <td style={{ padding: '6px 8px', borderBottom: `0.5px solid ${border}`, textAlign: 'right', color: dim }}>{body.type}</td>
-                    {[body.mass, body.x, body.y, body.z, body.vx, body.vy, body.speed, body.distance, body.angleDeg].map((v, i) => (
-                      <td key={i} style={{ padding: '6px 8px', borderBottom: `0.5px solid ${border}`, textAlign: 'right', fontFamily: 'monospace' }}>{v.toFixed(i >= 4 && i <= 6 ? 2 : 1)}</td>
-                    ))}
-                  </tr>
-                ))}
+                {telemetry.bodies.map(body => {
+                  const avgX    = getAvg(avgSnap, body.id, 'x')
+                  const avgY    = getAvg(avgSnap, body.id, 'y')
+                  const avgSpd  = getAvg(avgSnap, body.id, 'speed')
+                  const avgDist = getAvg(avgSnap, body.id, 'distance')
+                  return (
+                    <tr key={body.id}>
+                      <td style={{ padding: '6px 8px', borderBottom: `0.5px solid ${border}`, fontWeight: 800 }}>{body.name}</td>
+                      <td style={{ padding: '6px 8px', borderBottom: `0.5px solid ${border}`, textAlign: 'right', color: dim }}>{body.type}</td>
+                      {[body.mass, body.x, body.y, body.z, body.vx, body.vy, body.speed, body.distance, body.angleDeg].map((v, i) => (
+                        <td key={i} style={{ padding: '6px 8px', borderBottom: `0.5px solid ${border}`, textAlign: 'right', fontFamily: 'monospace' }}>{v.toFixed(i >= 4 && i <= 6 ? 2 : 1)}</td>
+                      ))}
+                      {showAvg && [avgX, avgY, avgSpd, avgDist].map((v, i) => (
+                        <td key={`avg${i}`} style={{ padding: '6px 8px', borderBottom: `0.5px solid ${border}`, textAlign: 'right', fontFamily: 'monospace', color: '#22d3ee' }}>
+                          {v !== null ? v.toFixed(i >= 2 ? 2 : 1) : '—'}
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
