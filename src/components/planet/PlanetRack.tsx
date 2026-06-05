@@ -410,18 +410,41 @@ function TriggerFlashDot({ bodyId, accent }: { bodyId: string; accent: string })
  * Pan dot   = standpoint stereo position.
  */
 function RackMixerColumn({ bodyId, simple }: { bodyId: string | null; simple: boolean }) {
-  const [vuLevel,  setVuLevel]  = useState(0)    // instrument signal level (0 when idle)
-  const [fader,    setFader]    = useState(1)    // body.volume × standpoint (0–1)
+  const [vuLevel,  setVuLevel]  = useState(0)
+  const [fader,    setFader]    = useState(1)
   const [spPan,    setSpPan]    = useState(0)
   const [spActive, setSpActive] = useState(false)
+
+  // Live body state for M/S/fader controls
+  const body        = usePlanetStore(s => bodyId ? s.bodies.find(b => b.id === bodyId) ?? null : null)
+  const updateBody  = usePlanetStore(s => s.updateBody)
+  const allBodies   = usePlanetStore(s => s.bodies)
+  const vol         = body?.volume ?? 1
+  const muted       = body?.muted ?? false
+  const unmutedIds  = allBodies.filter(b => !(b.muted ?? false)).map(b => b.id)
+  const soloed      = unmutedIds.length === 1 && !!bodyId && unmutedIds[0] === bodyId
+
+  function toggleMute() {
+    if (!bodyId) return
+    updateBody(bodyId, { muted: !muted })
+  }
+  function toggleSolo() {
+    if (!bodyId) return
+    const isCurrentlySoloed = unmutedIds.length === 1 && unmutedIds[0] === bodyId
+    allBodies.forEach(b => updateBody(b.id, { muted: isCurrentlySoloed ? false : b.id !== bodyId }))
+  }
+  function setVolume(v: number) {
+    if (!bodyId) return
+    updateBody(bodyId, { volume: v })
+  }
 
   useEffect(() => {
     if (!bodyId) { setVuLevel(0); setFader(1); setSpPan(0); setSpActive(false); return }
     const id = window.setInterval(() => {
       setVuLevel(getBodyOutputLevel(bodyId))
       const { simParams, bodies } = usePlanetStore.getState()
-      const body = bodies.find(b => b.id === bodyId)
-      const bodyVol = body?.muted ? 0 : (body?.volume ?? 1)
+      const b = bodies.find(b => b.id === bodyId)
+      const bodyVol = b?.muted ? 0 : (b?.volume ?? 1)
       const active  = Boolean(simParams.standpointMode && simParams.standpointBodyId)
       setSpActive(active)
       if (active) {
@@ -453,18 +476,36 @@ function RackMixerColumn({ bodyId, simple }: { bodyId: string | null; simple: bo
   const displayNum = vuLevel > 0.01 ? vuLevel : fader
   const displayCol = vuLevel > 0.01 ? vuColor : faderColor
 
+  const dB = vuLevel > 0.0001 ? 20 * Math.log10(vuLevel) : -100
+  const dBLabel = vuLevel > 0.001 ? `${Math.round(dB)}` : '—'
+
   return (
     <div style={{
-      width: 52, flexShrink: 0,
+      width: 70, flexShrink: 0,
       display: 'flex', flexDirection: 'column', alignItems: 'center',
-      padding: '6px 5px 8px',
-      gap: 4,
+      padding: '5px 5px 6px',
+      gap: 3,
+      borderLeft: `0.5px solid ${simple ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)'}`,
     }}>
       {/* Signal-flow arrow */}
       <div style={{ fontSize: 8, color: accentCol, opacity: 0.75, lineHeight: 1 }}>→</div>
 
+      {/* M / S buttons */}
+      {bodyId && (
+        <div style={{ display: 'flex', gap: 3 }}>
+          <button onClick={toggleMute} title={muted ? 'Unmute' : 'Mute'}
+            style={{ fontSize: 7, fontWeight: 800, padding: '2px 5px', borderRadius: 3, border: 'none', cursor: 'pointer', lineHeight: 1,
+              background: muted ? 'rgba(239,68,68,0.18)' : (simple ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)'),
+              color: muted ? '#ef4444' : dimText }}>M</button>
+          <button onClick={toggleSolo} title={soloed ? 'Unsolo' : 'Solo'}
+            style={{ fontSize: 7, fontWeight: 800, padding: '2px 5px', borderRadius: 3, border: 'none', cursor: 'pointer', lineHeight: 1,
+              background: soloed ? 'rgba(245,158,11,0.18)' : (simple ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)'),
+              color: soloed ? '#f59e0b' : dimText }}>S</button>
+        </div>
+      )}
+
       {/* Dual meter: VU (left) + Fader gain (right) */}
-      <div style={{ flex: 1, display: 'flex', gap: 3, alignItems: 'flex-end', minHeight: 30 }}>
+      <div style={{ flex: 1, display: 'flex', gap: 3, alignItems: 'flex-end', minHeight: 30, width: '100%', padding: '0 4px' }}>
         {/* VU bar — signal from instrument */}
         <div title="signal level" style={{ flex: 1, borderRadius: 3, overflow: 'hidden', background: trackBg, position: 'relative', alignSelf: 'stretch' }}>
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${vuLevel * 100}%`, background: vuColor, borderRadius: 3, transition: 'height 0.05s linear' }} />
@@ -472,16 +513,26 @@ function RackMixerColumn({ bodyId, simple }: { bodyId: string | null; simple: bo
             <div key={i} style={{ position: 'absolute', bottom: `${lin * 100}%`, left: 0, right: 0, height: 0.5, background: simple ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.12)' }} />
           ))}
         </div>
-        {/* Fader gain bar — body.volume × standpoint (always visible) */}
+        {/* Fader gain bar */}
         <div title="fader × standpoint" style={{ width: 5, borderRadius: 3, overflow: 'hidden', background: trackBg, position: 'relative', alignSelf: 'stretch' }}>
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${fader * 100}%`, background: faderColor, opacity: 0.7, borderRadius: 3, transition: 'height 0.08s linear' }} />
         </div>
       </div>
 
-      {/* Numeric readout + pan */}
+      {/* Volume fader (horizontal, links to body.volume) */}
+      {bodyId && (
+        <div style={{ width: '100%', padding: '0 4px' }}>
+          <input type="range" min={0} max={1} step={0.01} value={vol}
+            onChange={e => setVolume(parseFloat(e.target.value))}
+            className={`planet-fader${muted ? ' muted' : ''}`}
+            style={{ width: '100%', accentColor: accentCol }} />
+        </div>
+      )}
+
+      {/* dB readout + pan */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
         <div style={{ fontSize: 7, color: displayCol, fontFamily: 'monospace', lineHeight: 1, minWidth: 22, textAlign: 'center' }}>
-          {`${Math.round(displayNum * 100)}`}
+          {vuLevel > 0.001 ? dBLabel : `${Math.round(displayNum * 100)}`}
         </div>
         {/* Pan indicator (only when standpoint stereo active) */}
         {spActive && (
