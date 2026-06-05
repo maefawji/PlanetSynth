@@ -168,6 +168,9 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       arpChordProgressionEnabled: false,
       arpChordProgression: '1 2 5 7',
       arpChordScaleMode: 'major',
+      // Chord Sequence mode: each step has individual root/quality/inv/oct
+      arpUseSeq: false,
+      arpChordSeq: '[{"root":0,"quality":"Maj7","inv":0,"oct":3,"beats":4},{"root":5,"quality":"Maj7","inv":1,"oct":3,"beats":4},{"root":9,"quality":"Min7","inv":0,"oct":3,"beats":4},{"root":7,"quality":"Dom7","inv":0,"oct":3,"beats":4}]',
     },
   },
   // ── Effect ─────────────────────────────────────────────────────────────────

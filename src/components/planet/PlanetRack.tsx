@@ -1187,6 +1187,40 @@ const ARP_MINOR_DEGREES = [
   { pc: 10, quality: 'Dom7' },
 ]
 
+interface ChordSeqStep { root: number; quality: string; inv: number; oct: number; beats: number }
+
+function parseChordSeq(raw: unknown): ChordSeqStep[] {
+  try {
+    const arr = JSON.parse(String(raw ?? '[]'))
+    if (!Array.isArray(arr)) return []
+    return arr.map(s => ({
+      root: Math.max(0, Math.min(11, Number(s.root ?? 0))),
+      quality: String(s.quality ?? 'Maj7'),
+      inv: Math.max(0, Math.min(3, Number(s.inv ?? 0))),
+      oct: Math.max(0, Math.min(8, Number(s.oct ?? 3))),
+      beats: Math.max(1, Number(s.beats ?? 4)),
+    }))
+  } catch { return [] }
+}
+
+function stringifyChordSeq(seq: ChordSeqStep[]): string {
+  return JSON.stringify(seq)
+}
+
+function chordSeqLabel(step: ChordSeqStep): string {
+  const root = NOTE_NAMES[step.root]
+  const invLabels = ['', '/', '6', '64']
+  const inv = invLabels[Math.min(3, step.inv)] ?? ''
+  if (step.inv === 1) {
+    // show slash notation: root/bass
+    const intervals = ARP_CHORD_INTERVALS[step.quality] ?? [0, 4, 7]
+    const bassInterval = intervals[1] ?? 0
+    const bassNote = NOTE_NAMES[(step.root + bassInterval) % 12]
+    return `${root}/${bassNote}`
+  }
+  return `${root}${step.quality === 'Major' ? '' : step.quality === 'Minor' ? 'm' : step.quality}${inv}`
+}
+
 function getArpParam(overrides: Partial<PlanetSimParams>, key: string, fallback: unknown): unknown {
   return key in (overrides as Record<string, unknown>)
     ? (overrides as Record<string, unknown>)[key]
@@ -1422,9 +1456,28 @@ function ArpeggioExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; 
   const chordPcs = new Set(chordNotes.map(n => n % 12))
   const stepNotes = ARP_STEP_KEYS.map((key, i) => Number(getArpParam(overrides, key, [48, 52, 55, 59][i])))
 
+  const useSeq = Boolean(getArpParam(overrides, 'arpUseSeq', false))
+  const seqSteps = parseChordSeq(getArpParam(overrides, 'arpChordSeq', '[]'))
+
   const setNum = (key: string, value: number) => setSlotOverride(slotKey, { [key]: value } as Partial<PlanetSimParams>)
   const setStr = (key: string, value: string) => setSlotOverride(slotKey, { [key]: value } as Partial<PlanetSimParams>)
   const setBool = (key: string, value: boolean) => setSlotOverride(slotKey, { [key]: value } as Partial<PlanetSimParams>)
+
+  function updateSeq(next: ChordSeqStep[]) {
+    setSlotOverride(slotKey, { arpChordSeq: stringifyChordSeq(next) } as Partial<PlanetSimParams>)
+  }
+  function seqAddStep() {
+    // Read fresh from store to avoid stale closure
+    const current = parseChordSeq(useControlSetStore.getState().rackParamOverrides[slotKey]?.arpChordSeq ?? '[]')
+    const last = current[current.length - 1] ?? { root: 0, quality: 'Maj7', inv: 0, oct: 3, beats: 4 }
+    updateSeq([...current, { ...last }])
+  }
+  function seqRemoveStep(i: number) {
+    updateSeq(seqSteps.filter((_, idx) => idx !== i))
+  }
+  function seqUpdateStep(i: number, patch: Partial<ChordSeqStep>) {
+    updateSeq(seqSteps.map((s, idx) => idx === i ? { ...s, ...patch } : s))
+  }
 
   function preview(notes: number[]) {
     const tgt = bodyId || usePlanetStore.getState().selectedBodyId
@@ -1453,7 +1506,7 @@ function ArpeggioExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; 
   )
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr 260px', gap: 14, padding: '12px 14px 12px 48px', minHeight: 300 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 280px 200px', gap: 14, padding: '12px 14px 12px 48px', minHeight: 300 }}>
       <div style={{ borderRight: `0.5px solid ${border}`, paddingRight: 14 }}>
         {sectionLabel('Mode')}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 12 }}>
@@ -1606,6 +1659,74 @@ function ArpeggioExpanded({ bodyId, slotKey, simple }: { bodyId: string | null; 
               <div style={{ fontSize: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{notes.map(midiToNoteName).join(' ')}</div>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Chord Sequence column */}
+      <div style={{ borderLeft: `0.5px solid ${border}`, paddingLeft: 14, overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          {sectionLabel('Chord Sequence')}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 8.5, color: useSeq ? accent : dim2, cursor: 'pointer', marginBottom: 5 }}>
+            <input type="checkbox" checked={useSeq} onChange={e => setBool('arpUseSeq', e.target.checked)} style={{ accentColor: accent }} />
+            active
+          </label>
+        </div>
+        <div style={{ opacity: useSeq ? 1 : 0.55 }}>
+          {/* Header row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '26px 72px 68px 28px 28px 36px 20px', gap: 3, marginBottom: 4, paddingRight: 2 }}>
+            {['#', 'Root', 'Quality', 'Inv', 'Oct', 'Beats', ''].map(h => (
+              <div key={h} style={{ fontSize: 7.5, color: dim, fontWeight: 700 }}>{h}</div>
+            ))}
+          </div>
+          {seqSteps.map((step, i) => {
+            const notes = buildRackChordNotesFrom(step.root, step.oct, step.quality, step.inv)
+            return (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '26px 72px 68px 28px 28px 36px 20px', gap: 3, marginBottom: 4, alignItems: 'center' }}>
+                <button onClick={() => preview(notes)} style={{
+                  fontSize: 8, fontWeight: 800, color: accent, background: `${accent}18`,
+                  border: `0.5px solid ${accent}66`, borderRadius: 3, padding: '3px 0', cursor: 'pointer', fontFamily: 'inherit',
+                  title: notes.map(midiToNoteName).join(' '),
+                }}>▶</button>
+                <select value={step.root} onChange={e => seqUpdateStep(i, { root: Number(e.target.value) })}
+                  style={{ fontSize: 9, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 3, padding: '2px 3px' }}>
+                  {NOTE_NAMES.map((n, pc) => <option key={n} value={pc}>{n}</option>)}
+                </select>
+                <select value={step.quality} onChange={e => seqUpdateStep(i, { quality: e.target.value })}
+                  style={{ fontSize: 9, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 3, padding: '2px 3px' }}>
+                  {ARP_CHORD_QUALITIES.map(q => <option key={q} value={q}>{q}</option>)}
+                </select>
+                <input type="number" min={0} max={3} value={step.inv} onChange={e => seqUpdateStep(i, { inv: Number(e.target.value) })}
+                  style={{ fontSize: 9, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 3, padding: '2px 3px', width: '100%' }} />
+                <input type="number" min={0} max={8} value={step.oct} onChange={e => seqUpdateStep(i, { oct: Number(e.target.value) })}
+                  style={{ fontSize: 9, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 3, padding: '2px 3px', width: '100%' }} />
+                <select value={step.beats} onChange={e => seqUpdateStep(i, { beats: Number(e.target.value) })}
+                  style={{ fontSize: 9, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 3, padding: '2px 3px' }}>
+                  {[1,2,4,8].map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+                <button onClick={() => seqRemoveStep(i)} style={{
+                  fontSize: 10, color: dim, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1,
+                }}>×</button>
+              </div>
+            )
+          })}
+          {/* Add step + notes preview row */}
+          <button onClick={seqAddStep} style={{
+            fontSize: 9, color: dim2, background: panel, border: `0.5px solid ${border}`,
+            borderRadius: 4, padding: '5px 10px', cursor: 'pointer', fontFamily: 'inherit', width: '100%', marginBottom: 6,
+          }}>+ Add chord</button>
+          {seqSteps.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {seqSteps.map((step, i) => {
+                const notes = buildRackChordNotesFrom(step.root, step.oct, step.quality, step.inv)
+                return (
+                  <div key={i} style={{ fontSize: 8, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 3, padding: '2px 5px' }}>
+                    <span style={{ color: accent, fontWeight: 700 }}>{chordSeqLabel(step)}</span>
+                    <span style={{ color: dim, marginLeft: 3 }}>{notes.map(midiToNoteName).join(' ')}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
 
