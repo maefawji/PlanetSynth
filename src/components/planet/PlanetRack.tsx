@@ -504,30 +504,36 @@ function RackMixerColumn({ bodyId, simple }: { bodyId: string | null; simple: bo
         </div>
       )}
 
-      {/* Dual meter: VU (left) + Fader gain (right) */}
-      <div style={{ flex: 1, display: 'flex', gap: 3, alignItems: 'flex-end', minHeight: 30, width: '100%', padding: '0 4px' }}>
+      {/* VU meter + vertical fader side by side */}
+      <div style={{ flex: 1, display: 'flex', gap: 4, alignItems: 'stretch', minHeight: 50, width: '100%', padding: '0 4px' }}>
         {/* VU bar — signal from instrument */}
-        <div title="signal level" style={{ flex: 1, borderRadius: 3, overflow: 'hidden', background: trackBg, position: 'relative', alignSelf: 'stretch' }}>
+        <div title="signal level" style={{ width: 8, flexShrink: 0, borderRadius: 3, overflow: 'hidden', background: trackBg, position: 'relative', alignSelf: 'stretch' }}>
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${vuLevel * 100}%`, background: vuColor, borderRadius: 3, transition: 'height 0.05s linear' }} />
           {[0.5012, 0.2512, 0.1259].map((lin, i) => (
             <div key={i} style={{ position: 'absolute', bottom: `${lin * 100}%`, left: 0, right: 0, height: 0.5, background: simple ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.12)' }} />
           ))}
         </div>
-        {/* Fader gain bar */}
-        <div title="fader × standpoint" style={{ width: 5, borderRadius: 3, overflow: 'hidden', background: trackBg, position: 'relative', alignSelf: 'stretch' }}>
-          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${fader * 100}%`, background: faderColor, opacity: 0.7, borderRadius: 3, transition: 'height 0.08s linear' }} />
+        {/* Vertical fader */}
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
+          {bodyId ? (
+            <input type="range" min={0} max={1} step={0.01} value={vol}
+              onChange={e => setVolume(parseFloat(e.target.value))}
+              className={`planet-fader${muted ? ' muted' : ''}`}
+              style={{
+                position: 'absolute',
+                width: 120,
+                transformOrigin: 'center center',
+                transform: 'rotate(-90deg)',
+                accentColor: accentCol,
+              }} />
+          ) : (
+            /* fallback fader gain bar when no body */
+            <div title="fader × standpoint" style={{ width: 5, borderRadius: 3, overflow: 'hidden', background: trackBg, position: 'relative', alignSelf: 'stretch', height: '100%' }}>
+              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${fader * 100}%`, background: faderColor, opacity: 0.7, borderRadius: 3, transition: 'height 0.08s linear' }} />
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Volume fader (horizontal, links to body.volume) */}
-      {bodyId && (
-        <div style={{ width: '100%', padding: '0 4px' }}>
-          <input type="range" min={0} max={1} step={0.01} value={vol}
-            onChange={e => setVolume(parseFloat(e.target.value))}
-            className={`planet-fader${muted ? ' muted' : ''}`}
-            style={{ width: '100%', accentColor: accentCol }} />
-        </div>
-      )}
 
       {/* dB readout + pan */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
