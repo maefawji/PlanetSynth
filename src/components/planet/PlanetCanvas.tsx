@@ -1725,7 +1725,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       ...BODY_DRONE_DEFAULTS,
       ...BODY_MIDI_DEFAULTS,
       muted: false,
-      volume: 1,
+      volume: 0.7,
     }
     storeState.addBody(newBody)
     storeBodiesRef.current = [...storeBodiesRef.current, newBody]
@@ -1868,7 +1868,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       ...BODY_DRONE_DEFAULTS,
       ...BODY_MIDI_DEFAULTS,
       muted: false,
-      volume: 1,
+      volume: 0.7,
     }
 
     storeState.addBody(newBody)

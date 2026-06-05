@@ -25,7 +25,7 @@ const PRESET_BODY_DEFAULTS = {
   ...BODY_DRONE_DEFAULTS,
   ...BODY_MIDI_DEFAULTS,
   muted:  false,
-  volume: 1,
+  volume: 0.7,
 }
 
 function planet(
