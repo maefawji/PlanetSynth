@@ -38,6 +38,8 @@ import { sendMidiNote } from '../../audio/midiManager'
 import { unlockMobileAudio } from '../../audio/mobileAudioUnlock'
 import { generateStarIdentity, collectExistingIdentities } from '../../lib/starNaming'
 import { useArpProgressionStore } from '../../store/arpProgressionStore'
+import { resolveOrbitDurationSource } from '../../lib/orbitDurationSource'
+import { computeOrbitStats } from './DroneLayer'
 import { randomGrammar, randomSeed, generateFromGrammar } from '../../sigil/sigilGenerator'
 import type { SigilGrammar, SigilShape } from '../../sigil/sigilGenerator'
 
@@ -1260,14 +1262,18 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                       // pitch-preserving time stretch: rate = bufDur / realPeriodSec
                       const stretchEng = getBodyStretchSamplerEngine(b.id)
                       const bufDur = stretchEng?.bufferDuration ?? 0
-                      const simStep = Math.max(0.000001, params.dt * STEPS_PER_FRAME)
-                      const realPeriodSec = isFinite(period) && period > 0
-                        ? (period / simStep) * (frameTimeRef.current / 1000) * stretchRatio
-                        : 0
+                      const targetExpression = String((bodyParams as Record<string, unknown>).sampleTargetExpression ?? 'T')
+                      const resolvedDuration = resolveOrbitDurationSource(targetExpression, b, bodies)
+                      const sourceT = (computeOrbitStats(resolvedDuration.body, bodies, params.G)?.T_real ?? 0) * resolvedDuration.multiplier
+                      const realPeriodSec = sourceT * stretchRatio
                       const samplerRate = bufDur > 0 && realPeriodSec > 0
                         ? Math.max(0.01, Math.min(8, bufDur / realPeriodSec))
                         : 1
-                      if (fireBodyInstrumentTrigger(b.id, samplerRate, undefined)) {
+                      if (fireBodyInstrumentTrigger(b.id, samplerRate, undefined, {
+                        expression: targetExpression,
+                        sourceDuration: sourceT,
+                        targetDuration: realPeriodSec,
+                      })) {
                         markTriggeredOnCanvas(b.id)
                       }
                     } else {
@@ -1377,15 +1383,18 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                       // pitch-preserving time stretch: rate = bufDur / realPeriodSec
                       const tpStretchEng = getBodyStretchSamplerEngine(b.id)
                       const tpBufDur = tpStretchEng?.bufferDuration ?? 0
-                      const tpSimStep = Math.max(0.000001, params.dt * STEPS_PER_FRAME)
-                      const effectiveP2 = _smoothedPeriods.get(b.id) ?? period
-                      const tpRealPeriodSec = isFinite(effectiveP2) && effectiveP2 > 0
-                        ? (effectiveP2 / tpSimStep) * (frameTimeRef.current / 1000) * tpStr
-                        : 0
+                      const tpTargetExpression = String((bodyParams as Record<string, unknown>).sampleTargetExpression ?? 'T')
+                      const tpResolvedDuration = resolveOrbitDurationSource(tpTargetExpression, b, bodies)
+                      const tpSourceT = (computeOrbitStats(tpResolvedDuration.body, bodies, params.G)?.T_real ?? 0) * tpResolvedDuration.multiplier
+                      const tpRealPeriodSec = tpSourceT * tpStr
                       const tpSamplerRate = tpBufDur > 0 && tpRealPeriodSec > 0
                         ? Math.max(0.01, Math.min(8, tpBufDur / tpRealPeriodSec))
                         : 1
-                      if (fireBodyInstrumentTrigger(b.id, tpSamplerRate, undefined)) {
+                      if (fireBodyInstrumentTrigger(b.id, tpSamplerRate, undefined, {
+                        expression: tpTargetExpression,
+                        sourceDuration: tpSourceT,
+                        targetDuration: tpRealPeriodSec,
+                      })) {
                         markTriggeredOnCanvas(b.id)
                       }
                     } else {

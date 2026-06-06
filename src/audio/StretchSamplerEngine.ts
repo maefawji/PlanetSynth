@@ -11,6 +11,12 @@
 import * as Tone from 'tone'
 
 export type StretchSamplerState = 'idle' | 'loading' | 'playing'
+export type StretchSamplerTimingSnapshot = {
+  expression: string
+  sourceDuration: number
+  targetDuration: number
+  capturedAt: number
+}
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
@@ -40,6 +46,8 @@ export class StretchSamplerEngine {
   private _loadPromise: Promise<void> | null = null
   private _startWallMs  = 0
   private _bufferDurSec = 0
+  private _playDurSec   = 0
+  private _timingSnapshot: StretchSamplerTimingSnapshot | null = null
 
   state: StretchSamplerState = 'idle'
   onStateChange?: (s: StretchSamplerState) => void
@@ -93,7 +101,7 @@ export class StretchSamplerEngine {
    * Trigger playback with pitch-preserving time-stretch.
    * @param playbackRate  bufferDuration / targetPeriodSec  (default 1 = no stretch)
    */
-  trigger(playbackRate = 1): void {
+  trigger(playbackRate = 1, timing?: Omit<StretchSamplerTimingSnapshot, 'capturedAt'>): void {
     if (!this.ctx || !this.buffer || !this.outputGain) return
 
     const now = this.ctx.currentTime
@@ -141,6 +149,15 @@ export class StretchSamplerEngine {
     this.currentSource   = source
     this.currentFadeGain = fadeGain
     this._startWallMs    = performance.now()
+    this._playDurSec     = this._bufferDurSec / rate
+    this._timingSnapshot = timing
+      ? { ...timing, targetDuration: this._playDurSec, capturedAt: Date.now() }
+      : {
+          expression: 'manual',
+          sourceDuration: this._playDurSec,
+          targetDuration: this._playDurSec,
+          capturedAt: Date.now(),
+        }
     this._setState('playing')
 
     source.onended = () => {
@@ -169,14 +186,16 @@ export class StretchSamplerEngine {
     this._setState('idle')
   }
 
-  /** Normalised playback position 0–1 (uses wall clock, not pitch-adjusted). */
+  /** Normalised position across the stretched output duration. */
   getPlayheadNorm(): number | null {
-    if (this.state !== 'playing' || this._bufferDurSec <= 0) return null
+    if (this.state !== 'playing' || this._playDurSec <= 0) return null
     const elapsed = (performance.now() - this._startWallMs) / 1000
-    return Math.min(1, Math.max(0, elapsed / this._bufferDurSec))
+    return Math.min(1, Math.max(0, elapsed / this._playDurSec))
   }
 
   get bufferDuration(): number { return this._bufferDurSec }
+  get playbackDuration(): number { return this._playDurSec }
+  get timingSnapshot(): StretchSamplerTimingSnapshot | null { return this._timingSnapshot }
   get sampleUrl():      string { return this._loadedUrl }
   get hasBuffer():     boolean { return this.buffer !== null }
 

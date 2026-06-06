@@ -175,8 +175,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         // 1. Match by id → upsert objectUrl (fixes stale blob URLs on reload)
         const byId = list.findIndex(e => e.id === inc.id)
         if (byId >= 0) {
-          if (list[byId].objectUrl !== inc.objectUrl) {
-            list[byId] = { ...list[byId], objectUrl: inc.objectUrl }
+          const nextObjectUrl = inc.objectUrl || list[byId].objectUrl
+          if (
+            list[byId].objectUrl !== nextObjectUrl
+            || list[byId].fileType !== inc.fileType
+            || list[byId].name !== inc.name
+            || list[byId].sourcePath !== inc.sourcePath
+            || list[byId].source !== inc.source
+          ) {
+            list[byId] = { ...list[byId], ...inc, objectUrl: nextObjectUrl }
             changed = true
           }
           continue
@@ -189,12 +196,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             || samplePathsMatch(e.name, inc.sourcePath)
           )
           if (bySource >= 0) {
+            const nextObjectUrl = inc.objectUrl || list[bySource].objectUrl
             if (
-              list[bySource].objectUrl !== inc.objectUrl
+              list[bySource].objectUrl !== nextObjectUrl
               || list[bySource].fileType !== inc.fileType
               || list[bySource].name !== inc.name
+              || list[bySource].source !== inc.source
             ) {
-              list[bySource] = { ...list[bySource], name: inc.name, objectUrl: inc.objectUrl, fileType: inc.fileType }
+              list[bySource] = { ...list[bySource], name: inc.name, objectUrl: nextObjectUrl, fileType: inc.fileType, source: inc.source }
               changed = true
             }
             continue
@@ -223,14 +232,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   setSampleObjectUrl(sampleId, objectUrl) {
-    set(s => ({
-      project: {
-        ...s.project,
-        samples: s.project.samples.map(sa =>
-          sa.id === sampleId ? { ...sa, objectUrl } : sa
-        ),
-      },
-    }))
+    set(s => {
+      const current = s.project.samples.find(sa => sa.id === sampleId)
+      if (!current || current.objectUrl === objectUrl) return s
+      return {
+        project: {
+          ...s.project,
+          samples: s.project.samples.map(sa =>
+            sa.id === sampleId ? { ...sa, objectUrl } : sa
+          ),
+        },
+      }
+    })
     // Don't set isDirty — this is an ephemeral restoration, not a user edit
   },
 

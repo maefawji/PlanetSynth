@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { Atom, ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio, CircleHelp, Sparkles, Radar, Zap } from 'lucide-react'
+import { Atom, ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio, CircleHelp, Sparkles, Radar, Zap, Save as SaveIcon, Download, Gauge } from 'lucide-react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { usePlanetStore, type PlanetSimParams } from '../../store/planetStore'
 import { CollisionPanel } from '../planet/CollisionPanel'
@@ -36,6 +36,7 @@ import { parseProject, restoreProjectSamples, saveProjectJson } from '../../pers
 import { setGlobalAdsr } from '../../audio/intersectionSynth'
 import { ADSR_OFF, computeOrbitAdsr } from '../../audio/orbitAdsr'
 import { useTheme } from '../../lib/theme'
+import { UniversalConductorPanel } from '../conductor/UniversalConductorPanel'
 
 interface LeftLibraryPanelProps {
   collapsed: boolean
@@ -44,10 +45,11 @@ interface LeftLibraryPanelProps {
 
 type LeftPanelId =
   | 'canvas' | 'universe-presets' | 'planet-presets' | 'planet-samples'
+  | 'universal-conductor'
   | 'planet-triggers'
   | 'planet-collision'
   | 'planet-auto'
-  | 'planet-controls-trigger' | 'planet-controls-instrument' | 'planet-controls-effect'
+  | 'planet-controls-trigger' | 'planet-controls-note' | 'planet-controls-instrument' | 'planet-controls-effect'
   | 'planet-localization' | 'planet-adsr'
   | 'whole-instrument' | 'orbit-hub' | 'midi' | 'help'
 
@@ -60,8 +62,7 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
   const setOrbitHubPanelOpen = useOrbitHubStore(s => s.setPanelOpen)
   const [cachedLibrary, setCachedLibrary] = useState<CachedSampleLibrary | null>(() => loadCachedSampleLibrary())
   const addSampleAssets     = useProjectStore(s => s.addSampleAssets)
-  const setSampleObjectUrl  = useProjectStore(s => s.setSampleObjectUrl)
-  const clearSamples        = useProjectStore(s => s.clearSamples)
+  const removeSampleAsset   = useProjectStore(s => s.removeSampleAsset)
   const loadProject         = useProjectStore(s => s.loadProject)
   const project             = useProjectStore(s => s.project)
   const samples             = useProjectStore(s => s.project.samples)
@@ -80,11 +81,7 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
   useEffect(() => {
     if (didRestoreRef.current) return
     didRestoreRef.current = true
-    restoreProjectSamples(useProjectStore.getState().project.samples).then(restored => {
-      for (const s of restored) {
-        if (s.objectUrl) setSampleObjectUrl(s.id, s.objectUrl)
-      }
-    })
+    restoreProjectSamples(useProjectStore.getState().project.samples).then(addSampleAssets)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -101,11 +98,8 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
       setSampleImportStatus('No stored sample folder available. Use Set Folder once, then Reload will rescan that folder.')
       return
     }
-    clearSamples()
+    removeLocalSamples()
     addSampleAssets(folderSamples)
-    for (const sample of folderSamples) {
-      if (sample.objectUrl) setSampleObjectUrl(sample.id, sample.objectUrl)
-    }
     setSampleImportStatus(`Reloaded ${folderSamples.length} sample${folderSamples.length === 1 ? '' : 's'} from the stored folder.`)
   }
 
@@ -116,16 +110,19 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
       setSampleImportStatus('No audio files found in that folder.')
       return
     }
-    clearSamples()
+    removeLocalSamples()
     addSampleAssets(folderSamples)
-    for (const sample of folderSamples) {
-      if (sample.objectUrl) setSampleObjectUrl(sample.id, sample.objectUrl)
-    }
     setSampleImportStatus(`Loaded ${folderSamples.length} sample${folderSamples.length === 1 ? '' : 's'} from folder.`)
   }
 
   function handleClearAllSamples() {
-    clearSamples()
+    removeLocalSamples()
+  }
+
+  function removeLocalSamples() {
+    for (const sample of useProjectStore.getState().project.samples) {
+      if (!isBuiltinSampleAsset(sample)) removeSampleAsset(sample.id)
+    }
   }
 
   function handleAddDroppedSamples(files: File[]) {
@@ -238,6 +235,43 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         >
           <FolderOpen size={14} />
         </RailButton>
+        <RailDivider />
+        <RailButton
+          active={activePanel === 'universal-conductor' && !collapsed}
+          title="Universal Conductor"
+          onClick={() => handleSelectPanel('universal-conductor')}
+        >
+          <Gauge size={14} />
+        </RailButton>
+        <RailButton
+          active={activePanel === 'planet-controls-trigger' && !collapsed}
+          title="Trigger Sets"
+          onClick={() => handleSelectPanel('planet-controls-trigger')}
+        >
+          <ToggleLeft size={14} />
+        </RailButton>
+        <RailButton
+          active={activePanel === 'planet-controls-note' && !collapsed}
+          title="Note Sets"
+          onClick={() => handleSelectPanel('planet-controls-note')}
+        >
+          <Activity size={14} />
+        </RailButton>
+        <RailButton
+          active={activePanel === 'planet-controls-instrument' && !collapsed}
+          title="Instrument Sets"
+          onClick={() => handleSelectPanel('planet-controls-instrument')}
+        >
+          <Music size={14} />
+        </RailButton>
+        <RailButton
+          active={activePanel === 'planet-controls-effect' && !collapsed}
+          title="Effect Sets"
+          onClick={() => handleSelectPanel('planet-controls-effect')}
+        >
+          <Wand2 size={14} />
+        </RailButton>
+        <RailDivider />
         <RailButton
           active={activePanel === 'universe-presets' && !collapsed}
           title="Universe Presets"
@@ -287,32 +321,6 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         >
           <Crosshair size={14} />
         </RailButton>
-
-        {/* ── Control Sets: 3 icons per category ───────────────────── */}
-        <RailDivider />
-        <RailButton
-          active={activePanel === 'planet-controls-trigger' && !collapsed}
-          title="Trigger Sets"
-          onClick={() => handleSelectPanel('planet-controls-trigger')}
-        >
-          <ToggleLeft size={14} />
-        </RailButton>
-        <RailButton
-          active={activePanel === 'planet-controls-instrument' && !collapsed}
-          title="Instrument Sets"
-          onClick={() => handleSelectPanel('planet-controls-instrument')}
-        >
-          <Music size={14} />
-        </RailButton>
-        <RailButton
-          active={activePanel === 'planet-controls-effect' && !collapsed}
-          title="Effect Sets"
-          onClick={() => handleSelectPanel('planet-controls-effect')}
-        >
-          <Wand2 size={14} />
-        </RailButton>
-        <RailDivider />
-
         <RailButton
           active={wholeInstrumentPanelOpen}
           title="Whole Instrument"
@@ -367,6 +375,9 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
           importStatus={sampleImportStatus}
         />
       )}
+      {!collapsed && activePanel === 'universal-conductor' && (
+        <UniversalConductorPanel />
+      )}
 
       {!collapsed && activePanel === 'universe-presets' && (
         <UniversePresetPanel />
@@ -385,6 +396,9 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
       )}
       {!collapsed && activePanel === 'planet-controls-trigger' && (
         <ControlSetsPanel category="trigger" />
+      )}
+      {!collapsed && activePanel === 'planet-controls-note' && (
+        <ControlSetsPanel category="note" />
       )}
       {!collapsed && activePanel === 'planet-controls-instrument' && (
         <ControlSetsPanel category="instrument" />
@@ -408,6 +422,20 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
       {!collapsed && activePanel === 'help' && (
         <HelpPanel />
       )}
+
+      <div
+        id="rack-extension-panel-root"
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: 'calc(100% + 0.5px)',
+          width: 'min(560px, calc(100vw - 100%))',
+          zIndex: 40,
+          pointerEvents: 'none',
+          overflow: 'visible',
+        }}
+      />
     </div>
   )
 }
@@ -480,6 +508,7 @@ function LibraryExplorer({ loadedSamples }: { loadedSamples: SampleAsset[] }) {
           objectUrl,
           fileType: mime[ext] ?? 'audio/*',
           sourcePath: `/samples/${filePath}`,
+          source: 'builtin',
         }
         addSampleAssets([newSample])
         sample = newSample
@@ -597,11 +626,42 @@ function SamplesPanel({ samples, cachedLibrary, onAddSample, onAddDroppedSamples
   importStatus: string
 }) {
   const t = useTheme()
-  const smallBtnStyle: React.CSSProperties = {
-    flex: 1, padding: '5px 7px', background: t.inputBg, border: 'none',
-    borderRadius: 4, cursor: 'pointer', fontSize: 10, color: t.textMid, fontFamily: 'inherit',
-  }
+  const selectedBodyId = usePlanetStore(s => s.selectedBodyId)
+  const setBodySlot = useControlSetStore(s => s.setBodySlot)
+  const setGlobalSlot = useControlSetStore(s => s.setGlobalSlot)
+  const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
+  const removeSampleAsset = useProjectStore(s => s.removeSampleAsset)
   const [dragging, setDragging] = useState(false)
+  const [query, setQuery] = useState('')
+  const [activeSource, setActiveSource] = useState<'all' | 'builtin' | 'local'>('all')
+  const [playingId, setPlayingId] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  const defaultSamples = samples.filter(isBuiltinSampleAsset)
+  const localSamples = samples.filter(sample => !isBuiltinSampleAsset(sample))
+  const filteredSamples = samples.filter(sample => {
+    const source = isBuiltinSampleAsset(sample) ? 'builtin' : sample.source === 'library' ? 'library' : 'local'
+    if (activeSource !== 'all' && source !== activeSource && !(activeSource === 'local' && source === 'library')) return false
+    const q = query.trim().toLowerCase()
+    if (!q) return true
+    return `${sample.name} ${sample.sourcePath ?? ''} ${source}`.toLowerCase().includes(q)
+  })
+  const visibleDefaultSamples = filteredSamples.filter(isBuiltinSampleAsset)
+  const visibleLocalSamples = filteredSamples.filter(sample => !isBuiltinSampleAsset(sample))
+  const assignTarget = selectedBodyId ? `selected body` : 'global rack'
+
+  const smallBtnStyle: React.CSSProperties = {
+    padding: '5px 7px',
+    background: t.inputBg,
+    border: `0.5px solid ${t.panelBorder}`,
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontSize: 9,
+    color: t.textMid,
+    fontFamily: 'inherit',
+    fontWeight: 700,
+    whiteSpace: 'nowrap',
+  }
 
   async function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault()
@@ -612,6 +672,136 @@ function SamplesPanel({ samples, cachedLibrary, onAddSample, onAddDroppedSamples
     const libraryFile = files.find(file => /\.json$/i.test(file.name))
     if (libraryFile) await onLoadSampleLibrary(libraryFile)
     onAddDroppedSamples(files.filter(isAudioFile))
+  }
+
+  async function playSample(sample: SampleAsset) {
+    if (playingId === sample.id) {
+      stopPreview()
+      return
+    }
+    stopPreview()
+    if (!sample.objectUrl) return
+    const audio = new Audio(sample.objectUrl)
+    audioRef.current = audio
+    setPlayingId(sample.id)
+    audio.onended = () => setPlayingId(null)
+    audio.onerror = () => setPlayingId(null)
+    try {
+      await audio.play()
+    } catch {
+      setPlayingId(null)
+    }
+  }
+
+  function stopPreview() {
+    audioRef.current?.pause()
+    audioRef.current = null
+    setPlayingId(null)
+  }
+
+  function assignSample(sample: SampleAsset) {
+    const slotKey = selectedBodyId ? `b:${selectedBodyId}:instrument` : 'g:instrument'
+    if (selectedBodyId) setBodySlot(selectedBodyId, 'instrument', 'instrument-sampler')
+    else setGlobalSlot('instrument', 'instrument-sampler')
+    setSlotOverride(slotKey, {
+      samplerType: 'sampler',
+      samplerMode: 'fixed',
+      samplerSampleId: sample.id,
+    })
+  }
+
+  function renderSampleRow(sample: SampleAsset, removable: boolean) {
+    const builtin = isBuiltinSampleAsset(sample)
+    const loaded = Boolean(sample.objectUrl)
+    return (
+      <div key={sample.id} style={{
+        display: 'grid',
+        gridTemplateColumns: '20px minmax(0, 1fr) auto',
+        alignItems: 'center',
+        gap: 5,
+        padding: '5px 6px',
+        borderRadius: 5,
+      }}>
+        <button
+          onClick={() => { void playSample(sample) }}
+          disabled={!loaded}
+          title={loaded ? 'Preview sample' : 'Sample file is not restored'}
+          style={{
+            width: 20, height: 20,
+            display: 'grid', placeItems: 'center',
+            borderRadius: 4,
+            border: `0.5px solid ${playingId === sample.id ? '#60a5fa' : t.panelBorder}`,
+            background: playingId === sample.id ? 'rgba(96,165,250,0.16)' : t.inputBg,
+            color: loaded ? (playingId === sample.id ? '#60a5fa' : t.textMid) : '#f87171',
+            cursor: loaded ? 'pointer' : 'default',
+            fontSize: 8,
+            fontFamily: 'inherit',
+            padding: 0,
+          }}
+        >
+          {playingId === sample.id ? '■' : '▶'}
+        </button>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+            <span style={{ fontSize: 10.5, color: t.text, fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {sample.name}
+            </span>
+            <span style={{
+              fontSize: 7,
+              color: builtin ? '#60a5fa' : '#34d399',
+              background: builtin ? 'rgba(96,165,250,0.12)' : 'rgba(52,211,153,0.12)',
+              borderRadius: 99,
+              padding: '1px 4px',
+              flexShrink: 0,
+            }}>
+              {builtin ? 'DEF' : sample.source === 'library' ? 'LIB' : 'LOC'}
+            </span>
+          </div>
+          <div style={{ fontSize: 8, color: loaded ? t.textDim : '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
+            {loaded ? sample.sourcePath || sample.fileType : 'missing file handle'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          <button
+            onClick={() => assignSample(sample)}
+            title={`Add as Sampler to ${assignTarget}`}
+            style={{ ...sampleAssignBtn(t), minWidth: 34, color: '#818cf8' }}
+          >
+            Add
+          </button>
+          {removable && (
+            <button
+              onClick={() => {
+                if (playingId === sample.id) stopPreview()
+                removeSampleAsset(sample.id)
+              }}
+              title="Remove local sample"
+              style={{ ...sampleAssignBtn(t), minWidth: 20, color: '#f87171' }}
+            >×</button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  function renderSection(label: string, list: SampleAsset[], removable: boolean) {
+    return (
+      <div style={{ borderTop: `0.5px solid ${t.divider}` }}>
+        <div style={{ padding: '6px 9px 3px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 8, fontWeight: 850, color: t.textMid, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+          <span style={{ fontSize: 8, color: t.textDim }}>{list.length}</span>
+        </div>
+        {list.length === 0 ? (
+          <div style={{ fontSize: 10, color: t.textDim, padding: '4px 10px 10px' }}>
+            {query ? 'No matches.' : removable ? 'No local samples.' : 'No default samples loaded.'}
+          </div>
+        ) : (
+          <div style={{ padding: '0 5px 5px', display: 'grid', gap: 1 }}>
+            {list.map(sample => renderSampleRow(sample, removable))}
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -643,139 +833,82 @@ function SamplesPanel({ samples, cachedLibrary, onAddSample, onAddDroppedSamples
         </div>
       )}
 
-      <div style={{
-        padding: '8px 10px',
-        borderBottom: `0.5px solid ${t.divider}`,
-        background: t.sectionBg,
-      }}>
-        <div style={{ fontSize: 9, fontWeight: 700, color: t.textMid, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
-          Library File
+      <div style={{ padding: '7px 9px', borderBottom: `0.5px solid ${t.divider}`, background: t.sectionBg, display: 'grid', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 5 }}>
+          {([
+            ['all', `All ${samples.length}`],
+            ['builtin', `Default ${defaultSamples.length}`],
+            ['local', `Local ${localSamples.length}`],
+          ] as const).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setActiveSource(id)}
+              style={{
+                ...smallBtnStyle,
+                flex: 1,
+                color: activeSource === id ? t.activeText : t.textMid,
+                background: activeSource === id ? t.activeBg : t.inputBg,
+                borderColor: activeSource === id ? t.activeBg : t.panelBorder,
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <div style={{ fontSize: 10, color: t.textMid, lineHeight: 1.35, marginBottom: 7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {cachedLibrary ? cachedLibrary.fileName : 'No cached library'}
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search samples"
+          style={{ width: '100%', boxSizing: 'border-box', fontSize: 10, color: t.inputText, background: t.inputBg, border: `0.5px solid ${t.panelBorder}`, borderRadius: 4, padding: '5px 7px', fontFamily: 'inherit', outline: 'none' }}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
+          <button onClick={onAddSample} style={smallBtnStyle}>Add</button>
+          <button onClick={onSetFolder} style={smallBtnStyle}>Folder</button>
+          <button onClick={onReloadAll} style={smallBtnStyle}>Reload</button>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={() => onLoadSampleLibrary()} style={smallBtnStyle}>Load</button>
-          <button onClick={onSaveSampleLibrary} style={smallBtnStyle}>Save</button>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
+          <button onClick={() => onLoadSampleLibrary()} style={smallBtnStyle} title={cachedLibrary ? cachedLibrary.fileName : 'Load sample library'}>Import</button>
+          <button onClick={onSaveSampleLibrary} style={smallBtnStyle}>Export</button>
+          <button onClick={onClearAll} disabled={localSamples.length === 0} style={{ ...smallBtnStyle, opacity: localSamples.length === 0 ? 0.4 : 1, color: localSamples.length ? '#f87171' : t.textDim }}>Clear</button>
         </div>
-        <div style={{
-          marginTop: 8, paddingTop: 8,
-          borderTop: `0.5px solid ${t.divider}`,
-        }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: t.textMid, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
-            Canvas Data
-          </div>
-          <div style={{ fontSize: 10, color: t.textMid, lineHeight: 1.35, marginBottom: 7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {cachedLibrary?.library.canvasDataPath ?? 'No canvas data recorded'}
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+        <details>
+          <summary style={{ fontSize: 9, color: t.textDim, cursor: 'pointer', userSelect: 'none' }}>Project data</summary>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginTop: 5 }}>
             <button onClick={onLoadCanvasData} style={smallBtnStyle}>Load Canvas</button>
             <button onClick={onSaveCanvasData} style={smallBtnStyle}>Save Canvas</button>
           </div>
-        </div>
-      </div>
-      {/* Reload / Clear bar */}
-      <div style={{
-        display: 'flex', gap: 6, padding: '6px 10px',
-        borderBottom: `0.5px solid ${t.divider}`,
-        background: t.sectionBg,
-      }}>
-        <button
-          onClick={onSetFolder}
-          title="Choose the audio folder used by the Samples explorer and reloads"
-          style={{
-            flex: 1, padding: '5px 8px',
-            background: 'rgba(37,99,235,0.07)',
-            border: '0.5px solid rgba(37,99,235,0.18)',
-            borderRadius: 4, cursor: 'pointer',
-            fontSize: 10, fontWeight: 600, color: '#2563eb',
-            fontFamily: 'inherit',
-          }}
-        >
-          Set Folder
-        </button>
-        <button
-          onClick={onReloadAll}
-          title="Restore file handles — fixes sounds after page reload"
-          style={{
-            flex: 1, padding: '5px 8px',
-            background: 'rgba(37,99,235,0.07)',
-            border: '0.5px solid rgba(37,99,235,0.18)',
-            borderRadius: 4, cursor: 'pointer',
-            fontSize: 10, fontWeight: 600, color: '#2563eb',
-            fontFamily: 'inherit',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-          }}
-        >
-          ⟳ Reload
-        </button>
-        <button
-          onClick={onClearAll}
-          disabled={samples.length === 0}
-          title="Remove all samples from the list"
-          style={{
-            flex: 1, padding: '5px 8px',
-            background: t.inputBg,
-            border: 'none', borderRadius: 4,
-            cursor: samples.length === 0 ? 'default' : 'pointer',
-            fontSize: 10, color: t.textMid, fontFamily: 'inherit',
-            opacity: samples.length === 0 ? 0.4 : 1,
-          }}
-          onMouseEnter={e => { if (samples.length > 0) e.currentTarget.style.color = '#ef4444' }}
-          onMouseLeave={e => (e.currentTarget.style.color = t.textMid)}
-        >
-          ✕ Clear all
-        </button>
-      </div>
-
-      {/* Library folder explorer */}
-      <LibraryExplorer loadedSamples={samples} />
-
-      {/* Loaded samples list */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        <div style={{ padding: '6px 8px 2px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 9, fontWeight: 700, color: t.textMid, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Loaded ({samples.length})
-          </span>
-        </div>
-        {samples.length === 0 ? (
-          <div style={{ fontSize: 11, color: t.textDim, padding: '4px 12px 12px', lineHeight: 1.5 }}>
-            Drop audio files here or click a file above.
+          <div style={{ fontSize: 8, color: t.textDim, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {cachedLibrary?.library.canvasDataPath ?? 'No canvas data recorded'}
           </div>
-        ) : (
-          samples.map(s => (
-            <div key={s.id} style={{
-              display: 'flex', alignItems: 'center', gap: 7,
-              padding: '5px 12px', fontSize: 11, color: t.text,
-              borderBottom: `0.5px solid ${t.sectionBg}`,
-            }}>
-              <span style={{ fontSize: 8, color: s.objectUrl ? '#60a5fa' : '#f87171' }}>♪</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                {s.name}
-              </span>
-              {!s.objectUrl && (
-                <span style={{ fontSize: 8, color: '#f87171', flexShrink: 0 }}>!</span>
-              )}
-            </div>
-          ))
-        )}
+        </details>
       </div>
-      <button
-        onClick={onAddSample}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-          width: '100%', padding: '9px 12px',
-          background: 'rgba(37,99,235,0.08)', border: 'none',
-          borderTop: `0.5px solid ${t.divider}`,
-          cursor: 'pointer', fontSize: 11, color: '#2563eb', fontWeight: 600,
-          fontFamily: 'inherit',
-        }}
-      >
-        <Upload size={12} />
-        <span>Add Samples</span>
-      </button>
+
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {(activeSource === 'all' || activeSource === 'builtin') && renderSection('Default Files', visibleDefaultSamples, false)}
+        {(activeSource === 'all' || activeSource === 'local') && renderSection('User Local', visibleLocalSamples, true)}
+      </div>
     </div>
   )
+}
+
+function isBuiltinSampleAsset(sample: SampleAsset): boolean {
+  return sample.source === 'builtin' || sample.id.startsWith('builtin:') || sample.sourcePath?.startsWith('/samples/') === true
+}
+
+function sampleAssignBtn(t: ReturnType<typeof useTheme>): CSSProperties {
+  return {
+    minWidth: 26,
+    height: 20,
+    padding: '0 5px',
+    borderRadius: 4,
+    border: `0.5px solid ${t.panelBorder}`,
+    background: t.inputBg,
+    color: t.textMid,
+    fontSize: 8,
+    fontWeight: 850,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  }
 }
 
 type WebkitFileEntry = {
@@ -958,6 +1091,7 @@ function PlanetAutoSpawnPanel() {
 
 const CATEGORY_LABELS: Record<ControlSetCategory, string> = {
   trigger:    'Trigger',
+  note:       'Note',
   instrument: 'Instrument',
   effect:     'Effect',
 }
@@ -978,6 +1112,7 @@ const USER_CONTROL_SET_FILE = 'planet-synth-user-control-sets.json'
 
 function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import('../../store/controlSetStore').BodyRack }) {
   const inRack = globalRack.triggers.includes(cs.id)
+    || globalRack.note === cs.id
     || globalRack.instrument === cs.id
     || globalRack.effects.includes(cs.id)
   const selectedBodyId = usePlanetStore(s => s.selectedBodyId)
@@ -993,6 +1128,9 @@ function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import
     if (cs.category === 'trigger') {
       if (bodyId) addBodyTrigger(bodyId, cs.id)
       else addGlobalTrigger(cs.id)
+    } else if (cs.category === 'note') {
+      if (bodyId) setBodySlot(bodyId, 'note', cs.id)
+      else setGlobalSlot('note', cs.id)
     } else if (cs.category === 'effect') {
       if (bodyId) addBodyEffect(bodyId, cs.id)
       else addGlobalEffect(cs.id)
@@ -1051,6 +1189,7 @@ function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import
 
   return (
     <div
+      title={`${cs.description}${cs.description ? '\n\n' : ''}ドラッグしてラックにアサイン。ダブルクリックで選択 body へ即追加。`}
       draggable={false}
       onMouseDown={handleManualDragStart}
       onDragStart={e => {
@@ -1061,10 +1200,10 @@ function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import
       onDragEnd={() => setDraggingControlSetId(null)}
       onDoubleClick={assignToSelectedBody}
       style={{
-        borderRadius: 7,
+        borderRadius: 5,
         border: `0.5px solid ${inRack ? cs.color + '88' : t.panelBorder}`,
         background: inRack ? `${cs.color}0d` : t.sectionBg,
-        padding: '8px 10px',
+        padding: '5px 7px',
         cursor: 'grab',
         transition: 'border-color 0.15s, background 0.15s',
         userSelect: 'none',
@@ -1078,28 +1217,24 @@ function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import
         e.currentTarget.style.background = inRack ? `${cs.color}0d` : t.sectionBg
       }}
     >
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 25 }}>
         <span style={{
-          width: 26, height: 26, borderRadius: 6, flexShrink: 0,
+          width: 22, height: 22, borderRadius: 5, flexShrink: 0,
           background: `${cs.color}22`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 14, lineHeight: 1,
+          fontSize: 12, lineHeight: 1,
           border: `0.5px solid ${cs.color}44`,
         }}>{cs.icon}</span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: t.text, lineHeight: 1.2 }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
+          <div style={{ fontSize: 10.5, fontWeight: 750, color: t.text, lineHeight: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {cs.name}
-          </div>
-          <div style={{ fontSize: 8.5, color: cs.color, fontWeight: 600, letterSpacing: '0.04em', marginTop: 1 }}>
-            {CATEGORY_LABELS[cs.category]}
           </div>
         </div>
         {inRack && (
           <span style={{
-            fontSize: 8, fontWeight: 700, color: cs.color,
+            fontSize: 7, fontWeight: 800, color: cs.color,
             background: `${cs.color}18`, borderRadius: 3,
-            padding: '2px 5px', flexShrink: 0,
+            padding: '2px 4px', flexShrink: 0,
             border: `0.5px solid ${cs.color}44`,
           }}>RACK</span>
         )}
@@ -1135,13 +1270,13 @@ function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import
             assignToRack(selectedBodyId || null)
           }}
           style={{
-            fontSize: 8,
+            fontSize: 7.5,
             fontWeight: 800,
             color: cs.color,
             background: `${cs.color}14`,
             border: `0.5px solid ${cs.color}44`,
-            borderRadius: 4,
-            padding: '2px 5px',
+            borderRadius: 3,
+            padding: '2px 4px',
             cursor: 'pointer',
             fontFamily: 'inherit',
             flexShrink: 0,
@@ -1151,14 +1286,6 @@ function ControlSetCard({ cs, globalRack }: { cs: ControlSet; globalRack: import
         </button>
       </div>
 
-      {/* Description */}
-      <div style={{ fontSize: 9.5, color: t.textMid, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-        {cs.description}
-      </div>
-
-      <div style={{ fontSize: 8, color: t.textDim, marginTop: 5 }}>
-        ↖ ドラッグしてラックにアサイン{selectedBodyId ? ' / ダブルクリックで選択bodyへ' : ''}
-      </div>
     </div>
   )
 }
@@ -1175,7 +1302,7 @@ function ControlSetsPanel({ category }: { category: ControlSetCategory }) {
   const importUserControlSets = useControlSetStore(s => s.importUserControlSets)
   const selectedBodyId = usePlanetStore(s => s.selectedBodyId)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const sets = getControlSetsByCategory(category)
+  const sets = getControlSetsByCategory(category).filter(cs => cs.id !== 'trigger-arpeggio')
   const defaultSets = sets.filter(c => c.source !== 'user')
   const userSets = sets.filter(c => c.source === 'user')
 
@@ -1183,8 +1310,15 @@ function ControlSetsPanel({ category }: { category: ControlSetCategory }) {
     const bodyRack = selectedBodyId ? bodyRacks[selectedBodyId] ?? {} : null
     const bodyHasTrigger = !!(bodyRack?.triggers && bodyRack.triggers.length > 0)
     const bodyHasEffect = !!(bodyRack?.effects && bodyRack.effects.length > 0)
+    const bodyHasNote = !!(bodyRack && bodyRack.note != null)
     const bodyHasInstrument = !!(bodyRack && bodyRack.instrument != null)
 
+    if (category === 'note') {
+      const id = selectedBodyId && bodyHasNote ? bodyRack!.note : globalRack.note
+      const cs = getControlSetById(id)
+      if (!cs) return null
+      return { cs, slotKey: selectedBodyId && bodyHasNote ? `b:${selectedBodyId}:note` : 'g:note' }
+    }
     if (category === 'instrument') {
       const id = selectedBodyId && bodyHasInstrument ? bodyRack!.instrument : globalRack.instrument
       const cs = getControlSetById(id)
@@ -1292,30 +1426,66 @@ function ControlSetsPanel({ category }: { category: ControlSetCategory }) {
     marginBottom: 1,
   }
   const actionBtn: CSSProperties = {
+    height: 22,
+    minWidth: 24,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
     fontSize: 8,
     fontWeight: 700,
     color: t.textMid,
     background: t.sectionBg,
     border: `0.5px solid ${t.panelBorder}`,
     borderRadius: 4,
-    padding: '3px 6px',
+    padding: '0 6px',
     cursor: 'pointer',
     fontFamily: 'inherit',
+  }
+  const hintPill: CSSProperties = {
+    height: 22,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    padding: '0 7px',
+    borderRadius: 5,
+    border: `0.5px solid ${t.panelBorder}`,
+    background: t.cardBg,
+    color: t.textMid,
+    fontSize: 8,
+    fontWeight: 800,
+    letterSpacing: '0.02em',
+    whiteSpace: 'nowrap',
   }
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <SectionHeader label={CATEGORY_LABELS[category]} />
-      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 7 }}>
-        <div style={{ fontSize: 9.5, color: t.textMid, lineHeight: 1.5 }}>
-          ドラッグしてラックにアサイン。ダブルクリックで選択 body へ即追加。
-        </div>
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          <button onClick={saveCurrentAsUserPreset} style={actionBtn}>Save current</button>
-          <button onClick={exportPresets} style={actionBtn}>Export</button>
-          <button onClick={() => fileInputRef.current?.click()} style={actionBtn}>Import</button>
-          <button onClick={() => { void savePresetsToFolder() }} style={actionBtn}>Save folder</button>
-          <button onClick={() => { void loadPresetsFromFolder() }} style={actionBtn}>Load folder</button>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+          <div
+            style={{ ...hintPill, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+            title="ドラッグしてラックにアサイン。ダブルクリックで選択 body へ即追加。"
+          >
+            <span style={{ color: t.accent }}>↖</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Rack assign</span>
+          </div>
+          <button onClick={saveCurrentAsUserPreset} style={actionBtn} title="Save current rack slot as a user preset">
+            <SaveIcon size={12} />
+          </button>
+          <button onClick={exportPresets} style={actionBtn} title="Export user presets">
+            <Download size={12} />
+          </button>
+          <button onClick={() => fileInputRef.current?.click()} style={actionBtn} title="Import user presets">
+            <Upload size={12} />
+          </button>
+          <button onClick={() => { void savePresetsToFolder() }} style={actionBtn} title="Save user presets to folder">
+            <SaveIcon size={12} />
+            <span style={{ fontSize: 7 }}>dir</span>
+          </button>
+          <button onClick={() => { void loadPresetsFromFolder() }} style={actionBtn} title="Load user presets from folder">
+            <FolderOpen size={12} />
+          </button>
           <input
             ref={fileInputRef}
             type="file"

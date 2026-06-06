@@ -71,6 +71,25 @@ export const nodeRegistry: Record<string, PatchNodeDefinition> = {
     description: 'Random control value generator.',
     processingRate: 'event',
   },
+  'expr': {
+    type: 'expr', label: 'expr', category: 'operator',
+    inputs: [
+      { id: 'distance', label: 'distance', direction: 'input', signalType: 'control' },
+      { id: 'angle', label: 'angle', direction: 'input', signalType: 'control' },
+      { id: 'speed', label: 'speed', direction: 'input', signalType: 'control' },
+      { id: 'seed', label: 'seed', direction: 'input', signalType: 'control' },
+    ],
+    outputs: [{ id: 'value', label: 'value', direction: 'output', signalType: 'control' }],
+    defaultParams: {
+      expression: 'sin(angle) * 0.5 + random(seed)',
+      distance: 0,
+      angle: 0,
+      speed: 0,
+      seed: 1,
+    },
+    description: 'Safe formula node. Supports arithmetic, math functions, random(seed), noise, and time variables.',
+    processingRate: 'control',
+  },
   'counter': {
     type: 'counter', label: 'counter', category: 'control',
     inputs: [{ id: 'trigger', label: 'bang', direction: 'input', signalType: 'trigger' }],
@@ -517,7 +536,7 @@ export const nodeRegistry: Record<string, PatchNodeDefinition> = {
 export const nodeLibraryOrder: Array<{ category: string; types: string[] }> = [
   {
     category: 'Message / Control',
-    types: ['bang', 'toggle', 'number', 'message', 'metro', 'delay', 'random', 'counter', 'select', 'route', 'pack', 'unpack', 'send', 'receive'],
+    types: ['bang', 'toggle', 'number', 'message', 'metro', 'delay', 'random', 'expr', 'counter', 'select', 'route', 'pack', 'unpack', 'send', 'receive'],
   },
   {
     category: 'Signal',

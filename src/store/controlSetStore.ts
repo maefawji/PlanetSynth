@@ -498,6 +498,32 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       orbitLoopNumer:    1,
       orbitLoopDenom:    1,
       sampleOrbitSource: 'current',
+      sampleTargetExpression: 'T',
+    },
+  },
+  {
+    id: 'instrument-long-sampler',
+    name: 'Long Sampler',
+    icon: '≋',
+    color: '#ec4899',
+    category: 'instrument',
+    description:
+      '長い音源から区間を選び、ゆっくり再生するフレーズサンプラー。\n' +
+      '再生位置、Duration、Fade、Retrigger、終了後のWanderを設定可能。\n' +
+      'Orbit式はトリガー時に評価され、再生終了まで保持されます。',
+    params: {
+      longSamplerDurationMode: 'seconds',
+      longSamplerDurationSec: 30,
+      longSamplerDurationExpression: 'T',
+      longSamplerStartMode: 'random',
+      longSamplerStart: 0,
+      longSamplerPitch: 0,
+      longSamplerFadeIn: 3,
+      longSamplerFadeOut: 5,
+      longSamplerRetrigger: 'ignore',
+      longSamplerEndMode: 'oneshot',
+      samplerMode: 'auto',
+      samplerSampleId: null,
     },
   },
   {
@@ -574,7 +600,7 @@ export const MAX_EFFECTS  = 6
 export const MAX_TRIGGERS = 4
 
 export const DEFAULT_BODY_RACKS: Record<string, BodyRackOverride> = {
-  sun:       { triggers: ['trigger-empty'], note: null, instrument: 'instrument-empty', effects: ['effect-empty'] },
+  sun:       { triggers: ['trigger-empty'], note: null, instrument: 'instrument-empty', effects: ['effect-freeze'] },
   perturber: { triggers: ['trigger-orbit-step'], note: 'note-arpeggio', instrument: 'instrument-wave-lab', effects: ['effect-empty'] },
 }
 

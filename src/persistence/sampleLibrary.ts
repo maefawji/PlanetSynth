@@ -131,6 +131,7 @@ export async function pickSampleFiles(): Promise<SampleAsset[]> {
         objectUrl,
         fileType: file.type || 'audio/file',
         sourcePath: file.name,
+        source: 'local',
       })
     }
     return assets
@@ -177,6 +178,7 @@ export async function scanDirectoryHandle(
         objectUrl,
         fileType: file.type || 'audio/file',
         sourcePath: relativePath,
+        source: 'local',
       })
     } catch {
       /* skip unreadable files */
@@ -249,6 +251,7 @@ export function samplesFromFiles(files: File[]): SampleAsset[] {
         objectUrl: URL.createObjectURL(file),
         fileType: file.type || 'audio/file',
         sourcePath,
+        source: 'local',
       }
     })
 }
@@ -264,6 +267,7 @@ export function samplesFromLibrary(library: SampleLibraryFile): SampleAsset[] {
         objectUrl: isLocal ? '' : sample.path,
         sourcePath: sample.path,
         fileType: sample.fileType || 'audio/path',
+        source: isLocal ? 'local' : 'library',
       }
     })
 }

@@ -4,6 +4,12 @@ import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { useOrbitHubStore } from '../../store/orbitHubStore'
 import { usePlanetStore } from '../../store/planetStore'
 import { computeOrbitTelemetry } from '../../lib/orbitTelemetry'
+import {
+  ORBIT_HUB_FORMULA_DEFINITIONS,
+  ORBIT_HUB_T_CALCULATION,
+  ORBIT_HUB_TPERIOD_NOTE,
+  ORBIT_HUB_VALUE_DEFINITIONS,
+} from '../../lib/orbitDurationSource'
 import { getPlanetLiveBodySnapshot } from './PlanetCanvas'
 
 function Meter({ value, color = '#60a5fa' }: { value: number; color?: string }) {
@@ -145,6 +151,41 @@ export function OrbitHubPanel({ height }: { height: number }) {
         </div>
 
         <div style={{ width: 245, flexShrink: 0, borderLeft: `0.5px solid ${border}`, padding: 12, overflowY: 'auto' }}>
+          <div style={{ fontSize: 8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Definitions</div>
+          <div style={{ border: `0.5px solid ${border}`, borderRadius: 5, overflow: 'hidden', marginBottom: 12 }}>
+            {ORBIT_HUB_VALUE_DEFINITIONS.map((definition, index) => (
+              <div key={definition.symbol} style={{ padding: '7px 8px', borderTop: index ? `0.5px solid ${border}` : 'none', background: index % 2 ? 'transparent' : input }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '52px 1fr auto', gap: 6, alignItems: 'baseline', marginBottom: 2 }}>
+                  <span style={{ color: '#818cf8', fontFamily: 'monospace', fontSize: 11, fontWeight: 900 }}>{definition.symbol}</span>
+                  <span style={{ color: text, fontSize: 8.5, fontWeight: 700 }}>{definition.label}</span>
+                  <span style={{ color: dim, fontSize: 7, fontFamily: 'monospace' }}>{definition.unit}</span>
+                </div>
+                <div style={{ paddingLeft: 58, color: dim, fontSize: 7.5, lineHeight: 1.4 }}>{definition.description}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>T calculation</div>
+          <div style={{ border: `0.5px solid ${border}`, borderRadius: 5, padding: 8, marginBottom: 12, background: input }}>
+            {ORBIT_HUB_T_CALCULATION.map(line => (
+              <div key={line} style={{ color: dim, fontSize: 7.5, fontFamily: 'monospace', lineHeight: 1.5 }}>{line}</div>
+            ))}
+            <div style={{ marginTop: 7, paddingTop: 7, borderTop: `0.5px solid ${border}`, color: '#818cf8', fontSize: 7.5, lineHeight: 1.45 }}>
+              {ORBIT_HUB_TPERIOD_NOTE}
+            </div>
+          </div>
+          <div style={{ fontSize: 8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Duration formulas</div>
+          <div style={{ border: `0.5px solid ${border}`, borderRadius: 5, padding: 8, marginBottom: 12, background: input }}>
+            {ORBIT_HUB_FORMULA_DEFINITIONS.map(definition => (
+              <div key={definition.syntax} style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: 7, marginBottom: 5 }}>
+                <code style={{ color: '#818cf8', fontSize: 8.5 }}>{definition.syntax}</code>
+                <span style={{ color: dim, fontSize: 7.5 }}>{definition.result}</span>
+              </div>
+            ))}
+            <div style={{ marginTop: 7, paddingTop: 7, borderTop: `0.5px solid ${border}`, color: dim, fontSize: 7.5, lineHeight: 1.45 }}>
+              Operators: * / ( )<br />
+              Sampler update: evaluate on trigger, then hold until the next trigger.
+            </div>
+          </div>
           <div style={{ fontSize: 8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Outputs</div>
           {['Whole Instrument', 'MIDI CC', 'OSC / Max for Live', 'Export snapshot'].map((label, i) => (
             <div key={label} style={{ border: `0.5px solid ${border}`, borderRadius: 5, padding: 9, marginBottom: 8, opacity: i === 0 ? 1 : 0.55 }}>

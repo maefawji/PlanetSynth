@@ -115,6 +115,9 @@ export interface PlanetSimParams {
   orbitTriggerMode: 'none' | 'orbit-complete'  // retrigger sample each completed orbit
   orbitTriggerDivision: number   // orbit fraction per trigger: 2=every2orbits, 0.5=twice/orbit
   orbitTriggerType: 'periodic' | 'cumulative' | 'tperiod'  // periodic=every N orbits; cumulative=charge→fire; tperiod=T seconds after last trigger
+  orbitStepSeqEnabled: boolean
+  orbitStepSeqLength: number
+  orbitStepSeqPattern: string
   showOrbitTriggerMarkers: boolean  // show trigger position dots on canvas
   orbitStretchMode: boolean  // stretch sample playback rate to match orbital period
   probeMass: number          // mass of the mouse-probe cursor (0 = measurement only)
@@ -196,6 +199,8 @@ export interface PlanetSimParams {
    *  'current'   = use instantaneous angular velocity (ω)
    *  'predicted' = use the smoothed/predicted period (stable, non-instantaneous) */
   sampleOrbitSource: 'current' | 'predicted'
+  /** Orbit Hub duration source. T is defined globally as the referenced body's T-period. */
+  sampleTargetExpression: string
   /** When stretch mode is active, apply pitch correction (detune to cancel rate shift) */
   samplePitchCorrection: boolean
   /** Whether to loop the sample or play oneshot when stretch mode is active */
@@ -219,6 +224,18 @@ export interface PlanetSimParams {
   samplerAttack:      number   // seconds
   samplerRelease:     number   // seconds
   samplerReverbMix:   number   // 0–1
+
+  // ── Long Sampler instrument ──────────────────────────────────────────────
+  longSamplerDurationMode: 'seconds' | 'orbit'
+  longSamplerDurationSec: number
+  longSamplerDurationExpression: string
+  longSamplerStartMode: 'fixed' | 'random'
+  longSamplerStart: number
+  longSamplerPitch: number
+  longSamplerFadeIn: number
+  longSamplerFadeOut: number
+  longSamplerRetrigger: 'ignore' | 'restart'
+  longSamplerEndMode: 'oneshot' | 'wander'
 
   // ── Granular synth ────────────────────────────────────────────────────────
   granularType:      'off' | 'grain'
@@ -440,6 +457,9 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   orbitTriggerMode: 'none',
   orbitTriggerDivision: 1,
   orbitTriggerType: 'cumulative',
+  orbitStepSeqEnabled: false,
+  orbitStepSeqLength: 8,
+  orbitStepSeqPattern: '11111111',
   showOrbitTriggerMarkers: false,
   orbitStretchMode: false,
   probeMass: 50,
@@ -493,6 +513,7 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   showSampleName: false,
   sampleStretchMode: 'rate',
   sampleOrbitSource: 'current',
+  sampleTargetExpression: 'T',
   samplePitchCorrection: false,
   sampleLoopMode: 'loop',
   samplerMode: 'auto',
@@ -510,6 +531,16 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   samplerAttack:      0.01,
   samplerRelease:     1.0,
   samplerReverbMix:   0.3,
+  longSamplerDurationMode: 'seconds',
+  longSamplerDurationSec: 30,
+  longSamplerDurationExpression: 'T',
+  longSamplerStartMode: 'random',
+  longSamplerStart: 0,
+  longSamplerPitch: 0,
+  longSamplerFadeIn: 3,
+  longSamplerFadeOut: 5,
+  longSamplerRetrigger: 'ignore',
+  longSamplerEndMode: 'oneshot',
 
   granularType:      'off',
   granularVolume:    0.6,

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { usePlanetStore } from '../../store/planetStore'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import type { PlanetBody, PlanetSimParams } from '../../store/planetStore'
@@ -21,11 +22,13 @@ import { sendMidiNote, getMidiSendAge, getMidiReceiveAge, getLastMidiSendInfo, g
 import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import type { OneShotState } from '../../audio/OneShotSamplerEngine'
 import { getBodyStretchSamplerEngine } from '../../audio/StretchSamplerEngine'
+import { getBodyLongSamplerEngine } from '../../audio/LongSamplerEngine'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
 import { getBodyOutputLevel } from '../../audio/bodyOutputMeter'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
 import { getBusOscilloscopeData } from '../../audio/rackBusMixer'
 import { useArpProgressionStore } from '../../store/arpProgressionStore'
+import { ORBIT_T_DEFINITION, resolveOrbitDurationSource } from '../../lib/orbitDurationSource'
 import { generateFromGrammar, randomGrammar } from '../../sigil/sigilGenerator'
 import type { SigilGrammar } from '../../sigil/sigilGenerator'
 
@@ -2032,7 +2035,7 @@ function isBuiltinSample(sample: { id: string; source?: string; sourcePath?: str
  * Mirrors OneShotSamplerPanel logic but in a narrow inline layout.
  */
 function InlineOneShotContent({
-  bodyId, slotKey, simple, accent, isStretch, isSamplerStretch,
+  bodyId, slotKey, simple, accent, isStretch, isSamplerStretch, isLongSampler,
 }: {
   bodyId: string | null
   slotKey: string
@@ -2041,6 +2044,7 @@ function InlineOneShotContent({
   isStretch?: boolean
   /** When true, use StretchSamplerEngine instead of OneShotSamplerEngine */
   isSamplerStretch?: boolean
+  isLongSampler?: boolean
 }) {
   const samples         = useProjectStore(s => s.project.samples)
   const addSampleAsset  = useProjectStore(s => s.addSampleAsset)
@@ -2069,20 +2073,30 @@ function InlineOneShotContent({
     : (bodyId && samples.length > 0 ? samples[stableSampleIndexFromBodyId(bodyId, samples.length)] ?? null : null)
 
   // ── Stretch info (only for instrument-oneshot-stretch) ──────────────────────
-  const orbitStats  = isStretch && body ? computeOrbitStats(body, bodies, G) : null
+  const targetExpression = String((effectiveParams as Record<string, unknown> | null)?.sampleTargetExpression ?? 'T')
+  const stretchSourceBody = isSamplerStretch && body
+    ? resolveOrbitDurationSource(targetExpression, body, bodies).body
+    : body
+  const stretchSourceMultiplier = isSamplerStretch && body
+    ? resolveOrbitDurationSource(targetExpression, body, bodies).multiplier
+    : 1
+  const orbitStats  = isStretch && stretchSourceBody ? computeOrbitStats(stretchSourceBody, bodies, G) : null
   const tRealSec    = orbitStats?.T_real ?? null
   // bufferDuration read inline — re-evaluated on each render triggered by engState changes
   const bufDurSec   = isStretch && bodyId
     ? (isSamplerStretch
         ? (getBodyStretchSamplerEngine(bodyId)?.bufferDuration ?? 0)
         : (getBodyOneShotEngine(bodyId)?.bufferDuration ?? 0))
-    : 0
+    : isLongSampler && bodyId
+      ? (getBodyLongSamplerEngine(bodyId)?.bufferDuration ?? 0)
+      : 0
   const sourceDiv    = Math.max(0.0625, Number((triggerParams as Record<string, unknown> | null)?.orbitTriggerDivision ?? 1))
-  const sourceSec    = tRealSec !== null ? tRealSec * sourceDiv : null
+  const sourceSec    = tRealSec !== null ? tRealSec * (isSamplerStretch ? stretchSourceMultiplier : sourceDiv) : null
   const loopNumer    = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopNumer ?? 1))
   const loopDenom    = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopDenom ?? 1))
   const stretchRatio = loopNumer / loopDenom
-  const shownRate    = bufDurSec > 0 && sourceSec !== null && sourceSec > 0 ? (bufDurSec * stretchRatio / sourceSec) : null
+  const shownTarget  = sourceSec !== null ? sourceSec * stretchRatio : null
+  const shownRate    = bufDurSec > 0 && shownTarget !== null && shownTarget > 0 ? (bufDurSec / shownTarget) : null
 
   // ── Engine state + playhead (RAF, no React state for 60fps) ─────────────────
   const [engState, setEngState] = useState<OneShotState>('idle')
@@ -2097,7 +2111,9 @@ function InlineOneShotContent({
       if (bodyId) {
         const eng = isSamplerStretch
           ? getBodyStretchSamplerEngine(bodyId)
-          : getBodyOneShotEngine(bodyId)
+          : isLongSampler
+            ? getBodyLongSamplerEngine(bodyId)
+            : getBodyOneShotEngine(bodyId)
         if (eng) {
           setEngState(eng.state as OneShotState)
           const norm = eng.getPlayheadNorm()
@@ -2124,7 +2140,7 @@ function InlineOneShotContent({
     }
     rafRef.current = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [bodyId])
+  }, [bodyId, isLongSampler, isSamplerStretch])
 
   // ── Drag-and-drop / file picker ─────────────────────────────────────────────
   const [dragOver, setDragOver] = useState(false)
@@ -2173,6 +2189,21 @@ function InlineOneShotContent({
   const isPlaying = engState === 'playing'
   const isLoading = engState === 'loading' || loading
 
+  function randomReassignSample() {
+    const playable = samples.filter(candidate => Boolean(candidate.objectUrl))
+    if (playable.length === 0) return
+    const alternatives = fixedId && playable.length > 1
+      ? playable.filter(candidate => candidate.id !== fixedId)
+      : playable
+    const next = alternatives[Math.floor(Math.random() * alternatives.length)]
+    if (!next) return
+    setSlotOverride(slotKey, {
+      samplerType: 'sampler',
+      samplerMode: 'fixed',
+      samplerSampleId: next.id,
+    } as Partial<PlanetSimParams>)
+  }
+
   // ── Source selector row (always visible) ────────────────────────────────────
   const srcSelector = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -2189,6 +2220,31 @@ function InlineOneShotContent({
         <option value="auto">Auto (hash)</option>
         <option value="fixed">Fixed file</option>
       </select>
+      {(isSamplerStretch || isLongSampler) && (
+        <button
+          onClick={randomReassignSample}
+          disabled={!samples.some(candidate => Boolean(candidate.objectUrl))}
+          title="Randomly reassign a loaded sample"
+          style={{
+            width: 18,
+            height: 18,
+            flexShrink: 0,
+            display: 'grid',
+            placeItems: 'center',
+            padding: 0,
+            borderRadius: 3,
+            border: `0.5px solid ${borderCol}`,
+            background: inputBg,
+            color: accent,
+            cursor: samples.some(candidate => Boolean(candidate.objectUrl)) ? 'pointer' : 'default',
+            opacity: samples.some(candidate => Boolean(candidate.objectUrl)) ? 1 : 0.35,
+            fontSize: 11,
+            fontFamily: 'inherit',
+          }}
+        >
+          ↻
+        </button>
+      )}
       {samplerMode === 'fixed' && fixedId && (
         <button
           onClick={() => resetSlotParam(slotKey, 'samplerSampleId')}
@@ -3406,9 +3462,7 @@ function OneShotStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
   const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
   const getBodyEffectiveParams2 = useControlSetStore(s => s.getBodyEffectiveParams)
-  const getBodyTriggerParamsList2 = useControlSetStore(s => s.getBodyTriggerParamsList)
   const effectiveParams = bodyId ? getBodyEffectiveParams2(bodyId) : null
-  const triggerParams = bodyId ? (getBodyTriggerParamsList2(bodyId)[0] ?? null) : null
   const bodies = usePlanetStore(s => s.bodies)
   const G = usePlanetStore(s => s.simParams.G)
   const body = bodyId ? (bodies.find(b => b.id === bodyId) ?? null) : null
@@ -3584,30 +3638,91 @@ function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
   const bodies = usePlanetStore(s => s.bodies)
   const G = usePlanetStore(s => s.simParams.G)
   const body = bodyId ? (bodies.find(b => b.id === bodyId) ?? null) : null
-  const orbitStats = body ? computeOrbitStats(body, bodies, G) : null
+  const targetExpression = String((effectiveParams as Record<string, unknown> | null)?.sampleTargetExpression ?? 'T')
+  const resolvedSource = body ? resolveOrbitDurationSource(targetExpression, body, bodies) : null
+  const orbitStats = resolvedSource ? computeOrbitStats(resolvedSource.body, bodies, G) : null
   const bufDurSec = bodyId ? (getBodyStretchSamplerEngine(bodyId)?.bufferDuration ?? 0) : 0
-  const fullT = orbitStats?.T_real ?? null
-  const sourceDiv = Math.max(0.0625, Number((triggerParams as Record<string, unknown> | null)?.orbitTriggerDivision ?? 1))
-  const sourceSec = fullT !== null ? fullT * sourceDiv : null
+  const sourceSec = orbitStats ? orbitStats.T_real * (resolvedSource?.multiplier ?? 1) : null
   const numer = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopNumer ?? 1))
   const denom = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopDenom ?? 1))
   const stretchRatio = numer / denom
-  const playbackRate = bufDurSec > 0 && sourceSec !== null && sourceSec > 0 ? (bufDurSec * stretchRatio / sourceSec) : null
+  const targetDurSec = sourceSec !== null && stretchRatio > 0 ? sourceSec * stretchRatio : null
+  const playbackRate = bufDurSec > 0 && targetDurSec !== null && targetDurSec > 0 ? (bufDurSec / targetDurSec) : null
   const accent = '#818cf8'
   const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.38)'
   const dim2 = simple ? 'rgba(0,0,0,0.64)' : 'rgba(255,255,255,0.64)'
   const border = simple ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.08)'
   const panel = simple ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.04)'
+  const progressRef = useRef<HTMLDivElement>(null)
+  const playheadRef = useRef<HTMLDivElement>(null)
+  const currentTimeRef = useRef<HTMLSpanElement>(null)
+  const playStateRef = useRef<HTMLSpanElement>(null)
+  const sourceMetricRef = useRef<HTMLDivElement>(null)
+  const targetMetricRef = useRef<HTMLDivElement>(null)
+  const rateMetricRef = useRef<HTMLDivElement>(null)
+  const capturedExpressionRef = useRef<HTMLSpanElement>(null)
+  const capturedAtRef = useRef<HTMLSpanElement>(null)
   const setPatch = (patch: Partial<PlanetSimParams>) => setSlotOverride(slotKey, patch)
   const sectionLabel = (label: string) => (
     <div style={{ fontSize: 8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{label}</div>
   )
-  const metric = (label: string, value: string, color = dim2) => (
+  const metric = (
+    label: string,
+    value: string,
+    color = dim2,
+    valueRef?: { current: HTMLDivElement | null },
+  ) => (
     <div style={{ border: `0.5px solid ${border}`, borderRadius: 5, background: panel, padding: '7px 8px' }}>
       <div style={{ fontSize: 8, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 16, color, fontFamily: 'monospace', fontWeight: 800, lineHeight: 1 }}>{value}</div>
+      <div ref={valueRef} style={{ fontSize: 16, color, fontFamily: 'monospace', fontWeight: 800, lineHeight: 1 }}>{value}</div>
     </div>
   )
+
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      const engine = bodyId ? getBodyStretchSamplerEngine(bodyId) : null
+      const norm = engine?.getPlayheadNorm() ?? null
+      const snapshot = engine?.timingSnapshot ?? null
+      const heldTargetDur = norm !== null && engine && engine.playbackDuration > 0
+        ? engine.playbackDuration
+        : snapshot?.targetDuration ?? targetDurSec
+      const progress = norm ?? 0
+      if (progressRef.current) progressRef.current.style.width = `${progress * 100}%`
+      if (playheadRef.current) {
+        playheadRef.current.style.left = `${progress * 100}%`
+        playheadRef.current.style.opacity = norm === null ? '0' : '1'
+      }
+      if (currentTimeRef.current) {
+        currentTimeRef.current.textContent = heldTargetDur !== null
+          ? `${(progress * heldTargetDur).toFixed(2)}s / ${heldTargetDur.toFixed(2)}s`
+          : '— / —'
+      }
+      if (playStateRef.current) {
+        playStateRef.current.textContent = norm === null ? 'IDLE' : 'PLAY'
+        playStateRef.current.style.color = norm === null ? dim : '#22c55e'
+      }
+      if (snapshot) {
+        if (sourceMetricRef.current) sourceMetricRef.current.textContent = `${snapshot.sourceDuration.toFixed(2)}s`
+        if (targetMetricRef.current) targetMetricRef.current.textContent = `${snapshot.targetDuration.toFixed(2)}s`
+        if (rateMetricRef.current) {
+          const heldRate = bufDurSec > 0 && snapshot.targetDuration > 0 ? bufDurSec / snapshot.targetDuration : 0
+          rateMetricRef.current.textContent = heldRate > 0 ? `×${heldRate.toFixed(3)}` : '—'
+        }
+        if (capturedExpressionRef.current) capturedExpressionRef.current.textContent = snapshot.expression
+        if (capturedAtRef.current) {
+          capturedAtRef.current.textContent = new Date(snapshot.capturedAt).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          })
+        }
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [bodyId, targetDurSec, dim])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -3643,11 +3758,26 @@ function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
         </div>
         <div>
           {sectionLabel('Info')}
+          <div style={{ marginBottom: 9 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
+              <span style={{ fontSize: 8, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Target playhead</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'monospace' }}>
+                <span ref={playStateRef} style={{ fontSize: 7, fontWeight: 800, color: dim }}>IDLE</span>
+                <span ref={currentTimeRef} style={{ fontSize: 9, color: dim2 }}>
+                  {targetDurSec !== null ? `0.00s / ${targetDurSec.toFixed(2)}s` : '— / —'}
+                </span>
+              </div>
+            </div>
+            <div style={{ position: 'relative', height: 10, overflow: 'visible', borderRadius: 3, background: panel, border: `0.5px solid ${border}` }}>
+              <div ref={progressRef} style={{ position: 'absolute', inset: '0 auto 0 0', width: '0%', borderRadius: 3, background: `${accent}45` }} />
+              <div ref={playheadRef} style={{ position: 'absolute', top: -3, bottom: -3, left: '0%', width: 2, transform: 'translateX(-1px)', opacity: 0, background: accent, boxShadow: `0 0 5px ${accent}` }} />
+            </div>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {metric('Sample dur', bufDurSec > 0 ? `${bufDurSec.toFixed(2)}s` : '—')}
-            {metric('Target dur', sourceSec != null ? `${(sourceSec * stretchRatio).toFixed(2)}s` : '—')}
-            {metric('Rate', playbackRate != null ? `×${playbackRate.toFixed(3)}` : '—', accent)}
-            {metric('Orbit T', sourceSec != null ? `${sourceSec.toFixed(2)}s` : '—')}
+            {metric('Target dur', targetDurSec != null ? `${targetDurSec.toFixed(2)}s` : '—', dim2, targetMetricRef)}
+            {metric('Rate', playbackRate != null ? `×${playbackRate.toFixed(3)}` : '—', accent, rateMetricRef)}
+            {metric('Source', sourceSec != null ? `${sourceSec.toFixed(2)}s` : '—', dim2, sourceMetricRef)}
           </div>
           <div style={{ fontSize: 8, color: dim, lineHeight: 1.5, marginTop: 10 }}>
             preservesPitch: ピッチを維持したままブラウザのフェーズボコーダでテンポを変更。
@@ -3655,14 +3785,204 @@ function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
         </div>
         <div>
           {sectionLabel('Orbit source')}
-          <select
-            value={String((overrides as Record<string, unknown>).sampleOrbitSource ?? 'current')}
-            onChange={e => setPatch({ sampleOrbitSource: e.target.value })}
-            style={{ fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px', width: '100%' }}
-          >
-            <option value="current">Current</option>
-            <option value="predicted">Predicted (smoothed)</option>
+          <input
+            type="text"
+            value={targetExpression}
+            onChange={e => setPatch({ sampleTargetExpression: e.target.value })}
+            placeholder="T"
+            spellCheck={false}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              fontSize: 11,
+              color: resolvedSource?.error ? '#fb7185' : dim2,
+              fontFamily: 'monospace',
+              background: panel,
+              border: `0.5px solid ${resolvedSource?.error ? '#fb718588' : border}`,
+              borderRadius: 4,
+              padding: '6px 8px',
+            }}
+          />
+          <div style={{ marginTop: 7, fontSize: 8, color: resolvedSource?.error ? '#fb7185' : dim, lineHeight: 1.45 }}>
+            {resolvedSource?.error ?? `→ ${resolvedSource?.label ?? 'T'}`}
+          </div>
+          <div style={{ marginTop: 8, padding: '6px 7px', border: `0.5px solid ${border}`, borderRadius: 4, background: panel }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 8, marginBottom: 3 }}>
+              <span style={{ color: dim, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Update</span>
+              <span style={{ color: accent, fontFamily: 'monospace', fontWeight: 800 }}>ON TRIGGER</span>
+            </div>
+            <div style={{ fontSize: 8, color: dim, lineHeight: 1.45 }}>
+              Source is sampled when triggered and held until playback ends.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 5, fontSize: 7.5, fontFamily: 'monospace' }}>
+              <span ref={capturedExpressionRef} style={{ color: dim2 }}>waiting for trigger</span>
+              <span ref={capturedAtRef} style={{ color: dim }}>—</span>
+            </div>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 8, color: dim, fontFamily: 'monospace', lineHeight: 1.5 }}>
+            {ORBIT_T_DEFINITION}<br />
+            T/4 · T*2 · bodyId.T/8
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function LongSamplerExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string | null; slotKey: string; simple: boolean; onClose?: () => void }) {
+  const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
+  const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
+  const getBodyEffectiveParams = useControlSetStore(s => s.getBodyEffectiveParams)
+  const bodies = usePlanetStore(s => s.bodies)
+  const body = bodyId ? bodies.find(candidate => candidate.id === bodyId) ?? null : null
+  const effective = bodyId ? getBodyEffectiveParams(bodyId) as Record<string, unknown> : overrides as Record<string, unknown>
+  const accent = '#ec4899'
+  const dim = simple ? 'rgba(0,0,0,0.46)' : 'rgba(255,255,255,0.42)'
+  const text = simple ? '#222' : '#e8e8ec'
+  const border = simple ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.10)'
+  const panel = simple ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.04)'
+  const mode = String(effective.longSamplerDurationMode ?? 'seconds')
+  const expression = String(effective.longSamplerDurationExpression ?? 'T')
+  const resolved = body && mode === 'orbit' ? resolveOrbitDurationSource(expression, body, bodies) : null
+  const setPatch = (patch: Partial<PlanetSimParams>) => setSlotOverride(slotKey, patch)
+  const progressRef = useRef<HTMLDivElement>(null)
+  const playheadRef = useRef<HTMLDivElement>(null)
+  const statusRef = useRef<HTMLSpanElement>(null)
+  const detailRef = useRef<HTMLSpanElement>(null)
+
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      const engine = bodyId ? getBodyLongSamplerEngine(bodyId) : null
+      const norm = engine?.getPlayheadNorm() ?? null
+      const snapshot = engine?.snapshot ?? null
+      if (progressRef.current) progressRef.current.style.width = `${(norm ?? 0) * 100}%`
+      if (playheadRef.current) {
+        playheadRef.current.style.left = `${(norm ?? 0) * 100}%`
+        playheadRef.current.style.opacity = norm === null ? '0' : '1'
+      }
+      if (statusRef.current) {
+        statusRef.current.textContent = norm === null ? 'IDLE' : 'PLAY'
+        statusRef.current.style.color = norm === null ? dim : '#22c55e'
+      }
+      if (detailRef.current) {
+        detailRef.current.textContent = snapshot
+          ? `${snapshot.startOffset.toFixed(1)}s → ${(snapshot.startOffset + snapshot.actualDuration).toFixed(1)}s · ${snapshot.actualDuration.toFixed(1)}s`
+          : 'waiting for trigger'
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [bodyId, dim])
+
+  const inputStyle: CSSProperties = {
+    width: '100%', boxSizing: 'border-box', color: text, background: panel,
+    border: `0.5px solid ${border}`, borderRadius: 4, padding: '5px 7px',
+    fontSize: 10, fontFamily: 'inherit',
+  }
+  const label = (value: string) => (
+    <div style={{ fontSize: 8, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5 }}>{value}</div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px 4px 48px', borderBottom:`0.5px solid ${border}` }}>
+        {onClose && <button onClick={onClose} style={{ fontSize:9, color:dim, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit' }}>▼ close</button>}
+        <span style={{ fontSize:10, fontWeight:800, color:accent }}>≋ Long Sampler</span>
+        <span style={{ fontSize:8, color:dim }}>long-form phrase player</span>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'230px 250px 1fr', gap:18, padding:'12px 16px 14px 48px', minHeight:190 }}>
+        <div style={{ borderRight:`0.5px solid ${border}`, paddingRight:16 }}>
+          {label('Duration')}
+          <select value={mode} onChange={e => setPatch({ longSamplerDurationMode: e.target.value as 'seconds' | 'orbit' })} style={inputStyle}>
+            <option value="seconds">Seconds</option>
+            <option value="orbit">Orbit expression</option>
           </select>
+          {mode === 'seconds' ? (
+            <input type="number" min={0.1} max={600} step={1}
+              value={Number(effective.longSamplerDurationSec ?? 30)}
+              onChange={e => setPatch({ longSamplerDurationSec: Math.max(0.1, Number(e.target.value)) })}
+              style={{ ...inputStyle, marginTop:7 }} />
+          ) : (
+            <>
+              <input value={expression} onChange={e => setPatch({ longSamplerDurationExpression: e.target.value })}
+                spellCheck={false} placeholder="T" style={{ ...inputStyle, marginTop:7, fontFamily:'monospace', color:resolved?.error ? '#fb7185' : text }} />
+              <div style={{ fontSize:8, color:resolved?.error ? '#fb7185' : dim, marginTop:5 }}>
+                {resolved?.error ?? `→ ${resolved?.label ?? expression}`}
+              </div>
+            </>
+          )}
+          <div style={{ marginTop:10, padding:'7px 8px', border:`0.5px solid ${border}`, borderRadius:4, background:panel }}>
+            <div style={{ display:'flex', justifyContent:'space-between', fontSize:8 }}>
+              <span style={{ color:dim }}>SOURCE UPDATE</span>
+              <span style={{ color:accent, fontFamily:'monospace', fontWeight:800 }}>ON TRIGGER</span>
+            </div>
+            <div style={{ color:dim, fontSize:8, lineHeight:1.45, marginTop:5 }}>Duration is captured at trigger time and held for the segment.</div>
+          </div>
+        </div>
+
+        <div style={{ borderRight:`0.5px solid ${border}`, paddingRight:16 }}>
+          {label('Segment')}
+          <select value={String(effective.longSamplerStartMode ?? 'random')}
+            onChange={e => setPatch({ longSamplerStartMode: e.target.value as 'fixed' | 'random' })} style={inputStyle}>
+            <option value="random">Random start</option>
+            <option value="fixed">Fixed start</option>
+          </select>
+          {String(effective.longSamplerStartMode ?? 'random') === 'fixed' && (
+            <div style={{ marginTop:8 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', fontSize:8, color:dim, marginBottom:3 }}>
+                <span>START</span><span>{Math.round(Number(effective.longSamplerStart ?? 0) * 100)}%</span>
+              </div>
+              <input type="range" min={0} max={1} step={0.01} value={Number(effective.longSamplerStart ?? 0)}
+                onChange={e => setPatch({ longSamplerStart: Number(e.target.value) })} style={{ width:'100%', accentColor:accent }} />
+            </div>
+          )}
+          <div style={{ marginTop:8 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', fontSize:8, color:dim, marginBottom:3 }}>
+              <span>PITCH</span><span>{Number(effective.longSamplerPitch ?? 0) > 0 ? '+' : ''}{Number(effective.longSamplerPitch ?? 0).toFixed(1)} st</span>
+            </div>
+            <input type="range" min={-3} max={3} step={0.1} value={Number(effective.longSamplerPitch ?? 0)}
+              onChange={e => setPatch({ longSamplerPitch: Number(e.target.value) })} style={{ width:'100%', accentColor:accent }} />
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:8 }}>
+            <div>{label('Fade in')}<input type="number" min={0} max={60} step={0.5} value={Number(effective.longSamplerFadeIn ?? 3)} onChange={e => setPatch({ longSamplerFadeIn:Number(e.target.value) })} style={inputStyle} /></div>
+            <div>{label('Fade out')}<input type="number" min={0} max={60} step={0.5} value={Number(effective.longSamplerFadeOut ?? 5)} onChange={e => setPatch({ longSamplerFadeOut:Number(e.target.value) })} style={inputStyle} /></div>
+          </div>
+        </div>
+
+        <div>
+          {label('Trigger behavior')}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+            <div>
+              <div style={{ fontSize:8, color:dim, marginBottom:4 }}>RETRIGGER</div>
+              <select value={String(effective.longSamplerRetrigger ?? 'ignore')} onChange={e => setPatch({ longSamplerRetrigger:e.target.value as 'ignore'|'restart' })} style={inputStyle}>
+                <option value="ignore">Ignore while playing</option>
+                <option value="restart">Restart</option>
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize:8, color:dim, marginBottom:4 }}>AFTER END</div>
+              <select value={String(effective.longSamplerEndMode ?? 'oneshot')} onChange={e => setPatch({ longSamplerEndMode:e.target.value as 'oneshot'|'wander' })} style={inputStyle}>
+                <option value="oneshot">One Shot</option>
+                <option value="wander">Wander</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ marginTop:14, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <span style={{ fontSize:8, color:dim }}>CURRENT SEGMENT</span>
+            <span ref={statusRef} style={{ fontSize:8, color:dim, fontWeight:800 }}>IDLE</span>
+          </div>
+          <div style={{ position:'relative', height:11, marginTop:6, borderRadius:3, background:panel, border:`0.5px solid ${border}` }}>
+            <div ref={progressRef} style={{ position:'absolute', inset:'0 auto 0 0', width:'0%', background:`${accent}45`, borderRadius:3 }} />
+            <div ref={playheadRef} style={{ position:'absolute', top:-3, bottom:-3, left:0, width:2, opacity:0, background:accent, boxShadow:`0 0 5px ${accent}` }} />
+          </div>
+          <span ref={detailRef} style={{ display:'block', marginTop:7, fontSize:9, color:text, fontFamily:'monospace' }}>waiting for trigger</span>
+          <div style={{ marginTop:8, fontSize:8, color:dim, lineHeight:1.5 }}>
+            Ignore keeps the current phrase intact. Wander selects another random segment after the current one ends.
+          </div>
         </div>
       </div>
     </div>
@@ -3696,6 +4016,7 @@ function SlotCard({
 
   // ── Sampler detection (instrument-sampler only) ───────────────────────────
   const isSampler = cs.id === 'instrument-sampler'
+  const isLongSampler = cs.id === 'instrument-long-sampler'
   const effectiveSamplerType = isSampler
     ? String((overrides as Record<string, unknown>)['samplerType'] ?? cs.params.samplerType ?? 'off')
     : 'off'
@@ -3727,7 +4048,7 @@ function SlotCard({
   const isNoiseOn = isNoisePad && effectiveNoiseType === 'noise'
 
   // ── One-shot active detection ──────────────────────────────────────────────
-  const isOneShot = cs.id === 'instrument-oneshot' || cs.id === 'instrument-oneshot-stretch' || cs.id === 'instrument-sampler'
+  const isOneShot = cs.id === 'instrument-oneshot' || cs.id === 'instrument-oneshot-stretch' || cs.id === 'instrument-sampler' || isLongSampler
   const isWaveLab = cs.id === 'instrument-wave-lab'
 
   // ── Osc Synth active detection ─────────────────────────────────────────────
@@ -3830,7 +4151,7 @@ function SlotCard({
         ) : (
           <div style={{ width: 5, height: 5, borderRadius: '50%', background: accent, boxShadow: `0 0 5px ${accent}` }} />
         )}
-        {!ghost && isSampler && onExtend && (
+        {!ghost && (isSampler || isLongSampler) && onExtend && (
           <button
             title="Open sampler editor"
             onClick={e => { e.stopPropagation(); onExtend() }}
@@ -3865,7 +4186,8 @@ function SlotCard({
       {isOneShot && (
         <InlineOneShotContent bodyId={bodyId} slotKey={slotKey} simple={simple} accent={accent}
           isStretch={cs.id === 'instrument-oneshot-stretch' || cs.id === 'instrument-sampler'}
-          isSamplerStretch={cs.id === 'instrument-sampler'} />
+          isSamplerStretch={cs.id === 'instrument-sampler'}
+          isLongSampler={isLongSampler} />
       )}
 
       {isWaveLab && (
@@ -4864,6 +5186,35 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
         return allSlots.find(s => s.key === expandedSlotKey)?.cs ?? null
       })()
     : null
+  const extensionHost = typeof document !== 'undefined'
+    ? document.getElementById('rack-extension-panel-root')
+    : null
+  const expandedPanel = expandedSlotKey ? (
+    <div style={{
+      height: '100%',
+      background: bg,
+      borderRight: `0.5px solid ${border}`,
+      boxShadow: simple ? '4px 0 18px rgba(0,0,0,0.12)' : '8px 0 28px rgba(0,0,0,0.42)',
+      overflow: 'auto',
+      pointerEvents: 'auto',
+    }}>
+      {expandedCs?.id === 'instrument-wave-lab' ? (
+        <WaveLabInstrumentExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
+      ) : expandedCs?.id === 'instrument-oneshot-stretch' ? (
+        <OneShotStretchExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
+      ) : expandedCs?.id === 'instrument-sampler' ? (
+        <SamplerStretchExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
+      ) : expandedCs?.id === 'instrument-long-sampler' ? (
+        <LongSamplerExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
+      ) : expandedCs?.id === 'trigger-orbit-step' ? (
+        <OrbitStepExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
+      ) : (expandedCs?.id === 'trigger-arpeggio' || expandedCs?.id === 'note-arpeggio') ? (
+        <ArpeggioExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
+      ) : (
+        <GenericSlotExpanded slotKey={expandedSlotKey} cs={expandedCs} simple={simple} onClose={() => setExpandedSlotKey(null)} />
+      )}
+    </div>
+  ) : null
 
   return (
     <div style={{
@@ -4875,36 +5226,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
       position: 'relative',
       zIndex: 10,
     }}>
-      {/* ── Expanded panel — floats above the rack ── */}
-      {expandedSlotKey && (
-        <div style={{
-          position: 'absolute', bottom: '100%', left: 0, right: 0,
-          background: bg,
-          borderTop: `0.5px solid ${border}`,
-          borderBottom: `0.5px solid ${border}`,
-          zIndex: 50,
-          maxHeight: 420,
-          overflow: 'hidden',
-          display: 'flex', flexDirection: 'column',
-        }}>
-          {/* Content — close button lives inside each component */}
-          <div style={{ flex: 1, overflow: 'auto' }}>
-            {expandedCs?.id === 'instrument-wave-lab' ? (
-              <WaveLabInstrumentExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
-            ) : expandedCs?.id === 'instrument-oneshot-stretch' ? (
-              <OneShotStretchExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
-            ) : expandedCs?.id === 'instrument-sampler' ? (
-              <SamplerStretchExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
-            ) : expandedCs?.id === 'trigger-orbit-step' ? (
-              <OrbitStepExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
-            ) : (expandedCs?.id === 'trigger-arpeggio' || expandedCs?.id === 'note-arpeggio') ? (
-              <ArpeggioExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
-            ) : (
-              <GenericSlotExpanded slotKey={expandedSlotKey} cs={expandedCs} simple={simple} onClose={() => setExpandedSlotKey(null)} />
-            )}
-          </div>
-        </div>
-      )}
+      {expandedPanel && extensionHost && createPortal(expandedPanel, extensionHost)}
       {/* ── Left strip — collapse toggle (always visible) ── */}
       <div style={{
         width: 14, flexShrink: 0,
@@ -5042,7 +5364,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
           <div style={{ display: 'flex', alignItems: 'stretch', gap: 0 }}>
             <SectionLabel label="Instrument" simple={simple} highlighted={rackDragCat === 'instrument'} />
             <div style={{ width: 1, background: divCol, margin: '6px 0' }} />
-            <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 4, minWidth: (instrumentCs?.id === 'instrument-oneshot' || instrumentCs?.id === 'instrument-oneshot-stretch' || instrumentCs?.id === 'instrument-sampler') ? 220 : instrumentCs?.id === 'instrument-wave-lab' ? 230 : instrumentCs?.id === 'instrument-osc-synth' ? 210 : 160 }}>
+            <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 4, minWidth: (instrumentCs?.id === 'instrument-oneshot' || instrumentCs?.id === 'instrument-oneshot-stretch' || instrumentCs?.id === 'instrument-sampler' || instrumentCs?.id === 'instrument-long-sampler') ? 220 : instrumentCs?.id === 'instrument-wave-lab' ? 230 : instrumentCs?.id === 'instrument-osc-synth' ? 210 : 160 }}>
               {instrumentCs ? (
                 <div style={{ position: 'relative' }}>
                   <SlotCard cs={instrumentCs}

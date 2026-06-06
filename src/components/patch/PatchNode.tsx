@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import type { Node, NodeProps } from '@xyflow/react'
 import { nodeRegistry } from '../../patch/nodeRegistry'
+import { validateExpression } from '../../patch/expressionEngine'
 import { applyControlValues } from '../../audio/audioEngine'
 import { useAudioStore } from '../../store/audioStore'
 import { useProjectStore } from '../../store/projectStore'
@@ -57,7 +58,11 @@ export const PatchNode = memo(({ data, selected }: NodeProps<PatchRFNode>) => {
 
   const hasInlineNumber = node.type === 'control.number' || node.type === 'number'
   const hasMessageText  = node.type === 'message'
-  const nodeHeight = 26 + (hasInlineNumber || hasMessageText ? 22 : 0)
+  const hasExpression = node.type === 'expr'
+  const expression = String(node.params.expression ?? '0')
+  const expressionError = hasExpression ? validateExpression(expression) : null
+  const nodeHeight = 26 + (hasInlineNumber || hasMessageText ? 22 : 0) + (hasExpression ? 39 : 0)
+  const renderedNodeWidth = hasExpression ? 220 : nodeWidth
 
   function updateInlineNumber(value: number) {
     updateNodeParams(node.id, { value })
@@ -72,7 +77,7 @@ export const PatchNode = memo(({ data, selected }: NodeProps<PatchRFNode>) => {
 
   return (
     <div style={{
-      width: nodeWidth,
+      width: renderedNodeWidth,
       height: nodeHeight,
       background: '#272727',
       border: `1px solid ${selected ? '#4e8ef7' : '#424242'}`,
@@ -94,7 +99,7 @@ export const PatchNode = memo(({ data, selected }: NodeProps<PatchRFNode>) => {
           id={port.id}
           title={port.label}
           style={{
-            ...handleStyle(i, def.inputs.length, nodeWidth),
+            ...handleStyle(i, def.inputs.length, renderedNodeWidth),
             top: -5,
             background: signalColor[port.signalType],
           }}
@@ -181,6 +186,34 @@ export const PatchNode = memo(({ data, selected }: NodeProps<PatchRFNode>) => {
         </div>
       )}
 
+      {hasExpression && (
+        <div style={{ padding: '0 6px 5px' }}>
+          <input
+            className="nodrag nowheel"
+            type="text"
+            value={expression}
+            title={expressionError ?? 'Variables: distance, angle, speed, seed, t, time, frame'}
+            onChange={e => updateNodeParams(node.id, { expression: e.target.value })}
+            onPointerDown={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              fontSize: 10,
+              fontFamily: 'inherit',
+              border: `1px solid ${expressionError ? '#a94b4b' : '#383838'}`,
+              borderRadius: 2,
+              padding: '3px 5px',
+              background: '#1a1a1a',
+              color: expressionError ? '#f0a0a0' : '#d8d8d8',
+              outline: 'none',
+            }}
+          />
+          <div style={{ height: 11, marginTop: 2, fontSize: 8, color: expressionError ? '#d87575' : '#666' }}>
+            {expressionError ?? 'distance angle speed seed · t time frame'}
+          </div>
+        </div>
+      )}
+
       {/* ── Outlets (bottom) ── */}
       {def.outputs.map((port, i) => (
         <Handle
@@ -190,7 +223,7 @@ export const PatchNode = memo(({ data, selected }: NodeProps<PatchRFNode>) => {
           id={port.id}
           title={port.label}
           style={{
-            ...handleStyle(i, def.outputs.length, nodeWidth),
+            ...handleStyle(i, def.outputs.length, renderedNodeWidth),
             bottom: -5,
             background: signalColor[port.signalType],
           }}

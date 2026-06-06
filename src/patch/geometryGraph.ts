@@ -1,4 +1,5 @@
 import type { GeometryObject, ModularProject, PatchNodeInstance } from './types'
+import { evaluateExpression } from './expressionEngine'
 
 const derivedStyle = {
   stroke: 'rgba(37,99,235,0.78)',
@@ -244,6 +245,8 @@ export function resolveControlOutput(
   seen = new Set<string>(),
   timeSeconds = 0,
 ): number | null {
+  if (seen.has(nodeId)) return null
+  seen.add(nodeId)
   const node = nodeById(project, nodeId)
   if (!node) return null
 
@@ -257,6 +260,29 @@ export function resolveControlOutput(
   }
 
   if (node.type === 'random') return Math.random() * ((node.params.max as number) ?? 1)
+
+  if (node.type === 'expr') {
+    const distance = resolveControlInput(node.id, 'distance', project, (node.params.distance as number) ?? 0, seen, timeSeconds)
+    const angle = resolveControlInput(node.id, 'angle', project, (node.params.angle as number) ?? 0, seen, timeSeconds)
+    const speed = resolveControlInput(node.id, 'speed', project, (node.params.speed as number) ?? 0, seen, timeSeconds)
+    const seed = resolveControlInput(node.id, 'seed', project, (node.params.seed as number) ?? 1, seen, timeSeconds)
+    try {
+      return evaluateExpression(String(node.params.expression ?? '0'), {
+        distance,
+        angle,
+        speed,
+        seed,
+        x: distance,
+        y: angle,
+        z: speed,
+        t: timeSeconds,
+        time: timeSeconds,
+        frame: Math.floor(timeSeconds * 60),
+      })
+    } catch {
+      return 0
+    }
+  }
 
   if (node.type === 'counter') return (node.params.value as number) ?? 0
 

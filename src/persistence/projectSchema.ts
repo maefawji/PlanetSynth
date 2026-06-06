@@ -50,6 +50,7 @@ const sampleAssetSchema = z.object({
   objectUrl:  z.string(),          // may be '' in saved files; restored at load time
   fileType:   z.string(),
   sourcePath: z.string().optional(),
+  source:     z.enum(['builtin', 'local', 'library']).optional(),
 })
 
 export const modularProjectSchema = z.object({
@@ -161,6 +162,7 @@ export async function restoreProjectSamples(
 ): Promise<SampleAsset[]> {
   return Promise.all(
     samples.map(async s => {
+      if (s.source === 'builtin' || s.id.startsWith('builtin:') || s.sourcePath?.startsWith('/samples/')) return s
       // Remote/data URLs are reusable across reloads. Local paths and empty
       // blob placeholders must be restored from IndexedDB file handles.
       if (isPersistentUrl(s.objectUrl)) return s

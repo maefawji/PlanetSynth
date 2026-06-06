@@ -24,9 +24,17 @@ function nameOf(filename: string): string {
   return dot >= 0 ? base.slice(0, dot) : base
 }
 
+let builtinSamplesPromise: Promise<SampleAsset[]> | null = null
+
 /** Fetch /samples/_index.json, convert each file to a blob URL,
  *  and register them via addSampleAssets (dedup by sourcePath). */
 export async function loadBuiltinSamples(): Promise<SampleAsset[]> {
+  if (builtinSamplesPromise) return builtinSamplesPromise
+  builtinSamplesPromise = loadBuiltinSamplesOnce()
+  return builtinSamplesPromise
+}
+
+async function loadBuiltinSamplesOnce(): Promise<SampleAsset[]> {
   try {
     const res = await fetch('/samples/_index.json', { cache: 'no-cache' })
     if (!res.ok) return []
@@ -45,6 +53,7 @@ export async function loadBuiltinSamples(): Promise<SampleAsset[]> {
             objectUrl,
             fileType:   MIME[extOf(filename)] ?? 'audio/*',
             sourcePath: `/samples/${filename}`,
+            source:     'builtin',
           }
         } catch {
           console.warn(`[SampleLibrary] Could not load: ${filename}`)

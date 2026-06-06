@@ -3,6 +3,8 @@ import type { CSSProperties, DragEvent } from 'react'
 import { Download, FileAudio, FolderOpen, Import, Play, RefreshCw, Search, Square, Trash2, Upload } from 'lucide-react'
 import { useTheme } from '../../lib/theme'
 import { useProjectStore } from '../../store/projectStore'
+import { usePlanetStore } from '../../store/planetStore'
+import { useControlSetStore } from '../../store/controlSetStore'
 import {
   cacheSampleLibrary,
   libraryFromSamples,
@@ -23,8 +25,11 @@ export function SampleModeView() {
   const samples = useProjectStore(s => s.project.samples)
   const addSampleAssets = useProjectStore(s => s.addSampleAssets)
   const removeSampleAsset = useProjectStore(s => s.removeSampleAsset)
-  const clearSamples = useProjectStore(s => s.clearSamples)
   const randomAssignSamples = useProjectStore(s => s.randomAssignSamples)
+  const selectedBodyId = usePlanetStore(s => s.selectedBodyId)
+  const setBodySlot = useControlSetStore(s => s.setBodySlot)
+  const setGlobalSlot = useControlSetStore(s => s.setGlobalSlot)
+  const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('Ready')
   const [dragging, setDragging] = useState(false)
@@ -36,14 +41,19 @@ export function SampleModeView() {
     const q = query.trim().toLowerCase()
     if (!q) return samples
     return samples.filter(sample => {
-      const text = `${sample.name} ${sample.sourcePath ?? ''} ${sample.fileType}`.toLowerCase()
+      const text = `${sample.name} ${sample.sourcePath ?? ''} ${sample.fileType} ${sampleSourceKind(sample)}`.toLowerCase()
       return text.includes(q)
     })
   }, [query, samples])
+  const defaultSamples = filteredSamples.filter(sample => sampleSourceKind(sample) === 'builtin')
+  const localSamples = filteredSamples.filter(sample => sampleSourceKind(sample) !== 'builtin')
+  const allDefaultCount = samples.filter(sample => sampleSourceKind(sample) === 'builtin').length
+  const allLocalCount = samples.filter(sample => sampleSourceKind(sample) !== 'builtin').length
 
   const reusableCount = samples.filter(sample => sample.sourcePath || !sample.objectUrl.startsWith('blob:')).length
-  const folderCount = samples.filter(sample => sample.sourcePath?.includes('/')).length
+  const folderCount = samples.filter(sample => sampleSourceKind(sample) !== 'builtin' && sample.sourcePath?.includes('/')).length
   const cachedLibrary = loadCachedSampleLibrary()
+  const assignTargetLabel = selectedBodyId ? `body ${selectedBodyId}` : 'global rack'
 
   async function addFiles() {
     const picked = await pickSampleFiles()
@@ -56,7 +66,7 @@ export function SampleModeView() {
       setStatus('No audio files loaded from folder')
       return
     }
-    clearSamples()
+    removeLocalSamples()
     addSampleAssets(picked)
     setStatus(`Loaded ${picked.length} samples from folder`)
   }
@@ -67,7 +77,7 @@ export function SampleModeView() {
       setStatus('No default folder available or permission was not granted')
       return
     }
-    clearSamples()
+    removeLocalSamples()
     addSampleAssets(picked)
     setStatus(`Reloaded ${picked.length} samples from folder`)
   }
@@ -145,10 +155,28 @@ export function SampleModeView() {
     setStatus('Sample removed')
   }
 
-  function clearAllSamples() {
+  function removeLocalSamples() {
+    for (const sample of samples) {
+      if (sampleSourceKind(sample) !== 'builtin') removeSampleAsset(sample.id)
+    }
+  }
+
+  function clearLocalSamples() {
     stopPreview()
-    clearSamples()
-    setStatus('All samples cleared')
+    removeLocalSamples()
+    setStatus('Local samples cleared')
+  }
+
+  function assignSample(sample: SampleAsset) {
+    const slotKey = selectedBodyId ? `b:${selectedBodyId}:instrument` : 'g:instrument'
+    if (selectedBodyId) setBodySlot(selectedBodyId, 'instrument', 'instrument-sampler')
+    else setGlobalSlot('instrument', 'instrument-sampler')
+    setSlotOverride(slotKey, {
+      samplerType: 'sampler',
+      samplerMode: 'fixed',
+      samplerSampleId: sample.id,
+    })
+    setStatus(`Added ${sample.name} as Sampler on ${assignTargetLabel}`)
   }
 
   return (
@@ -172,7 +200,7 @@ export function SampleModeView() {
         <div style={{ minWidth: 200 }}>
           <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: '0.02em' }}>Sample Mode</div>
           <div style={{ fontSize: 11, color: t.textMid, marginTop: 3 }}>
-            {samples.length} samples · {folderCount} folder paths · {reusableCount} reusable references
+            {allDefaultCount} default · {allLocalCount} local · {folderCount} folder paths · {reusableCount} reusable references
           </div>
         </div>
 
@@ -183,7 +211,7 @@ export function SampleModeView() {
           <button onClick={() => fileInputRef.current?.click()} style={buttonStyle(t)}><Import size={13} />Import Library</button>
           <button onClick={exportLibrary} disabled={!samples.length} style={buttonStyle(t, !samples.length)}><Download size={13} />Export</button>
           <button onClick={randomAssignSamples} disabled={!samples.length} style={buttonStyle(t, !samples.length)}>Random Assign</button>
-          <button onClick={clearAllSamples} disabled={!samples.length} style={dangerButtonStyle(t, !samples.length)}><Trash2 size={13} />Clear</button>
+          <button onClick={clearLocalSamples} disabled={!allLocalCount} style={dangerButtonStyle(t, !allLocalCount)}><Trash2 size={13} />Clear Local</button>
         </div>
 
         <div style={{ flex: 1 }} />
@@ -252,7 +280,7 @@ export function SampleModeView() {
           <div>
             <div style={{ fontSize: 13, fontWeight: 750 }}>Drop audio files here</div>
             <div style={{ fontSize: 11, color: t.textMid, marginTop: 4 }}>
-              wav, mp3, flac, aiff, ogg and browser-supported audio files are accepted.
+              Local files stay separate from hardcoded defaults. Use Assign to bind a sample to One-Shot or Stretch.
             </div>
           </div>
           <FileAudio size={24} color={t.textMid} />
@@ -292,19 +320,56 @@ export function SampleModeView() {
             {samples.length ? 'No samples match the search.' : 'No samples loaded.'}
           </div>
         ) : (
-          <div style={{ display: 'grid', gap: 7 }}>
-            {filteredSamples.map(sample => (
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
+            {renderSampleSection('Default Files', 'Hardcoded /public/samples assets', defaultSamples, false)}
+            {renderSampleSection('User Local', 'Dropped, picked, folder, and imported references', localSamples, true)}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  function renderSampleSection(title: string, subtitle: string, list: SampleAsset[], removable: boolean) {
+    return (
+      <section style={{
+        minWidth: 0,
+        borderRadius: 8,
+        border: `0.5px solid ${t.panelBorder}`,
+        background: t.sectionBg,
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          padding: '8px 10px',
+          borderBottom: `0.5px solid ${t.panelBorder}`,
+          background: t.headerBg,
+        }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{title}</div>
+            <div style={{ fontSize: 10, color: t.textDim, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</div>
+          </div>
+          <span style={{ fontSize: 10, color: t.textMid, fontWeight: 800 }}>{list.length}</span>
+        </div>
+        {list.length === 0 ? (
+          <div style={{ minHeight: 120, display: 'grid', placeItems: 'center', color: t.textDim, fontSize: 11 }}>
+            {query ? 'No matches' : removable ? 'No local samples' : 'No default samples loaded'}
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 1, padding: 6 }}>
+            {list.map(sample => (
               <div
                 key={sample.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '36px minmax(180px, 1.5fr) minmax(180px, 2fr) 120px 40px',
+                  gridTemplateColumns: '28px minmax(0, 1fr) auto',
                   alignItems: 'center',
-                  gap: 10,
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  border: `0.5px solid ${t.panelBorder}`,
-                  background: t.sectionBg,
+                  gap: 7,
+                  padding: '6px 6px',
+                  borderRadius: 6,
+                  border: `0.5px solid transparent`,
                 }}
               >
                 <button
@@ -312,48 +377,60 @@ export function SampleModeView() {
                   title={playingId === sample.id ? 'Stop preview' : 'Preview sample'}
                   style={iconButtonStyle(t, playingId === sample.id)}
                 >
-                  {playingId === sample.id ? <Square size={14} /> : <Play size={14} />}
+                  {playingId === sample.id ? <Square size={13} /> : <Play size={13} />}
                 </button>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 750, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {sample.name}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 750, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {sample.name}
+                    </span>
+                    <span style={{
+                      fontSize: 8,
+                      fontWeight: 800,
+                      color: sampleSourceKind(sample) === 'builtin' ? '#60a5fa' : '#34d399',
+                      background: sampleSourceKind(sample) === 'builtin' ? 'rgba(96,165,250,0.12)' : 'rgba(52,211,153,0.12)',
+                      borderRadius: 999,
+                      padding: '2px 5px',
+                      flexShrink: 0,
+                    }}>
+                      {sampleSourceKind(sample)}
+                    </span>
                   </div>
-                  <div style={{ fontSize: 10, color: t.textDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
-                    {sample.id}
+                  <div style={{ fontSize: 9.5, color: t.textDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
+                    {sample.sourcePath || sample.objectUrl || 'No source path'}
                   </div>
                 </div>
-                <div style={{ minWidth: 0, fontSize: 11, color: t.textMid, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {sample.sourcePath || sample.objectUrl || 'No source path'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button
+                    onClick={() => assignSample(sample)}
+                    title={`Add as Sampler to ${assignTargetLabel}`}
+                    style={{ ...assignButtonStyle(t), color: '#818cf8' }}
+                  >
+                    Add
+                  </button>
+                  {removable && (
+                    <button
+                      onClick={() => deleteSample(sample.id)}
+                      title="Remove sample"
+                      style={iconButtonStyle(t, false, true)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </div>
-                <div style={{
-                  justifySelf: 'start',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  color: t.tagText,
-                  background: t.tagBg,
-                  borderRadius: 999,
-                  padding: '3px 8px',
-                  maxWidth: 120,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}>
-                  {sample.fileType || 'audio/file'}
-                </div>
-                <button
-                  onClick={() => deleteSample(sample.id)}
-                  title="Remove sample"
-                  style={iconButtonStyle(t, false, true)}
-                >
-                  <Trash2 size={14} />
-                </button>
               </div>
             ))}
           </div>
         )}
-      </div>
-    </div>
-  )
+      </section>
+    )
+  }
+}
+
+function sampleSourceKind(sample: SampleAsset): 'builtin' | 'local' | 'library' {
+  if (sample.source === 'builtin' || sample.id.startsWith('builtin:') || sample.sourcePath?.startsWith('/samples/')) return 'builtin'
+  if (sample.source === 'library') return 'library'
+  return 'local'
 }
 
 function buttonStyle(t: ReturnType<typeof useTheme>, disabled = false): CSSProperties {
@@ -401,6 +478,22 @@ function iconButtonStyle(t: ReturnType<typeof useTheme>, active = false, danger 
         ? 'rgba(251,113,133,0.08)'
         : t.btnBg,
     color: active ? '#22d3ee' : danger ? '#fb7185' : t.text,
+    cursor: 'pointer',
+  }
+}
+
+function assignButtonStyle(t: ReturnType<typeof useTheme>): CSSProperties {
+  return {
+    height: 24,
+    minWidth: 30,
+    padding: '0 6px',
+    borderRadius: 5,
+    border: `0.5px solid ${t.btnBorder}`,
+    background: t.btnBg,
+    color: t.text,
+    font: 'inherit',
+    fontSize: 9,
+    fontWeight: 850,
     cursor: 'pointer',
   }
 }

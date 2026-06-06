@@ -13,6 +13,7 @@ import { NoisePadLayer } from './components/planet/NoisePadLayer'
 import { SamplerLayer } from './components/planet/SamplerLayer'
 import { OneShotLayer } from './components/planet/OneShotLayer'
 import { StretchSamplerLayer } from './components/planet/StretchSamplerLayer'
+import { LongSamplerLayer } from './components/planet/LongSamplerLayer'
 import { OscSynthLayer } from './components/planet/OscSynthLayer'
 import { WaveLabInstrumentLayer } from './components/planet/WaveLabInstrumentLayer'
 import { WholeInstrumentLayer } from './components/planet/WholeInstrumentLayer'
@@ -26,8 +27,10 @@ import { OrbitHubView } from './components/orbit/OrbitHubView'
 import { TransformLabView } from './components/transform/TransformLabView'
 import { SampleModeView } from './components/sample/SampleModeView'
 import { SigilView } from './components/sigil/SigilView'
+import { PatchEditor } from './components/patch/PatchEditor'
 import type { PlanetTool } from './components/planet/PlanetCanvas'
 import { MobileHud } from './components/layout/MobileHud'
+import { UniversalConductorSync } from './components/conductor/UniversalConductorSync'
 import { usePlanetStore } from './store/planetStore'
 import { useCanvasSettingsStore } from './store/canvasSettingsStore'
 import { useWholeInstrumentStore } from './store/wholeInstrumentStore'
@@ -51,7 +54,7 @@ import { initToneContext } from './audio/audioLatencySettings'
 // Apply saved audio latency setting before any Tone.start() call
 initToneContext()
 
-type AppMode = 'planet' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub' | 'transform-lab' | 'sample' | 'sigil'
+type AppMode = 'planet' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub' | 'transform-lab' | 'sample' | 'sigil' | 'patch'
 
 const RACK_MIN = 120
 const RACK_MAX = 340
@@ -157,9 +160,10 @@ export default function App() {
         onPointerDown={() => { void unlockMobileAudio() }}
         onTouchStart={() => { void unlockMobileAudio() }}
       >
+        <UniversalConductorSync />
         {/* Headless audio layers */}
         <DroneLayer /><GranularLayer /><FMDroneLayer /><NoisePadLayer />
-        <SamplerLayer /><OneShotLayer /><StretchSamplerLayer />
+        <SamplerLayer /><OneShotLayer /><StretchSamplerLayer /><LongSamplerLayer />
         <OscSynthLayer />
         <WaveLabInstrumentLayer />
         <WholeInstrumentLayer />
@@ -186,6 +190,7 @@ export default function App() {
       onPointerDown={unlockAudioOnce}
       onTouchStart={unlockAudioOnce}
     >
+      <UniversalConductorSync />
       <TopBar appMode={appMode} onSetAppMode={setAppMode} />
       <DroneLayer />
       <GranularLayer />
@@ -194,6 +199,7 @@ export default function App() {
       <SamplerLayer />
       <OneShotLayer />
       <StretchSamplerLayer />
+      <LongSamplerLayer />
       <OscSynthLayer />
       <WaveLabInstrumentLayer />
       <WholeInstrumentLayer />
@@ -243,6 +249,11 @@ export default function App() {
       ) : appMode === 'sigil' ? (
         /* ── Sigil Mode ──────────────────────────────────────────────────── */
         <SigilView />
+      ) : appMode === 'patch' ? (
+        /* ── Patch Mode ──────────────────────────────────────────────────── */
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <PatchEditor />
+        </div>
       ) : (
         /* ── Planet mode ────────────────────────────────────────────────── */
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>

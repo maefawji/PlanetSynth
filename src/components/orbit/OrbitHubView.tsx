@@ -3,6 +3,12 @@ import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { usePlanetStore, type PlanetBody } from '../../store/planetStore'
 import { computeOrbitTelemetry } from '../../lib/orbitTelemetry'
 import { WHOLE_ORBIT_SOURCES, WHOLE_ORBIT_SOURCES_EXTENDED } from '../../lib/wholeOrbitSources'
+import {
+  ORBIT_HUB_FORMULA_DEFINITIONS,
+  ORBIT_HUB_T_CALCULATION,
+  ORBIT_HUB_TPERIOD_NOTE,
+  ORBIT_HUB_VALUE_DEFINITIONS,
+} from '../../lib/orbitDurationSource'
 import { getPlanetLiveBodySnapshot } from '../planet/PlanetCanvas'
 
 type LivePlanetBody = PlanetBody & { ax?: number; ay?: number }
@@ -202,6 +208,41 @@ export function OrbitHubView() {
         </section>
 
         <section style={{ minHeight: 0, border: `0.5px solid ${border}`, background: panel, borderRadius: mono ? 1 : 8, padding: 12, overflow: 'auto' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: dim, marginBottom: 10 }}>Definitions</div>
+          <div style={{ border: `0.5px solid ${border}`, borderRadius: mono ? 1 : 7, overflow: 'hidden', marginBottom: 14 }}>
+            {ORBIT_HUB_VALUE_DEFINITIONS.map((definition, index) => (
+              <div key={definition.symbol} style={{ padding: '7px 8px', borderTop: index ? `0.5px solid ${border}` : 'none', background: index % 2 ? 'transparent' : input }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '52px 1fr auto', gap: 6, alignItems: 'baseline', marginBottom: 2 }}>
+                  <code style={{ color: '#22d3ee', fontSize: 11, fontWeight: 900 }}>{definition.symbol}</code>
+                  <span style={{ color: fg, fontSize: 8.5, fontWeight: 700 }}>{definition.label}</span>
+                  <span style={{ color: dim, fontSize: 7 }}>{definition.unit}</span>
+                </div>
+                <div style={{ paddingLeft: 58, color: dim, fontSize: 7.5, lineHeight: 1.4 }}>{definition.description}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: dim, marginBottom: 8 }}>T calculation</div>
+          <div style={{ border: `0.5px solid ${border}`, borderRadius: mono ? 1 : 7, padding: 9, marginBottom: 14, background: input }}>
+            {ORBIT_HUB_T_CALCULATION.map(line => (
+              <div key={line} style={{ color: dim, fontSize: 7.5, fontFamily: 'monospace', lineHeight: 1.55 }}>{line}</div>
+            ))}
+            <div style={{ paddingTop: 7, marginTop: 7, borderTop: `0.5px solid ${border}`, color: '#22d3ee', fontSize: 7.5, lineHeight: 1.45 }}>
+              {ORBIT_HUB_TPERIOD_NOTE}
+            </div>
+          </div>
+          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: dim, marginBottom: 8 }}>Duration formulas</div>
+          <div style={{ border: `0.5px solid ${border}`, borderRadius: mono ? 1 : 7, padding: 9, marginBottom: 14, background: input }}>
+            {ORBIT_HUB_FORMULA_DEFINITIONS.map(definition => (
+              <div key={definition.syntax} style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: 7, marginBottom: 6 }}>
+                <code style={{ color: '#22d3ee', fontSize: 8.5 }}>{definition.syntax}</code>
+                <span style={{ color: dim, fontSize: 7.5 }}>{definition.result}</span>
+              </div>
+            ))}
+            <div style={{ paddingTop: 7, marginTop: 7, borderTop: `0.5px solid ${border}`, color: dim, fontSize: 7.5, lineHeight: 1.5 }}>
+              Operators: * / ( )<br />
+              Sampler: evaluate on trigger, hold until next trigger.
+            </div>
+          </div>
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: dim, marginBottom: 10 }}>Routing Outputs</div>
           {['Whole Instrument', 'Ableton / MIDI CC', 'OSC / Max for Live', 'Snapshot Export'].map((label, i) => (
             <div key={label} style={{ border: `0.5px solid ${border}`, borderRadius: mono ? 1 : 7, padding: 10, marginBottom: 9, opacity: i === 0 ? 1 : 0.6 }}>

@@ -9,11 +9,15 @@ import { useControlSetStore } from '../store/controlSetStore'
 import { usePlanetStore } from '../store/planetStore'
 import { getBodyOneShotEngine } from './OneShotSamplerEngine'
 import { getBodyStretchSamplerEngine } from './StretchSamplerEngine'
+import { getBodyLongSamplerEngine } from './LongSamplerEngine'
+import type { StretchSamplerTimingSnapshot } from './StretchSamplerEngine'
 import { getBodyOscSynthEngine } from '../components/planet/OscSynthLayer'
 import {
   getBodyWaveLabEngine,
   refreshBodyWaveLabWaveform,
 } from '../components/planet/WaveLabInstrumentLayer'
+import { computeOrbitStats } from '../components/planet/DroneLayer'
+import { resolveOrbitDurationSource } from '../lib/orbitDurationSource'
 
 const _scheduledNoteOffs = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -49,7 +53,12 @@ function scheduleNoteOff(key: string, releaseMs: number, off: () => void): void 
  * Returns true  → instrument engine was ready and consumed the trigger
  * Returns false → no engine ready; caller should fall through to legacy path
  */
-export function fireBodyInstrumentTrigger(bodyId: string, playbackRate = 1, noteOverride?: number): boolean {
+export function fireBodyInstrumentTrigger(
+  bodyId: string,
+  playbackRate = 1,
+  noteOverride?: number,
+  samplerTiming?: Omit<StretchSamplerTimingSnapshot, 'capturedAt'>,
+): boolean {
   const rack = useControlSetStore.getState().getBodyEffectiveRack(bodyId)
 
   if (rack.instrument === 'instrument-oneshot') {
@@ -73,11 +82,62 @@ export function fireBodyInstrumentTrigger(bodyId: string, playbackRate = 1, note
   if (rack.instrument === 'instrument-sampler') {
     const eng = getBodyStretchSamplerEngine(bodyId)
     if (eng?.hasBuffer) {
-      // playbackRate = bufferDuration / targetPeriodSec (computed in PlanetCanvas)
-      eng.trigger(playbackRate)
+      let timing = samplerTiming
+      let rate = playbackRate
+      if (!timing) {
+        const state = usePlanetStore.getState()
+        const body = state.bodies.find(candidate => candidate.id === bodyId)
+        const params = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
+        if (body) {
+          const expression = String(params.sampleTargetExpression ?? 'T')
+          const resolved = resolveOrbitDurationSource(expression, body, state.bodies)
+          const sourceDuration =
+            (computeOrbitStats(resolved.body, state.bodies, state.simParams.G)?.T_real ?? 0) *
+            resolved.multiplier
+          const numer = Math.max(1, Number(params.orbitLoopNumer ?? 1))
+          const denom = Math.max(1, Number(params.orbitLoopDenom ?? 1))
+          const targetDuration = sourceDuration * (numer / denom)
+          if (targetDuration > 0) {
+            timing = { expression, sourceDuration, targetDuration }
+            rate = eng.bufferDuration / targetDuration
+          }
+        }
+      }
+      eng.trigger(rate, timing)
       return true
     }
     return false
+  }
+
+  if (rack.instrument === 'instrument-long-sampler') {
+    const engine = getBodyLongSamplerEngine(bodyId)
+    if (!engine?.hasBuffer) return false
+    const state = usePlanetStore.getState()
+    const body = state.bodies.find(candidate => candidate.id === bodyId)
+    const params = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
+    if (!body) return false
+    const durationMode = String(params.longSamplerDurationMode ?? 'seconds')
+    const expression = durationMode === 'orbit'
+      ? String(params.longSamplerDurationExpression ?? 'T')
+      : `${Math.max(0.1, Number(params.longSamplerDurationSec ?? 30))}s`
+    let duration = Math.max(0.1, Number(params.longSamplerDurationSec ?? 30))
+    if (durationMode === 'orbit') {
+      const resolved = resolveOrbitDurationSource(expression, body, state.bodies)
+      duration =
+        (computeOrbitStats(resolved.body, state.bodies, state.simParams.G)?.T_real ?? duration) *
+        resolved.multiplier
+    }
+    return engine.trigger({
+      duration,
+      durationExpression: expression,
+      startMode: String(params.longSamplerStartMode ?? 'random') === 'fixed' ? 'fixed' : 'random',
+      start: Number(params.longSamplerStart ?? 0),
+      pitchSemitones: Number(params.longSamplerPitch ?? 0),
+      fadeIn: Number(params.longSamplerFadeIn ?? 3),
+      fadeOut: Number(params.longSamplerFadeOut ?? 5),
+      retrigger: String(params.longSamplerRetrigger ?? 'ignore') === 'restart' ? 'restart' : 'ignore',
+      endMode: String(params.longSamplerEndMode ?? 'oneshot') === 'wander' ? 'wander' : 'oneshot',
+    })
   }
 
   if (rack.instrument === 'instrument-osc-synth-orbit') {

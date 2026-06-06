@@ -14,6 +14,11 @@ import { useControlSetStore } from '../../store/controlSetStore'
 import { ADSR_OFF, computeOrbitAdsr } from '../../audio/orbitAdsr'
 import type { SampleAsset } from '../../patch/types'
 import type { ModularProject } from '../../patch/types'
+import {
+  getUniversalConductorValues,
+  normalizeUniversalConductor,
+  useUniversalConductorStore,
+} from '../../store/universalConductorStore'
 
 function stableIndexFromId(id: string, length: number): number {
   if (length <= 0) return 0
@@ -38,7 +43,7 @@ function resolveBodySamplerSample(bodyId: string, _legacyBodySampleId: string | 
   return samples[stableIndexFromId(bodyId, samples.length)] ?? null
 }
 
-type AppMode = 'planet' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub' | 'transform-lab' | 'sample' | 'sigil'
+type AppMode = 'planet' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub' | 'transform-lab' | 'sample' | 'sigil' | 'patch'
 
 const SHOW_RETRIGGER_BUTTON = false
 
@@ -57,6 +62,7 @@ type PlanetSynthProjectState = {
     rackParamOverrides?: unknown
   }
   canvasSettings?: unknown
+  universalConductor?: unknown
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -86,6 +92,7 @@ function buildProjectExport(project: ModularProject): ModularProject {
         rackParamOverrides: racks.rackParamOverrides,
       },
       canvasSettings,
+      universalConductor: getUniversalConductorValues(),
     },
   }
 }
@@ -119,6 +126,12 @@ function restorePlanetSynthState(raw: unknown): void {
   if (isRecord(raw.canvasSettings)) {
     const { updateCanvasSettings: _ignored, ...settings } = raw.canvasSettings
     useCanvasSettingsStore.getState().updateCanvasSettings(settings)
+  }
+
+  if (isRecord(raw.universalConductor)) {
+    useUniversalConductorStore.setState(
+      normalizeUniversalConductor(raw.universalConductor),
+    )
   }
 }
 
@@ -359,6 +372,7 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
             ['transform-lab', '◇ Transform'],
             ['sample', '▤ Samples'],
             ['sigil',  '✦ Sigil'],
+            ['patch',  '⌘ Patch'],
           ] as [AppMode, string][]).map(([mode, label]) => (
             <button
               key={mode}

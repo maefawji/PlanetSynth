@@ -75,6 +75,7 @@ export interface SampleAsset {
   objectUrl: string
   fileType: string
   sourcePath?: string
+  source?: 'builtin' | 'local' | 'library'
 }
 
 export interface ModularProject {
