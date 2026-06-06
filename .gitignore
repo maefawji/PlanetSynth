@@ -29,5 +29,8 @@ Library/
 # Claude Code config
 .claude/
 
+# Local Codex nightly reports
+codex-runs/
+
 # Swift build artifacts
 ModularGeometrySynth/.build/

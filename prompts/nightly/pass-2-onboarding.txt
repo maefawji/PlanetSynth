@@ -1,0 +1,26 @@
+You are running pass 2 of an unattended nightly improvement loop. Build on the current repository state.
+
+Goal:
+- Make the first-use workflow easier to understand through small UI changes.
+- Clarify what to do first and expose current playback, selected layer or instrument, and trigger mode where those states already exist.
+
+Required workflow:
+1. Inspect the relevant components and stores before editing.
+2. Identify the smallest high-value confusion points.
+3. Add concise labels, status text, empty states, or guidance using existing visual patterns.
+4. Verify responsive behavior and run the relevant checks.
+
+Constraints:
+- No full redesign, new framework, dependency addition, or broad state-management refactor.
+- Do not invent state that the application does not actually track.
+- Do not change secrets, environment files, deployment credentials, generated assets, or personal sample files.
+- Do not use network access.
+- Do not commit, switch branches, reset, stash, or discard existing changes. The wrapper script owns Git checkpoints.
+- Preserve existing audio and interaction behavior.
+- Prefer accessible HTML and clear Japanese or existing-project language; keep copy short.
+
+Final response:
+- Commands run
+- UX problems improved
+- Main files changed
+- Remaining risks and manual checks

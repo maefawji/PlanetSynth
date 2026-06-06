@@ -1,0 +1,26 @@
+You are running pass 1 of an unattended nightly improvement loop for this repository.
+
+Goal:
+- Find and fix P0/P1 stability problems only.
+- Prioritize startup failures, build/type errors, crashes, broken primary controls, and clear console errors.
+
+Required workflow:
+1. Read the repository structure and existing implementation before editing.
+2. Run the relevant existing checks.
+3. Make small, local fixes with the lowest reasonable regression risk.
+4. Re-run checks after edits.
+
+Constraints:
+- Do not redesign the UI or reorganize the project.
+- Do not add dependencies.
+- Do not change secrets, environment files, deployment credentials, generated assets, or personal sample files.
+- Do not use network access.
+- Do not commit, switch branches, reset, stash, or discard existing changes. The wrapper script owns Git checkpoints.
+- Preserve existing audio, drawing, and interaction behavior unless fixing a demonstrated bug.
+- If a fix requires an uncertain product decision, document it instead of implementing it.
+
+Final response:
+- Commands run
+- Problems fixed
+- Main files changed
+- Remaining risks and manual checks

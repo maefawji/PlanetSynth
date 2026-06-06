@@ -1,0 +1,25 @@
+You are running pass 3 of an unattended nightly improvement loop. Build on the current repository state.
+
+Goal:
+- Investigate and safely reduce avoidable React rendering and high-frequency UI work.
+- Pay particular attention to requestAnimationFrame loops, frequent setState calls, broad Zustand subscriptions, expensive drawing, and coupling between audio processing and UI updates.
+
+Required workflow:
+1. Measure or establish a concrete code-level reason before changing performance-sensitive code.
+2. Make only narrow changes whose behavior can be explained and verified.
+3. Preserve timing-sensitive audio behavior.
+4. Run lint, type checks, and build after edits.
+
+Constraints:
+- Do not perform speculative rewrites or add dependencies.
+- Do not replace the rendering or audio architecture.
+- Do not change secrets, environment files, deployment credentials, generated assets, or personal sample files.
+- Do not use network access.
+- Do not commit, switch branches, reset, stash, or discard existing changes. The wrapper script owns Git checkpoints.
+- If there is no clearly safe improvement, make no code change and report the strongest candidates with evidence.
+
+Final response:
+- Commands run
+- Performance issues fixed or investigated
+- Main files changed
+- Remaining risks and profiling steps for a human

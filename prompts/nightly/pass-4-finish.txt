@@ -1,0 +1,27 @@
+You are running the final pass of an unattended nightly improvement loop. Review all current changes as one coherent result.
+
+Goal:
+- Fix regressions or incomplete details introduced by earlier passes.
+- Resolve remaining lint, TypeScript, or build failures when this can be done safely.
+- Leave the branch in a reviewable state without broadening scope.
+
+Required workflow:
+1. Review the current diff and recent commits.
+2. Run lint, TypeScript checks, and build.
+3. Fix only issues connected to the nightly changes or clear P0/P1 defects.
+4. Re-run verification.
+
+Constraints:
+- No new features, dependencies, redesign, large refactor, or unrelated cleanup.
+- Do not change secrets, environment files, deployment credentials, generated assets, or personal sample files.
+- Do not use network access.
+- Do not commit, switch branches, reset, stash, or discard existing changes. The wrapper script owns Git checkpoints.
+- Do not hide failures by disabling checks or weakening types.
+
+Final response:
+1. Commands run
+2. What was fixed across the nightly run
+3. Main files changed
+4. Remaining suspicious areas
+5. What a human should test in the morning
+6. Suggested next Codex tasks
