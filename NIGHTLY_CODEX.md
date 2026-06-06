@@ -37,6 +37,8 @@ The runner stops if the working tree is already dirty. It does not push, merge,
 or open a pull request. It grants write access only to the workspace; full disk
 access and sandbox bypass remain disabled. Prompts limit network use to
 documentation and dependency investigation and prohibit dependency installs.
+Codex starts with a minimal environment allowlist to avoid leaking unrelated
+local variables and to prevent malformed variable names from breaking commands.
 
 To stop a running loop, press `Ctrl-C`. The current branch and completed
 checkpoint commits remain available for review.

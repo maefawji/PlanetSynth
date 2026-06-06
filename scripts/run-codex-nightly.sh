@@ -58,6 +58,19 @@ run_check() {
   return $?
 }
 
+run_codex() {
+  /usr/bin/env -i \
+    HOME="$HOME" \
+    PATH="$PATH" \
+    TMPDIR="${TMPDIR:-/tmp}" \
+    USER="${USER:-}" \
+    LOGNAME="${LOGNAME:-${USER:-}}" \
+    SHELL="${SHELL:-/bin/zsh}" \
+    LANG="${LANG:-en_US.UTF-8}" \
+    TERM="${TERM:-xterm-256color}" \
+    codex "$@"
+}
+
 for prompt_file in "$PROMPT_DIR"/pass-*.txt; do
   pass_name="$(basename "$prompt_file" .txt)"
   pass_number="${pass_name#pass-}"
@@ -66,9 +79,10 @@ for prompt_file in "$PROMPT_DIR"/pass-*.txt; do
   echo
   echo "=== $pass_name ==="
 
-  codex \
+  run_codex \
     --ask-for-approval never \
     --config sandbox_workspace_write.network_access=true \
+    --config 'shell_environment_policy.inherit="core"' \
     exec \
     --sandbox workspace-write \
     --cd "$ROOT" \
