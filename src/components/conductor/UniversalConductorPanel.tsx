@@ -38,10 +38,10 @@ export function UniversalConductorPanel() {
         background: t.sectionBg,
       }}>
         <div style={{ fontSize: 11, fontWeight: 850, color: t.text, letterSpacing: '0.03em' }}>
-          Universal Conductor
+          Universal Context
         </div>
         <div style={{ marginTop: 3, fontSize: 9, lineHeight: 1.4, color: t.textDim }}>
-          Shared musical state for the whole universe. Values are manual for now.
+          Shared musical context for the whole universe. Values are manual for now.
         </div>
       </div>
 
@@ -148,7 +148,7 @@ export function UniversalConductorPanel() {
             cursor: 'pointer',
           }}
         >
-          Reset conductor
+          Reset context
         </button>
       </div>
     </div>

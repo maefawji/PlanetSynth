@@ -230,7 +230,7 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         <RailDivider />
         <RailButton
           active={activePanel === 'universal-conductor' && !collapsed}
-          title="Universal Conductor"
+          title="Universal Context"
           onClick={() => handleSelectPanel('universal-conductor')}
         >
           <Gauge size={14} />
