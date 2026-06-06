@@ -14,7 +14,7 @@ Constraints:
 - Do not redesign the UI or reorganize the project.
 - Do not add dependencies.
 - Do not change secrets, environment files, deployment credentials, generated assets, or personal sample files.
-- Do not use network access.
+- Use network access only when needed for official documentation or dependency investigation. Do not download or install dependencies.
 - Do not commit, switch branches, reset, stash, or discard existing changes. The wrapper script owns Git checkpoints.
 - Preserve existing audio, drawing, and interaction behavior unless fixing a demonstrated bug.
 - If a fix requires an uncertain product decision, document it instead of implementing it.

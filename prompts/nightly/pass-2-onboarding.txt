@@ -14,7 +14,7 @@ Constraints:
 - No full redesign, new framework, dependency addition, or broad state-management refactor.
 - Do not invent state that the application does not actually track.
 - Do not change secrets, environment files, deployment credentials, generated assets, or personal sample files.
-- Do not use network access.
+- Use network access only when needed for official documentation. Do not download or install dependencies.
 - Do not commit, switch branches, reset, stash, or discard existing changes. The wrapper script owns Git checkpoints.
 - Preserve existing audio and interaction behavior.
 - Prefer accessible HTML and clear Japanese or existing-project language; keep copy short.

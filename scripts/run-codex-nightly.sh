@@ -68,6 +68,7 @@ for prompt_file in "$PROMPT_DIR"/pass-*.txt; do
 
   codex \
     --ask-for-approval never \
+    --config sandbox_workspace_write.network_access=true \
     exec \
     --sandbox workspace-write \
     --cd "$ROOT" \

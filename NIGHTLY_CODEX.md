@@ -16,8 +16,9 @@ Start from a clean working tree:
 ```
 
 The script creates a branch named `codex/nightly-YYYYMMDD-HHMMSS`. Each pass
-runs Codex with `workspace-write`, approval prompts disabled, and network access
-left off. Changes are checkpointed in a separate commit after every pass.
+runs Codex with `workspace-write`, approval prompts disabled, and command
+network access enabled. Changes are checkpointed in a separate commit after
+every pass.
 
 Results are written under `codex-runs/<run-id>/`:
 
@@ -33,8 +34,9 @@ interactive behavior manually before merging.
 ## Safety
 
 The runner stops if the working tree is already dirty. It does not push, merge,
-or open a pull request. It grants write access only to the workspace and does
-not enable command network access.
+or open a pull request. It grants write access only to the workspace; full disk
+access and sandbox bypass remain disabled. Prompts limit network use to
+documentation and dependency investigation and prohibit dependency installs.
 
 To stop a running loop, press `Ctrl-C`. The current branch and completed
 checkpoint commits remain available for review.

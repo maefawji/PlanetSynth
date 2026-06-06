@@ -14,7 +14,7 @@ Constraints:
 - Do not perform speculative rewrites or add dependencies.
 - Do not replace the rendering or audio architecture.
 - Do not change secrets, environment files, deployment credentials, generated assets, or personal sample files.
-- Do not use network access.
+- Use network access only when needed for official documentation or dependency investigation. Do not download or install dependencies.
 - Do not commit, switch branches, reset, stash, or discard existing changes. The wrapper script owns Git checkpoints.
 - If there is no clearly safe improvement, make no code change and report the strongest candidates with evidence.
 
