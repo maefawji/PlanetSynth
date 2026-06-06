@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { Atom, ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio, CircleHelp, Sparkles, Radar, Zap, Save as SaveIcon, Download, Gauge } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio, CircleHelp, Sparkles, Radar, Zap, Save as SaveIcon, Download, Gauge } from 'lucide-react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { usePlanetStore, type PlanetSimParams } from '../../store/planetStore'
 import { CollisionPanel } from '../planet/CollisionPanel'
@@ -51,12 +51,11 @@ type LeftPanelId =
   | 'planet-auto'
   | 'planet-controls-trigger' | 'planet-controls-note' | 'planet-controls-instrument' | 'planet-controls-effect'
   | 'planet-localization' | 'planet-adsr'
-  | 'whole-instrument' | 'orbit-hub' | 'midi' | 'help'
+  | 'orbit-hub' | 'midi' | 'help'
 
 export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPanelProps) {
   const t = useTheme()
   const [activePanel, setActivePanel] = useState<LeftPanelId>('planet-samples')
-  const wholeInstrumentPanelOpen = useWholeInstrumentStore(s => s.panelOpen)
   const setWholeInstrumentPanelOpen = useWholeInstrumentStore(s => s.setPanelOpen)
   const orbitHubPanelOpen = useOrbitHubStore(s => s.panelOpen)
   const setOrbitHubPanelOpen = useOrbitHubStore(s => s.setPanelOpen)
@@ -181,13 +180,6 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
   }
 
   function handleSelectPanel(panel: LeftPanelId) {
-    if (panel === 'whole-instrument') {
-      setActivePanel(panel)
-      setWholeInstrumentPanelOpen(true)
-      setOrbitHubPanelOpen(false)
-      if (!collapsed) onToggleCollapsed()
-      return
-    }
     if (panel === 'orbit-hub') {
       setActivePanel(panel)
       setWholeInstrumentPanelOpen(false)
@@ -320,13 +312,6 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
           onClick={() => handleSelectPanel('planet-localization')}
         >
           <Crosshair size={14} />
-        </RailButton>
-        <RailButton
-          active={wholeInstrumentPanelOpen}
-          title="Whole Instrument"
-          onClick={() => handleSelectPanel('whole-instrument')}
-        >
-          <Atom size={14} />
         </RailButton>
         <RailButton
           active={orbitHubPanelOpen}
