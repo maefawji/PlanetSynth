@@ -2677,27 +2677,33 @@ function WaveLabOscillo({ analyser }: { analyser: AnalyserNode | null }) {
   const rafRef    = useRef(0)
   useEffect(() => {
     const canvas = canvasRef.current; if (!canvas) return
-    const ctx = canvas.getContext('2d'); if (!ctx) return
+    const maybeContext = canvas.getContext('2d'); if (!maybeContext) return
+    const context: CanvasRenderingContext2D = maybeContext
     const W = canvas.width, H = canvas.height
-    let buf = analyser ? new Float32Array(analyser.fftSize) : null
+    const activeAnalyser = analyser
+    let buf = activeAnalyser ? new Float32Array(activeAnalyser.fftSize) : null
     function draw() {
       rafRef.current = requestAnimationFrame(draw)
-      ctx.clearRect(0,0,W,H)
-      ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fillRect(0,0,W,H)
-      ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 0.5
-      ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke()
-      if (!analyser || !buf) {
-        ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='8px sans-serif'; ctx.textAlign='center'
-        ctx.fillText('no signal', W/2, H/2+3); return
+      context.clearRect(0,0,W,H)
+      context.fillStyle = 'rgba(255,255,255,0.03)'; context.fillRect(0,0,W,H)
+      context.strokeStyle = 'rgba(255,255,255,0.07)'; context.lineWidth = 0.5
+      context.beginPath(); context.moveTo(0,H/2); context.lineTo(W,H/2); context.stroke()
+      if (!activeAnalyser || !buf) {
+        context.fillStyle='rgba(255,255,255,0.2)'; context.font='8px sans-serif'; context.textAlign='center'
+        context.fillText('no signal', W/2, H/2+3); return
       }
-      if (buf.length !== analyser.fftSize) buf = new Float32Array(analyser.fftSize)
-      analyser.getFloatTimeDomainData(buf)
-      ctx.beginPath(); ctx.strokeStyle='#34d399'; ctx.lineWidth=1.5; ctx.lineJoin='round'
-      buf.forEach((v,i) => {
-        const px = (i/(buf.length-1))*W, py = (0.5-v*0.45)*H
-        i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py)
+      const frameBuf = buf.length === activeAnalyser.fftSize
+        ? buf
+        : new Float32Array(activeAnalyser.fftSize)
+      buf = frameBuf
+      activeAnalyser.getFloatTimeDomainData(frameBuf)
+      context.beginPath(); context.strokeStyle='#34d399'; context.lineWidth=1.5; context.lineJoin='round'
+      frameBuf.forEach((v,i) => {
+        const px = (i/(frameBuf.length-1))*W, py = (0.5-v*0.45)*H
+        if (i === 0) context.moveTo(px,py)
+        else context.lineTo(px,py)
       })
-      ctx.stroke()
+      context.stroke()
     }
     draw()
     return () => cancelAnimationFrame(rafRef.current)
