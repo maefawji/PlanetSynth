@@ -65,6 +65,7 @@ export default function App() {
   const [planetTool, setPlanetTool] = useState<PlanetTool>('add-planet')
   const simpleTheme        = usePlanetStore(s => s.simParams.simpleTheme)
   const setSelectedBodyId  = usePlanetStore(s => s.setSelectedBodyId)
+  const selectedBodyId     = usePlanetStore(s => s.selectedBodyId)
   const probeMass    = usePlanetStore(s => s.simParams.probeMass)
   const updateSimParams = usePlanetStore(s => s.updateSimParams)
   const nextPlanetDefaults = usePlanetStore(s => s.nextPlanetDefaults)
@@ -379,6 +380,33 @@ export default function App() {
                   </div>
                 )}
               </div>
+
+              {!selectedBodyId && (
+                <div
+                  role="status"
+                  style={{
+                    position: 'absolute', top: 48, left: 8,
+                    maxWidth: 'min(360px, calc(100% - 58px))',
+                    padding: '5px 8px',
+                    borderRadius: monoUi ? 2 : 6,
+                    border: monoUi ? monoBorder : paperTheme ? '0.5px solid rgba(0,0,0,0.10)' : '0.5px solid rgba(255,255,255,0.10)',
+                    background: monoUi ? monoPanelBg : paperTheme ? 'rgba(255,255,255,0.88)' : 'rgba(10,10,20,0.76)',
+                    color: monoUi ? monoTextMid : paperTheme ? '#555' : 'rgba(255,255,255,0.66)',
+                    fontSize: 9.5,
+                    lineHeight: 1.35,
+                    backdropFilter: monoUi ? undefined : 'blur(4px)',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {planetTool === 'select'
+                    ? 'まず: 天体をクリックして選択し、下のRackで音を確認'
+                    : planetTool === 'add-sun'
+                      ? 'まず: キャンバスをドラッグして太陽を配置'
+                      : planetTool === 'probe'
+                        ? 'まず: キャンバスをドラッグしてProbeを投射'
+                        : 'まず: キャンバスをドラッグして惑星を配置'}
+                </div>
+              )}
 
               {/* Mixer panel overlays the canvas so opening it does not resize or shift the canvas. */}
               <div style={{

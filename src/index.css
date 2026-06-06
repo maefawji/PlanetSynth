@@ -23,6 +23,12 @@ html, body, #root {
   background: var(--bg);
 }
 
+@media (max-width: 1050px) {
+  .top-bar-advanced {
+    display: none !important;
+  }
+}
+
 /* React Flow – patch canvas (dark theme) */
 .react-flow__background { background-color: #1c1c1c !important; }
 .react-flow__minimap { display: none; }

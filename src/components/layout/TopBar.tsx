@@ -10,7 +10,7 @@ import { forgetSamplePlayers, prepareIntersectionSamples, stopIntersectionSample
 import { saveProjectJson, loadProjectFromFile, restoreProjectSamples } from '../../persistence/projectSchema'
 import { hydrateSamplesFromFolder, loadDefaultFolderSamples } from '../../persistence/sampleLibrary'
 import { usePlanetStore } from '../../store/planetStore'
-import { useControlSetStore } from '../../store/controlSetStore'
+import { BUILTIN_CONTROL_SETS, useControlSetStore } from '../../store/controlSetStore'
 import { ADSR_OFF, computeOrbitAdsr } from '../../audio/orbitAdsr'
 import type { SampleAsset } from '../../patch/types'
 import type { ModularProject } from '../../patch/types'
@@ -152,9 +152,34 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
   const setRunning = useAudioStore(s => s.setRunning)
   const setStatus  = useAudioStore(s => s.setStatus)
   const simParams          = usePlanetStore(s => s.simParams)
+  const bodies             = usePlanetStore(s => s.bodies)
+  const selectedBodyId     = usePlanetStore(s => s.selectedBodyId)
   const standpointMaxDist  = simParams.standpointMaxDist
   const updateSimParams    = usePlanetStore(s => s.updateSimParams)
   const showModeBar        = useCanvasSettingsStore(s => s.showModeBar)
+  const globalRack         = useControlSetStore(s => s.globalRack)
+  const bodyRacks          = useControlSetStore(s => s.bodyRacks)
+  const userControlSets    = useControlSetStore(s => s.userControlSets)
+  const findControlSet     = (id: string | null) => id
+    ? BUILTIN_CONTROL_SETS.find(controlSet => controlSet.id === id)
+      ?? userControlSets.find(controlSet => controlSet.id === id)
+      ?? null
+    : null
+  const selectedBody       = selectedBodyId ? bodies.find(body => body.id === selectedBodyId) ?? null : null
+  const selectedBodyRack   = selectedBody ? bodyRacks[selectedBody.id] : null
+  const effectiveRack      = selectedBodyRack
+    ? {
+        triggers: selectedBodyRack.triggers?.length ? selectedBodyRack.triggers : globalRack.triggers,
+        note: selectedBodyRack.note ?? globalRack.note,
+        instrument: selectedBodyRack.instrument ?? globalRack.instrument,
+        effects: selectedBodyRack.effects?.length ? selectedBodyRack.effects : globalRack.effects,
+      }
+    : globalRack
+  const instrumentName     = findControlSet(effectiveRack.instrument)?.name ?? 'なし'
+  const triggerNames       = effectiveRack.triggers
+    .map(id => findControlSet(id)?.name)
+    .filter((name): name is string => Boolean(name))
+  const triggerMode        = triggerNames.length > 0 ? triggerNames.join(' + ') : 'なし'
 
   // ── Audio buffer setting ────────────────────────────────────────────────────
   const [latencyHint, setLatencyHintState] = useState<AudioLatencyHint>(getAudioLatencyHint)
@@ -248,12 +273,13 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
   }
 
   return (
-    <div style={{
+    <div className="top-bar" style={{
       height: 36, display: 'flex', alignItems: 'center', gap: 10,
       padding: '0 12px',
       background: t.panelBg,
       borderBottom: `0.5px solid ${t.panelBorder}`,
       flexShrink: 0,
+      minWidth: 0,
     }}>
       {/* Pause / Resume — same as mixer PAUSE */}
       <button
@@ -270,6 +296,29 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
       >
         <span>{simParams.paused ? '▶ Play' : '⏸ Pause'}</span>
       </button>
+
+      <div style={{ width: 1, height: 16, background: t.divider }} />
+
+      <div
+        className="top-bar-context"
+        role="status"
+        aria-label={`再生状態: ${simParams.paused ? '停止中' : '再生中'}。選択: ${selectedBody?.name ?? 'Universe'}。Instrument: ${instrumentName}。Trigger: ${triggerMode}`}
+        style={{
+          minWidth: 0, maxWidth: 420, flex: '1 1 300px',
+          display: 'flex', alignItems: 'center', gap: 5,
+          overflow: 'hidden',
+        }}
+      >
+        <StatusChip
+          label="Playback"
+          value={simParams.paused ? '停止中' : '再生中'}
+          color={simParams.paused ? '#fbbf24' : '#22c55e'}
+          t={t}
+        />
+        <StatusChip label="選択" value={selectedBody?.name ?? 'Universe'} color={selectedBody?.color} t={t} />
+        <StatusChip label="Instrument" value={instrumentName} t={t} />
+        <StatusChip label="Trigger" value={triggerMode} t={t} />
+      </div>
 
       <div style={{ width: 1, height: 16, background: t.divider }} />
 
@@ -302,7 +351,7 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
       <div style={{ width: 1, height: 16, background: t.divider }} />
 
       {/* Standpoint distance */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <div className="top-bar-advanced" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
         <span style={{ fontSize: 10, color: t.textMid, whiteSpace: 'nowrap' }}>Distance</span>
         <input
           type="number"
@@ -323,7 +372,7 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
       <div style={{ width: 1, height: 16, background: t.divider }} />
 
       {/* Audio buffer setting */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <div className="top-bar-advanced" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
         <span style={{ fontSize: 9, color: t.textMid, whiteSpace: 'nowrap', letterSpacing: '0.04em' }}>Buffer</span>
         <div style={{ display: 'flex', gap: 2 }}>
           {LATENCY_OPTIONS.map(opt => (
@@ -392,6 +441,35 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
       {/* Dirty indicator */}
       {isDirty && <span style={{ color: '#f59e0b', fontSize: 14, lineHeight: 1 }}>●</span>}
 
+    </div>
+  )
+}
+
+function StatusChip({
+  label,
+  value,
+  color,
+  t,
+}: {
+  label: string
+  value: string
+  color?: string
+  t: ReturnType<typeof useTheme>
+}) {
+  return (
+    <div style={{
+      minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 4,
+      padding: '2px 6px', borderRadius: 4,
+      border: `0.5px solid ${t.btnBorder}`,
+      background: t.inputBg,
+    }}>
+      <span style={{ flexShrink: 0, fontSize: 7.5, color: t.textDim, letterSpacing: '0.04em' }}>{label}</span>
+      <span style={{
+        minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        fontSize: 9, fontWeight: 700, color: color ?? t.text,
+      }}>
+        {value}
+      </span>
     </div>
   )
 }
