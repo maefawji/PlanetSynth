@@ -28,6 +28,7 @@ import { getBodyOutputLevel } from '../../audio/bodyOutputMeter'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
 import { getBusOscilloscopeData } from '../../audio/rackBusMixer'
 import { useArpProgressionStore } from '../../store/arpProgressionStore'
+import { CONDUCTOR_NOTE_NAMES, useUniversalConductorStore } from '../../store/universalConductorStore'
 import { ORBIT_T_DEFINITION, resolveOrbitDurationSource } from '../../lib/orbitDurationSource'
 import { generateFromGrammar, randomGrammar } from '../../sigil/sigilGenerator'
 import type { SigilGrammar } from '../../sigil/sigilGenerator'
@@ -1355,6 +1356,35 @@ const ARP_MINOR_DEGREES = [
   { pc: 8,  quality: 'Maj7' },
   { pc: 10, quality: 'Dom7' },
 ]
+const ARP_DEGREE_LABELS = {
+  major: ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'],
+  minor: ['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII'],
+} as const
+
+function chordName(rootPc: number, quality: string): string {
+  const suffix = quality === 'Major' ? ''
+    : quality === 'Minor' ? 'm'
+      : quality === 'Maj7' ? 'maj7'
+        : quality === 'Min7' ? 'm7'
+          : quality === 'Dom7' ? '7'
+            : quality === 'Dim' ? 'dim'
+              : quality
+  return `${NOTE_NAMES[rootPc]}${suffix}`
+}
+
+function buildKeyChordMap(keyPc: number, scale: string, octave: number) {
+  if (scale !== 'major' && scale !== 'minor') return null
+  const table = scale === 'minor' ? ARP_MINOR_DEGREES : ARP_MAJOR_DEGREES
+  return table.map((spec, index) => {
+    const rootPc = (keyPc + spec.pc) % 12
+    const notes = buildRackChordNotesFrom(rootPc, octave, spec.quality, 0)
+    return {
+      degree: ARP_DEGREE_LABELS[scale][index],
+      name: chordName(rootPc, spec.quality),
+      notes,
+    }
+  })
+}
 
 interface ChordSeqStep { root: number; quality: string; inv: number; oct: number; beats: number }
 
@@ -1442,6 +1472,8 @@ function InlineArpContent({
   const liveState       = useArpProgressionStore(s => s.liveBySlot[slotKey] ?? null)
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
   const resetSlotParam  = useControlSetStore(s => s.resetSlotParam)
+  const conductorKey    = useUniversalConductorStore(s => s.key)
+  const conductorScale  = useUniversalConductorStore(s => s.scale)
   const dimText = simple ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.35)'
   const playMode = String(getArpParam(overrides, 'arpPlayMode', 'arp'))
   const progressionEnabled = Boolean(getArpParam(overrides, 'arpChordProgressionEnabled', false))
@@ -1455,6 +1487,7 @@ function InlineArpContent({
     : progressionLabel(overrides)
   const division = Number(getArpParam(overrides, 'orbitTriggerDivision', 0.25))
   const divisionLabel = isNoteSlot ? 'note' : division === 1 ? '1/1' : division === 0.5 ? '1/2' : division === 0.25 ? '1/4' : division === 0.125 ? '1/8' : '1/16'
+  const keyChordMap = buildKeyChordMap(conductorKey, conductorScale, 3)
 
   // defaults C3 E3 G3 B3
   const DEFAULT_NOTES = [48, 52, 55, 59]
@@ -1517,6 +1550,24 @@ function InlineArpContent({
             }}
           >{mode}</button>
         ))}
+      </div>
+      <div style={{
+        marginBottom: 4,
+        padding: '3px 5px',
+        borderRadius: 4,
+        border: `0.5px solid ${accent}33`,
+        background: `${accent}0c`,
+        color: dimText,
+        fontSize: 7.5,
+        lineHeight: 1.25,
+      }}>
+        <span style={{ color: accent, fontWeight: 800 }}>
+          Key {CONDUCTOR_NOTE_NAMES[conductorKey]} {conductorScale}
+        </span>
+        <span> → </span>
+        {keyChordMap
+          ? keyChordMap.map(chord => `${chord.degree} ${chord.name}`).join(' · ')
+          : 'コード生成は major / minor に対応'}
       </div>
       {progressionEnabled && (
         <div style={{
@@ -1609,6 +1660,8 @@ function ArpeggioExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string
   const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
   const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
+  const conductorKey = useUniversalConductorStore(s => s.key)
+  const conductorScale = useUniversalConductorStore(s => s.scale)
   const accent = '#f59e0b'
   const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.38)'
   const dim2 = simple ? 'rgba(0,0,0,0.64)' : 'rgba(255,255,255,0.64)'
@@ -1626,6 +1679,7 @@ function ArpeggioExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string
   const progressionPreview = parseRackProgression(progression).slice(0, 8).map((_, i) => buildRackProgressionChordNotes(overrides, i))
   const chordPcs = new Set(chordNotes.map(n => n % 12))
   const stepNotes = ARP_STEP_KEYS.map((key, i) => Number(getArpParam(overrides, key, [48, 52, 55, 59][i])))
+  const keyChordMap = buildKeyChordMap(conductorKey, conductorScale, octave)
 
   const useSeq = Boolean(getArpParam(overrides, 'arpUseSeq', false))
   const seqSteps = parseChordSeq(getArpParam(overrides, 'arpChordSeq', '[]'))
@@ -1696,6 +1750,47 @@ function ArpeggioExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string
               textTransform: 'uppercase',
             }}>{mode}</button>
           ))}
+        </div>
+
+        {sectionLabel('Current Key')}
+        <div style={{
+          marginBottom: 12,
+          padding: '7px 8px',
+          borderRadius: 5,
+          border: `0.5px solid ${accent}55`,
+          background: `${accent}0c`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 5 }}>
+            <strong style={{ fontSize: 10, color: accent }}>
+              {CONDUCTOR_NOTE_NAMES[conductorKey]} {conductorScale}
+            </strong>
+            {keyChordMap && (
+              <button
+                onClick={() => setSlotOverride(slotKey, {
+                  arpChordRoot: conductorKey,
+                  arpChordScaleMode: conductorScale,
+                } as Partial<PlanetSimParams>)}
+                style={{
+                  border: `0.5px solid ${accent}66`,
+                  borderRadius: 4,
+                  background: `${accent}18`,
+                  color: accent,
+                  fontSize: 8,
+                  fontWeight: 800,
+                  padding: '3px 5px',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                このキーを適用
+              </button>
+            )}
+          </div>
+          <div style={{ fontSize: 8, color: dim, lineHeight: 1.35 }}>
+            {keyChordMap
+              ? keyChordMap.map(chord => `${chord.degree} ${chord.name}`).join(' · ')
+              : 'Arpeggioのコード生成は現在 major / minor に対応しています。'}
+          </div>
         </div>
 
         {sectionLabel('Progression')}
@@ -1780,6 +1875,41 @@ function ArpeggioExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string
             )
           })}
         </div>
+        {sectionLabel('Key Chords')}
+        {keyChordMap ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 5, marginBottom: 12 }}>
+            {keyChordMap.map(chord => (
+              <button
+                key={chord.degree}
+                onClick={() => preview(chord.notes)}
+                title={`${chord.name}: ${chord.notes.map(midiToNoteName).join(' ')}`}
+                style={{
+                  minWidth: 0,
+                  border: `0.5px solid ${border}`,
+                  borderRadius: 5,
+                  background: panel,
+                  color: dim2,
+                  padding: '6px 5px',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                  <span style={{ fontSize: 8, color: accent, fontWeight: 800 }}>{chord.degree}</span>
+                  <span style={{ fontSize: 9, color: dim2, fontWeight: 800 }}>{chord.name}</span>
+                </div>
+                <div style={{ marginTop: 3, fontSize: 7.5, color: dim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {chord.notes.map(midiToNoteName).join(' ')}
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div style={{ marginBottom: 12, fontSize: 8, color: dim }}>
+            major / minorを選ぶとダイアトニックコードを表示します。
+          </div>
+        )}
 
         {sectionLabel('Chord')}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 8 }}>
