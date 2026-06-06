@@ -27,6 +27,11 @@ html, body, #root {
   .top-bar-advanced {
     display: none !important;
   }
+
+  .universal-context-bar {
+    left: 8px !important;
+    top: 48px !important;
+  }
 }
 
 /* React Flow – patch canvas (dark theme) */

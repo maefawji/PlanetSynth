@@ -31,6 +31,7 @@ import { PatchEditor } from './components/patch/PatchEditor'
 import type { PlanetTool } from './components/planet/PlanetCanvas'
 import { MobileHud } from './components/layout/MobileHud'
 import { UniversalConductorSync } from './components/conductor/UniversalConductorSync'
+import { UniversalContextBar } from './components/conductor/UniversalContextBar'
 import { usePlanetStore } from './store/planetStore'
 import { useCanvasSettingsStore } from './store/canvasSettingsStore'
 import { useWholeInstrumentStore } from './store/wholeInstrumentStore'
@@ -268,6 +269,7 @@ export default function App() {
             {/* Canvas area */}
             <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: monoUi ? monoBg : paperTheme ? '#fff' : '#0a0a0f' }}>
               <PlanetCanvas tool={planetTool} onSelectTool={() => setPlanetTool('select')} rightPanelWidth={rightCollapsed ? 34 : 260} />
+              <UniversalContextBar />
 
               {/* Planet toolbar — top-left */}
               <div style={{
