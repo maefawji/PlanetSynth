@@ -173,14 +173,22 @@ function MixerBodyRow({ b, selected, soloed, onSelect, onRemove, onToggleMute, o
   onToggleMute: () => void; onToggleSolo: () => void; onVolumeChange: (v: number) => void
 }) {
   const t = useTheme()
-  const [level, setLevel] = useState(0)
-  const [triggered, setTriggered] = useState(false)
+  const [{ level, triggered }, setMeter] = useState({ level: 0, triggered: false })
   const rafRef = useRef<number>(0)
 
   useEffect(() => {
-    function poll() {
-      setLevel(getBodyOutputLevel(b.id))
-      setTriggered(wasBodyRecentlyTriggered(b.id))
+    let lastRefresh = 0
+    function poll(ts: number) {
+      if (ts - lastRefresh >= 33) {
+        lastRefresh = ts
+        const nextLevel = getBodyOutputLevel(b.id)
+        const nextTriggered = wasBodyRecentlyTriggered(b.id)
+        setMeter(current => (
+          current.level === nextLevel && current.triggered === nextTriggered
+            ? current
+            : { level: nextLevel, triggered: nextTriggered }
+        ))
+      }
       rafRef.current = requestAnimationFrame(poll)
     }
     rafRef.current = requestAnimationFrame(poll)

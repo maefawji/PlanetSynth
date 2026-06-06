@@ -55,7 +55,8 @@ export function OrbitHubView() {
   useEffect(() => {
     let raf = 0
     let frameCount = 0
-    function frame() {
+    let lastRefresh = 0
+    function frame(ts: number) {
       const live = getPlanetLiveBodySnapshot()
       const byId = new Map(storeBodies.map(b => [b.id, b]))
       const bodies = live.length > 0
@@ -63,7 +64,6 @@ export function OrbitHubView() {
             id: b.id, name: b.id, type: 'planet' as const, color: '#888', sampleId: null,
           }), ...b, z: byId.get(b.id)?.z ?? b.z ?? 0 }))
         : storeBodies
-      setLiveBodies(bodies)
       // update rolling buffers
       for (const b of bodies) {
         const tel = b as Record<string, number>
@@ -75,6 +75,10 @@ export function OrbitHubView() {
       // snapshot avg every 10 frames
       frameCount++
       if (frameCount % 10 === 0) setAvgSnap(new Map(avgBuf.current))
+      if (ts - lastRefresh >= 100) {
+        lastRefresh = ts
+        setLiveBodies(bodies)
+      }
       raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)

@@ -65,14 +65,18 @@ export function WholeInstrumentDevView() {
 
   useEffect(() => {
     let raf = 0
-    function frame() {
-      const live = getPlanetLiveBodySnapshot()
-      const byId = new Map(storeBodies.map(b => [b.id, b]))
-      setLiveBodies(live.length > 0
-        ? live.map(b => ({ ...(byId.get(b.id) ?? storeBodies.find(s => s.id === b.id) ?? {
-            id: b.id, name: b.id, type: 'planet' as const, color: '#888', sampleId: null,
-          }), ...b }))
-        : storeBodies)
+    let lastRefresh = 0
+    function frame(ts: number) {
+      if (ts - lastRefresh >= 100) {
+        lastRefresh = ts
+        const live = getPlanetLiveBodySnapshot()
+        const byId = new Map(storeBodies.map(b => [b.id, b]))
+        setLiveBodies(live.length > 0
+          ? live.map(b => ({ ...(byId.get(b.id) ?? {
+              id: b.id, name: b.id, type: 'planet' as const, color: '#888', sampleId: null,
+            }), ...b }))
+          : storeBodies)
+      }
       raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)

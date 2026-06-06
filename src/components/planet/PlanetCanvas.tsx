@@ -509,7 +509,12 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   useEffect(() => { onSelectToolRef.current = onSelectTool }, [onSelectTool])
 
   // ── Store subscriptions ──────────────────────────────────────────────────
-  const { bodies: storeBodies, simParams: storeParams, selectedBodyId, selectedBodyIds, resetSeq, setSelectedBodyId } = usePlanetStore()
+  const storeBodies = usePlanetStore(s => s.bodies)
+  const storeParams = usePlanetStore(s => s.simParams)
+  const selectedBodyId = usePlanetStore(s => s.selectedBodyId)
+  const selectedBodyIds = usePlanetStore(s => s.selectedBodyIds)
+  const resetSeq = usePlanetStore(s => s.resetSeq)
+  const setSelectedBodyId = usePlanetStore(s => s.setSelectedBodyId)
   const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
   const monochromeInverted = useCanvasSettingsStore(s => s.monochromeInverted)
   const paperCanvasBackground = useCanvasSettingsStore(s => s.paperCanvasBackground)

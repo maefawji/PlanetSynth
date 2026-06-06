@@ -2679,17 +2679,18 @@ function WaveLabOscillo({ analyser }: { analyser: AnalyserNode | null }) {
     const canvas = canvasRef.current; if (!canvas) return
     const ctx = canvas.getContext('2d'); if (!ctx) return
     const W = canvas.width, H = canvas.height
+    let buf = analyser ? new Float32Array(analyser.fftSize) : null
     function draw() {
       rafRef.current = requestAnimationFrame(draw)
       ctx.clearRect(0,0,W,H)
       ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fillRect(0,0,W,H)
       ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 0.5
       ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke()
-      if (!analyser) {
+      if (!analyser || !buf) {
         ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='8px sans-serif'; ctx.textAlign='center'
         ctx.fillText('no signal', W/2, H/2+3); return
       }
-      const buf = new Float32Array(analyser.fftSize)
+      if (buf.length !== analyser.fftSize) buf = new Float32Array(analyser.fftSize)
       analyser.getFloatTimeDomainData(buf)
       ctx.beginPath(); ctx.strokeStyle='#34d399'; ctx.lineWidth=1.5; ctx.lineJoin='round'
       buf.forEach((v,i) => {
