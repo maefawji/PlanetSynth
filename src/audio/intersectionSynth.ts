@@ -165,7 +165,7 @@ function createEffectNode(params: EffectorBusParams): EffectorEffect {
       return af
     }
     case 'bitcrush':
-      return new Tone.BitCrusher({ bits: Math.round(params.bitDepth ?? 8), wet: 1 })
+      return new Tone.BitCrusher(Math.round(params.bitDepth ?? 8))
     case 'freeze':
       return new Tone.Reverb({ decay: params.freezeDecay ?? 30, preDelay: 0.1, wet: 1 })
     case 'microphone':
@@ -239,8 +239,9 @@ export function ensureEffectorBus(bodyId: string, params: EffectorBusParams): vo
           if ((existing.reverbMode ?? 'convolution') === 'freeverb') {
             if (params.decay !== undefined) {
               const rs = decayToRoomSize(params.decay)
-              if (Math.abs((fx as Tone.Freeverb).roomSize.value - rs) > 0.01)
+              if (Math.abs((fx as Tone.Freeverb).roomSize.value - rs) > 0.01) {
                 ;(fx as Tone.Freeverb).roomSize.rampTo(rs, 0.1)
+              }
             }
           } else {
             if (params.decay !== undefined && Math.abs((fx as Tone.Reverb).decay as number - params.decay) > 0.05)
@@ -274,10 +275,14 @@ export function ensureEffectorBus(bodyId: string, params: EffectorBusParams): vo
           break
         case 'autofilter':
           if (params.autoFilterFreq   !== undefined) (fx as Tone.AutoFilter).frequency.value = params.autoFilterFreq
-          if (params.autoFilterDepth  !== undefined) (fx as Tone.AutoFilter).depth            = params.autoFilterDepth
+          if (params.autoFilterDepth  !== undefined) {
+            ;(fx as Tone.AutoFilter).depth.rampTo(params.autoFilterDepth, 0.1)
+          }
           break
         case 'bitcrush':
-          if (params.bitDepth !== undefined) (fx as Tone.BitCrusher).bits = Math.round(params.bitDepth)
+          if (params.bitDepth !== undefined) {
+            ;(fx as Tone.BitCrusher).bits.rampTo(Math.round(params.bitDepth), 0.1)
+          }
           break
         case 'freeze':
           // Freeze reverb decay is baked at creation — no live update needed

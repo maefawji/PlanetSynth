@@ -3462,7 +3462,9 @@ function OneShotStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
   const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
   const getBodyEffectiveParams2 = useControlSetStore(s => s.getBodyEffectiveParams)
+  const getBodyTriggerParamsList2 = useControlSetStore(s => s.getBodyTriggerParamsList)
   const effectiveParams = bodyId ? getBodyEffectiveParams2(bodyId) : null
+  const triggerParams = bodyId ? (getBodyTriggerParamsList2(bodyId)[0] ?? null) : null
   const bodies = usePlanetStore(s => s.bodies)
   const G = usePlanetStore(s => s.simParams.G)
   const body = bodyId ? (bodies.find(b => b.id === bodyId) ?? null) : null
@@ -3615,7 +3617,7 @@ function GenericSlotExpanded({ slotKey, cs, simple, onClose }: { slotKey: string
         <div key={key} style={{ display:'flex', alignItems:'center', gap:6, minWidth:240 }}>
           <span style={{ fontSize:8.5, color:dim, width:80, flexShrink:0, textAlign:'right' }}>{key.replace(/([A-Z])/g,' $1').toLowerCase()}</span>
           <input type="range" min={0} max={key.includes('Cutoff')?12000:key.includes('Rate')?20:1} step={0.01} value={Number(val)}
-            onChange={e => setSlotOverride(slotKey, key, parseFloat(e.target.value))}
+            onChange={e => setSlotOverride(slotKey, { [key]: parseFloat(e.target.value) })}
             style={{ flex:1, accentColor: cs.color }} />
           <span style={{ fontSize:8.5, fontFamily:'monospace', color:cs.color, width:40, textAlign:'right', flexShrink:0 }}>{Number(val).toFixed(2)}</span>
         </div>
