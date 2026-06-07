@@ -137,13 +137,14 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
           borderRadius: '0 0 8px 8px',
           boxShadow: '0 12px 40px rgba(0,0,0,0.38)',
           backdropFilter: 'blur(20px)',
+          maxHeight: 'calc(100vh - 82px)',
           overflow: 'hidden',
         }}
       >
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.5fr)', gap: 0 }}>
 
           {/* ── Left: context params ── */}
-          <div style={{ padding: '13px 16px', borderRight: `0.5px solid ${t.divider}` }}>
+          <div style={{ padding: '13px 16px', borderRight: `0.5px solid ${t.divider}`, overflowY: 'auto' }}>
             <div style={dimSectionLabel}>Context</div>
 
             {/* Transport row */}
@@ -306,7 +307,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
           </div>
 
           {/* ── Right: chord progression ── */}
-          <div style={{ padding: '13px 12px', display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '13px 12px', display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, overflowY: 'auto', overflowX: 'hidden' }}>
             {/* Header: title */}
             <div style={{ ...dimSectionLabel, marginBottom: 0 }}>Chord Progression</div>
             {/* Controls row */}
