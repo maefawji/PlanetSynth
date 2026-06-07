@@ -244,11 +244,25 @@ export interface UniversalConductorValues {
   registerTensionMax: number
 }
 
+const DIATONIC_QUALITIES: Record<ConductorScale, ConductorChordQuality[]> = {
+  'major':           ['Add9',     'Min-add9', 'Min-add9', 'Add9',     'Add9',     'Min-add9', 'Dim'],
+  'minor':           ['Min-add9', 'Dim',      'Add9',     'Min-add9', 'Min-add9', 'Add9',     'Add9'],
+  'dorian':          ['Min-add9', 'Min-add9', 'Add9',     'Add9',     'Min-add9', 'Dim',      'Add9'],
+  'phrygian':        ['Min-add9', 'Add9',     'Add9',     'Min-add9', 'Dim',      'Add9',     'Min-add9'],
+  'lydian':          ['Add9',     'Add9',     'Min-add9', 'Dim',      'Add9',     'Min-add9', 'Min-add9'],
+  'mixolydian':      ['Add9',     'Min-add9', 'Dim',      'Add9',     'Min-add9', 'Min-add9', 'Add9'],
+  'locrian':         ['Dim',      'Add9',     'Min-add9', 'Min-add9', 'Add9',     'Add9',     'Min-add9'],
+  'pentatonic-major':['Add9',     'Min-add9', 'Add9',     'Min-add9', 'Min-add9', 'Add9',     'Add9'],
+  'pentatonic-minor':['Min-add9', 'Add9',     'Min-add9', 'Min-add9', 'Add9',     'Add9',     'Min-add9'],
+  'chromatic':       ['Add9',     'Min-add9', 'Add9',     'Min-add9', 'Add9',     'Min-add9', 'Add9'],
+}
+
 interface UniversalConductorState extends UniversalConductorValues {
   update: (patch: Partial<UniversalConductorValues>) => void
   updateChordSlot: (index: number, slot: ChordSlot | null) => void
   applyPreset: (preset: HarmonicPreset) => void
   advanceChordIndex: () => void
+  fillDiatonic: () => void
   reset: () => void
 }
 
@@ -407,6 +421,23 @@ export const useUniversalConductorStore = create<UniversalConductorState>()(
             chordQuality: first.quality,
             chordOctave: first.octave,
           } : {}),
+        })
+      },
+      fillDiatonic() {
+        const state = useUniversalConductorStore.getState()
+        const intervals = SCALE_INTERVALS[state.scale]
+        const qualities = DIATONIC_QUALITIES[state.scale]
+        const slots: (ChordSlot | null)[] = Array(8).fill(null)
+        const count = Math.min(state.chordProgressionLength, intervals.length)
+        for (let i = 0; i < count; i++) {
+          const root = (state.key + intervals[i]) % 12
+          slots[i] = { root, quality: qualities[i] ?? 'Add9', octave: 3, bassRoot: null }
+        }
+        const first = slots[0]
+        set({
+          chordProgression: slots,
+          chordIndex: 0,
+          ...(first ? { chordRoot: first.root, chordQuality: first.quality, chordOctave: first.octave } : {}),
         })
       },
       reset() {

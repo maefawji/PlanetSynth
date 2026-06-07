@@ -387,6 +387,14 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
 
             {/* Preset buttons */}
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              <button onClick={c.fillDiatonic} style={{
+                padding: '3px 8px', borderRadius: 3, fontFamily: 'inherit',
+                fontSize: 8.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em',
+                border: '0.5px solid rgba(167,139,250,0.35)', background: 'rgba(167,139,250,0.07)',
+                color: 'rgba(167,139,250,0.8)',
+              }} title="Fill slots with diatonic chords based on current key/scale">
+                ✦ diatonic
+              </button>
               {HARMONIC_PRESETS.map(p => {
                 const isMatch = c.harmonicMode === p.harmonicMode && c.key === p.key && c.scale === p.scale
                 return (
