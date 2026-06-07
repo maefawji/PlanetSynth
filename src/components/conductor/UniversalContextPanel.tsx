@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import * as Tone from 'tone'
 import { useTheme } from '../../lib/theme'
 import {
@@ -271,17 +271,17 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                     { label: 'High', min: 'registerTensionMin', max: 'registerTensionMax' },
                   ] as const
                 ).map(({ label, min, max }) => (
-                  <>
-                    <span key={label} style={{ fontSize: 8, color: t.textDim, fontWeight: 700, letterSpacing: '0.07em' }}>{label}</span>
-                    <input key={min} type="number" min={0} max={127}
+                  <React.Fragment key={label}>
+                    <span style={{ fontSize: 8, color: t.textDim, fontWeight: 700, letterSpacing: '0.07em' }}>{label}</span>
+                    <input type="number" min={0} max={127}
                       value={(c as Record<string, number>)[min]}
                       onChange={e => c.update({ [min]: Number(e.target.value) } as Parameters<typeof c.update>[0])}
                       style={{ ...inputCss, fontFamily: 'monospace', textAlign: 'center', fontSize: 9 }} />
-                    <input key={max} type="number" min={0} max={127}
+                    <input type="number" min={0} max={127}
                       value={(c as Record<string, number>)[max]}
                       onChange={e => c.update({ [max]: Number(e.target.value) } as Parameters<typeof c.update>[0])}
                       style={{ ...inputCss, fontFamily: 'monospace', textAlign: 'center', fontSize: 9 }} />
-                  </>
+                  </React.Fragment>
                 ))}
               </div>
             </div>
@@ -320,8 +320,17 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
               padding: '8px 10px', borderRadius: 5,
               background: t.sectionBg, border: `0.5px solid ${t.panelBorder}`,
             }}>
-              <div style={{ fontSize: 7.5, fontWeight: 800, color: t.textDim, letterSpacing: '0.1em', marginBottom: 6, textTransform: 'uppercase' }}>
-                Current Chord
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                <span style={{ fontSize: 7.5, fontWeight: 800, color: t.textDim, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                  Current Chord
+                </span>
+                <span style={{
+                  fontSize: 7, fontFamily: 'monospace', fontWeight: 700,
+                  padding: '1px 5px', borderRadius: 2,
+                  background: 'rgba(167,139,250,0.15)', color: '#a78bfa',
+                }}>
+                  step {c.chordIndex + 1}
+                </span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr 34px 1fr', gap: 5, alignItems: 'center' }}>
                 <select value={c.chordRoot} onChange={e => c.update({ chordRoot: Number(e.target.value) })} style={inputCss}>
@@ -356,7 +365,13 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                   inputCss={inputCss}
                   t={t}
                   onChange={slot => c.updateChordSlot(i, slot)}
-                  onActivate={() => c.update({ chordIndex: i })}
+                  onActivate={() => {
+                    const slot = c.chordProgression[i]
+                    c.update({
+                      chordIndex: i,
+                      ...(slot ? { chordRoot: slot.root, chordQuality: slot.quality, chordOctave: slot.octave } : {}),
+                    })
+                  }}
                 />
               ))}
             </div>
