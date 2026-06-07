@@ -123,10 +123,10 @@ export function MobileHud({
           textShadow: '0 1px 3px rgba(0,0,0,0.8)',
         }}>
           {tool === 'add-sun'
-            ? 'まず: ドラッグして太陽を配置'
+            ? 'First: drag to place a sun'
             : tool === 'add-planet'
-              ? 'まず: ドラッグして惑星を配置'
-              : '天体をタップして選択'}
+              ? 'First: drag to place a planet'
+              : 'Tap a body to select it'}
         </div>
       )}
 

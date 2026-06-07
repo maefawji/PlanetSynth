@@ -401,12 +401,12 @@ export default function App() {
                   }}
                 >
                   {planetTool === 'select'
-                    ? 'まず: 天体をクリックして選択し、下のRackで音を確認'
+                    ? 'First: select a body, then shape its sound in the Rack below'
                     : planetTool === 'add-sun'
-                      ? 'まず: キャンバスをドラッグして太陽を配置'
+                      ? 'First: drag on the canvas to place a sun'
                       : planetTool === 'probe'
-                        ? 'まず: キャンバスをドラッグしてProbeを投射'
-                        : 'まず: キャンバスをドラッグして惑星を配置'}
+                        ? 'First: drag on the canvas to launch a probe'
+                        : 'First: drag on the canvas to place a planet'}
                 </div>
               )}
 
