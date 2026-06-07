@@ -390,7 +390,13 @@ export const useUniversalConductorStore = create<UniversalConductorState>()(
     (set, get) => ({
       ...DEFAULT_UNIVERSAL_CONDUCTOR,
       update(patch) {
-        set(normalizeUniversalConductor(patch))
+        const normalized = normalizeUniversalConductor(patch)
+        set(state => {
+          const length = normalized.chordProgressionLength ?? state.chordProgressionLength
+          const index = normalized.chordIndex ?? state.chordIndex
+          const clampedIndex = Math.min(index, length - 1)
+          return clampedIndex !== index ? { ...normalized, chordIndex: clampedIndex } : normalized
+        })
       },
       updateChordSlot(index, slot) {
         set(state => {
