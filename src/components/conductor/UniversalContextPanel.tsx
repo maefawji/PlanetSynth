@@ -70,6 +70,12 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // intentionally run once on mount
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   function toggleTransport() {
     if (transport.state === 'PLAY') {
       Tone.getTransport().pause()
