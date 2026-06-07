@@ -422,20 +422,36 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                 {(() => {
                   const slot = c.chordProgression[c.chordIndex]
                   const inSync = slot && slot.root === c.chordRoot && slot.quality === c.chordQuality
-                  if (inSync || !slot) return null
                   return (
-                    <button
-                      onClick={() => c.update({ chordRoot: slot.root, chordQuality: slot.quality, chordOctave: slot.octave })}
-                      title="Sync from active slot"
-                      style={{
-                        marginLeft: 'auto', padding: '1px 6px', borderRadius: 2, cursor: 'pointer',
-                        fontSize: 7, fontWeight: 700, fontFamily: 'inherit',
-                        border: '0.5px solid rgba(167,139,250,0.4)', background: 'rgba(167,139,250,0.1)',
-                        color: '#a78bfa',
-                      }}
-                    >
-                      ↻ sync slot
-                    </button>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                      {slot && !inSync && (
+                        <button
+                          onClick={() => c.update({ chordRoot: slot.root, chordQuality: slot.quality, chordOctave: slot.octave })}
+                          title="Load from slot"
+                          style={{
+                            padding: '1px 6px', borderRadius: 2, cursor: 'pointer',
+                            fontSize: 7, fontWeight: 700, fontFamily: 'inherit',
+                            border: '0.5px solid rgba(167,139,250,0.4)', background: 'rgba(167,139,250,0.1)',
+                            color: '#a78bfa',
+                          }}
+                        >
+                          ↻ load slot
+                        </button>
+                      )}
+                      <button
+                        onClick={() => c.updateChordSlot(c.chordIndex, { root: c.chordRoot, quality: c.chordQuality, octave: c.chordOctave, bassRoot: slot?.bassRoot ?? null })}
+                        title="Save current chord to slot"
+                        style={{
+                          padding: '1px 6px', borderRadius: 2, cursor: 'pointer',
+                          fontSize: 7, fontWeight: 700, fontFamily: 'inherit',
+                          border: `0.5px solid ${inSync ? 'rgba(167,139,250,0.2)' : 'rgba(167,139,250,0.55)'}`,
+                          background: inSync ? 'transparent' : 'rgba(167,139,250,0.14)',
+                          color: inSync ? 'rgba(167,139,250,0.4)' : '#a78bfa',
+                        }}
+                      >
+                        → save to slot
+                      </button>
+                    </div>
                   )
                 })()}
               </div>
