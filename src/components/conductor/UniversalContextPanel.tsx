@@ -336,6 +336,38 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
               </div>
             </div>
 
+            {/* Mini-timeline */}
+            <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+              {Array.from({ length: c.chordProgressionLength }, (_, i) => {
+                const slot = c.chordProgression[i]
+                const isActive = c.chordIndex === i
+                const label = slot
+                  ? formatChordName(slot.root, slot.quality, slot.bassRoot)
+                  : '—'
+                const roman = slot
+                  ? getScaleDegree(slot.root, slot.quality, c.key, c.scale)
+                  : null
+                return (
+                  <button key={i} onClick={() => {
+                    c.update({
+                      chordIndex: i,
+                      ...(slot ? { chordRoot: slot.root, chordQuality: slot.quality, chordOctave: slot.octave } : {}),
+                    })
+                  }} style={{
+                    padding: '3px 7px', borderRadius: 4, cursor: 'pointer',
+                    fontFamily: 'monospace', fontSize: 8, fontWeight: 700,
+                    border: `0.5px solid ${isActive ? 'rgba(167,139,250,0.6)' : slot ? 'rgba(167,139,250,0.2)' : t.panelBorder}`,
+                    background: isActive ? 'rgba(167,139,250,0.2)' : slot ? 'rgba(167,139,250,0.06)' : t.inputBg,
+                    color: isActive ? '#c4b5fd' : slot ? 'rgba(167,139,250,0.75)' : t.textDim,
+                    lineHeight: 1.2,
+                  }}>
+                    {roman && <span style={{ fontSize: 6.5, opacity: 0.7, marginRight: 3 }}>{roman}</span>}
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+
             {/* Preset buttons */}
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
               {HARMONIC_PRESETS.map(p => {
