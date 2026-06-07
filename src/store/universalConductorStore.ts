@@ -365,7 +365,11 @@ export const useUniversalConductorStore = create<UniversalConductorState>()(
         set(state => {
           const next = [...state.chordProgression]
           next[index] = slot
-          return { chordProgression: next }
+          const isActive = index === state.chordIndex
+          return {
+            chordProgression: next,
+            ...(isActive && slot ? { chordRoot: slot.root, chordQuality: slot.quality, chordOctave: slot.octave } : {}),
+          }
         })
       },
       advanceChordIndex() {
