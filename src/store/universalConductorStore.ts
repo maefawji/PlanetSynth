@@ -332,6 +332,22 @@ export function normalizeUniversalConductor(
   if (patch.chordQuality !== undefined && !CONDUCTOR_CHORD_QUALITIES.includes(patch.chordQuality)) delete next.chordQuality
   if (patch.gridResolution !== undefined && !CONDUCTOR_GRID_RESOLUTIONS.includes(patch.gridResolution)) delete next.gridResolution
   if (patch.harmonicMode !== undefined && !HARMONIC_MODES.includes(patch.harmonicMode)) delete next.harmonicMode
+  if (patch.chordProgression !== undefined) {
+    const arr = Array.isArray(patch.chordProgression) ? patch.chordProgression : []
+    next.chordProgression = Array.from({ length: 8 }, (_, i) => {
+      const slot = arr[i]
+      if (slot == null) return null
+      if (typeof slot !== 'object') return null
+      const s = slot as Record<string, unknown>
+      const root = clamp(Math.round(Number(s.root) || 0), 0, 11)
+      const quality = CONDUCTOR_CHORD_QUALITIES.includes(s.quality as ConductorChordQuality)
+        ? (s.quality as ConductorChordQuality)
+        : 'Major'
+      const octave = clamp(Math.round(Number(s.octave) || 3), 0, 8)
+      const bassRoot = s.bassRoot != null ? clamp(Math.round(Number(s.bassRoot)), 0, 11) : null
+      return { root, quality, octave, bassRoot }
+    })
+  }
   return next
 }
 
