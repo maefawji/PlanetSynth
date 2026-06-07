@@ -61,6 +61,15 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
     return () => window.clearInterval(id)
   }, [])
 
+  // On open: if chordRoot/Quality diverges from the active progression slot, sync silently
+  useEffect(() => {
+    const slot = c.chordProgression[c.chordIndex]
+    if (slot && (slot.root !== c.chordRoot || slot.quality !== c.chordQuality)) {
+      c.update({ chordRoot: slot.root, chordQuality: slot.quality, chordOctave: slot.octave })
+    }
+    // Only run on mount — eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function toggleTransport() {
     if (transport.state === 'PLAY') {
       Tone.getTransport().pause()
@@ -356,12 +365,14 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                   }} style={{
                     padding: '3px 7px', borderRadius: 4, cursor: 'pointer',
                     fontFamily: 'monospace', fontSize: 8, fontWeight: 700,
-                    border: `0.5px solid ${isActive ? 'rgba(167,139,250,0.6)' : slot ? 'rgba(167,139,250,0.2)' : t.panelBorder}`,
-                    background: isActive ? 'rgba(167,139,250,0.2)' : slot ? 'rgba(167,139,250,0.06)' : t.inputBg,
-                    color: isActive ? '#c4b5fd' : slot ? 'rgba(167,139,250,0.75)' : t.textDim,
+                    border: `0.5px solid ${isActive && c.autoAdvance ? 'rgba(34,197,94,0.5)' : isActive ? 'rgba(167,139,250,0.6)' : slot ? 'rgba(167,139,250,0.2)' : t.panelBorder}`,
+                    background: isActive && c.autoAdvance ? 'rgba(34,197,94,0.1)' : isActive ? 'rgba(167,139,250,0.2)' : slot ? 'rgba(167,139,250,0.06)' : t.inputBg,
+                    color: isActive && c.autoAdvance ? '#22c55e' : isActive ? '#c4b5fd' : slot ? 'rgba(167,139,250,0.75)' : t.textDim,
                     lineHeight: 1.2,
                   }}>
-                    {roman && <span style={{ fontSize: 6.5, opacity: 0.7, marginRight: 3 }}>{roman}</span>}
+                    {isActive && c.autoAdvance && <span style={{ fontSize: 6.5, marginRight: 3 }}>⟳</span>}
+                    {roman && !isActive && <span style={{ fontSize: 6.5, opacity: 0.7, marginRight: 3 }}>{roman}</span>}
+                    {roman && isActive && <span style={{ fontSize: 6.5, opacity: 0.8, marginRight: 3 }}>{roman}</span>}
                     {label}
                   </button>
                 )
