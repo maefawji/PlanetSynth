@@ -263,6 +263,7 @@ interface UniversalConductorState extends UniversalConductorValues {
   applyPreset: (preset: HarmonicPreset) => void
   advanceChordIndex: () => void
   fillDiatonic: () => void
+  randomizeDiatonic: () => void
   reset: () => void
 }
 
@@ -370,7 +371,7 @@ export function getUniversalConductorValues(): UniversalConductorValues {
 
 export const useUniversalConductorStore = create<UniversalConductorState>()(
   persist(
-    set => ({
+    (set, get) => ({
       ...DEFAULT_UNIVERSAL_CONDUCTOR,
       update(patch) {
         set(normalizeUniversalConductor(patch))
@@ -424,7 +425,7 @@ export const useUniversalConductorStore = create<UniversalConductorState>()(
         })
       },
       fillDiatonic() {
-        const state = useUniversalConductorStore.getState()
+        const state = get()
         const intervals = SCALE_INTERVALS[state.scale]
         const qualities = DIATONIC_QUALITIES[state.scale]
         const slots: (ChordSlot | null)[] = Array(8).fill(null)
@@ -432,6 +433,23 @@ export const useUniversalConductorStore = create<UniversalConductorState>()(
         for (let i = 0; i < count; i++) {
           const root = (state.key + intervals[i]) % 12
           slots[i] = { root, quality: qualities[i] ?? 'Add9', octave: 3, bassRoot: null }
+        }
+        const first = slots[0]
+        set({
+          chordProgression: slots,
+          chordIndex: 0,
+          ...(first ? { chordRoot: first.root, chordQuality: first.quality, chordOctave: first.octave } : {}),
+        })
+      },
+      randomizeDiatonic() {
+        const state = get()
+        const intervals = SCALE_INTERVALS[state.scale]
+        const qualities = DIATONIC_QUALITIES[state.scale]
+        const slots: (ChordSlot | null)[] = Array(8).fill(null)
+        for (let i = 0; i < state.chordProgressionLength; i++) {
+          const di = Math.floor(Math.random() * intervals.length)
+          const root = (state.key + intervals[di]) % 12
+          slots[i] = { root, quality: qualities[di] ?? 'Add9', octave: 3, bassRoot: null }
         }
         const first = slots[0]
         set({

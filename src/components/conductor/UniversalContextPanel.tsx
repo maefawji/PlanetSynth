@@ -343,11 +343,13 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                   style={{ ...inputCss, width: 28, textAlign: 'center', fontFamily: 'monospace', fontSize: 9 }} />
                 <span style={{ fontSize: 7, color: t.textDim }}>bars</span>
               </div>
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3 }}>
                 <span style={{ fontSize: 8, color: t.textDim }}>steps</span>
-                <input type="number" min={1} max={8} value={c.chordProgressionLength}
-                  onChange={e => c.update({ chordProgressionLength: Number(e.target.value) })}
-                  style={{ ...inputCss, width: 36, textAlign: 'center', fontFamily: 'monospace' }} />
+                <button onClick={() => c.update({ chordProgressionLength: Math.max(1, c.chordProgressionLength - 1) })}
+                  style={{ width: 18, height: 18, padding: 0, borderRadius: 3, border: `0.5px solid ${t.panelBorder}`, background: t.inputBg, color: t.textDim, fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', lineHeight: 1 }}>−</button>
+                <span style={{ fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: t.text, minWidth: 14, textAlign: 'center' }}>{c.chordProgressionLength}</span>
+                <button onClick={() => c.update({ chordProgressionLength: Math.min(8, c.chordProgressionLength + 1) })}
+                  style={{ width: 18, height: 18, padding: 0, borderRadius: 3, border: `0.5px solid ${t.panelBorder}`, background: t.inputBg, color: t.textDim, fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', lineHeight: 1 }}>+</button>
               </div>
             </div>
 
@@ -392,8 +394,16 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                 fontSize: 8.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em',
                 border: '0.5px solid rgba(167,139,250,0.35)', background: 'rgba(167,139,250,0.07)',
                 color: 'rgba(167,139,250,0.8)',
-              }} title="Fill slots with diatonic chords based on current key/scale">
+              }} title="Fill slots with sequential diatonic chords">
                 ✦ diatonic
+              </button>
+              <button onClick={c.randomizeDiatonic} style={{
+                padding: '3px 8px', borderRadius: 3, fontFamily: 'inherit',
+                fontSize: 8.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em',
+                border: '0.5px solid rgba(167,139,250,0.25)', background: 'rgba(167,139,250,0.05)',
+                color: 'rgba(167,139,250,0.65)',
+              }} title="Randomize slots with diatonic chords from current scale">
+                ⟳ random
               </button>
               {HARMONIC_PRESETS.map(p => {
                 const isMatch = c.harmonicMode === p.harmonicMode && c.key === p.key && c.scale === p.scale
