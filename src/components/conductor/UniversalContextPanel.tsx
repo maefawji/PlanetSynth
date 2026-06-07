@@ -8,6 +8,7 @@ import {
   CONDUCTOR_SCALES,
   HARMONIC_MODES,
   HARMONIC_PRESETS,
+  formatChordName,
   getChordNoteNames,
   useUniversalConductorStore,
   type ChordSlot,
@@ -433,10 +434,8 @@ function ChordProgressionSlot({
 }) {
   const enabled = slot !== null
   const cur = slot ?? { root: 0, quality: 'Min-add9' as ConductorChordQuality, octave: 3, bassRoot: null }
+  const chordLabel = enabled ? formatChordName(cur.root, cur.quality, cur.bassRoot) : null
   const noteNames = enabled ? getChordNoteNames(cur.root, cur.quality) : null
-  const slashLabel = enabled && cur.bassRoot !== null
-    ? `/${CONDUCTOR_NOTE_NAMES[cur.bassRoot]}`
-    : ''
 
   return (
     <div style={{
@@ -489,13 +488,26 @@ function ChordProgressionSlot({
           {CONDUCTOR_NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
         </select>
       </div>
-      {enabled && noteNames && (
+      {enabled && (
         <div style={{
-          marginLeft: 34, marginTop: 2,
-          fontSize: 7.5, fontFamily: 'monospace', letterSpacing: '0.06em',
-          color: 'rgba(167,139,250,0.65)',
+          marginLeft: 34, marginTop: 2, display: 'flex', gap: 8, alignItems: 'baseline',
         }}>
-          {noteNames}{slashLabel}
+          {chordLabel && (
+            <span style={{
+              fontSize: 8.5, fontFamily: 'monospace', fontWeight: 700, letterSpacing: '0.03em',
+              color: isActive ? '#c4b5fd' : 'rgba(167,139,250,0.8)',
+            }}>
+              {chordLabel}
+            </span>
+          )}
+          {noteNames && (
+            <span style={{
+              fontSize: 7, fontFamily: 'monospace', letterSpacing: '0.05em',
+              color: 'rgba(167,139,250,0.45)',
+            }}>
+              {noteNames}
+            </span>
+          )}
         </div>
       )}
     </div>

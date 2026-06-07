@@ -74,6 +74,24 @@ export function getChordNoteNames(root: number, quality: ConductorChordQuality):
   return getChordNotes(root, quality).map(n => CONDUCTOR_NOTE_NAMES[n]).join(' ')
 }
 
+const QUALITY_SHORT: Record<ConductorChordQuality, string> = {
+  'Major': '', 'Minor': 'm', 'Sus2': 'sus2', 'Sus4': 'sus4',
+  'Dim': '°', 'Aug': '+', 'Maj7': 'maj7', 'Min7': 'm7', 'Dom7': '7',
+  '7sus4': '7sus4', 'Add9': 'add9', 'Min-add9': 'm(add9)',
+  'Maj9': 'maj9', 'Min9': 'm9', 'Dom9': '9', 'Maj7add9': 'maj7(add9)',
+  'Min11': 'm11', 'Maj7#11': 'maj7#11',
+}
+
+export function formatChordName(root: number, quality: ConductorChordQuality, bassRoot?: number | null): string {
+  const rootName = CONDUCTOR_NOTE_NAMES[root]
+  const suffix = QUALITY_SHORT[quality] ?? quality
+  const base = `${rootName}${suffix}`
+  if (bassRoot != null && bassRoot !== root) {
+    return `${base}/${CONDUCTOR_NOTE_NAMES[bassRoot]}`
+  }
+  return base
+}
+
 export const HARMONIC_MODES = [
   'custom',
   'minor-add9',   // Avril 14th style: i(add9), i/b7, VImaj9, iv9
