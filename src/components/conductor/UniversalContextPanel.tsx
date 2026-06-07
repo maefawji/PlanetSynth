@@ -128,7 +128,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
         style={{
           position: 'fixed',
           top: anchorTop,
-          left: anchorLeft,
+          left: Math.min(anchorLeft, window.innerWidth - 580 - anchorRight),
           right: anchorRight,
           zIndex: 50,
           background: t.panelBg,
@@ -140,7 +140,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
           overflow: 'hidden',
         }}
       >
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.5fr)', gap: 0 }}>
 
           {/* ── Left: context params ── */}
           <div style={{ padding: '13px 16px', borderRight: `0.5px solid ${t.divider}` }}>
@@ -306,10 +306,11 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
           </div>
 
           {/* ── Right: chord progression ── */}
-          <div style={{ padding: '13px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {/* Header row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-              <div style={dimSectionLabel}>Chord Progression</div>
+          <div style={{ padding: '13px 12px', display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, overflow: 'hidden' }}>
+            {/* Header: title */}
+            <div style={{ ...dimSectionLabel, marginBottom: 0 }}>Chord Progression</div>
+            {/* Controls row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: -4 }}>
               <button
                 onClick={c.advanceChordIndex}
                 title="Advance to next chord"
@@ -317,39 +318,34 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                   padding: '2px 7px', borderRadius: 3, fontFamily: 'inherit',
                   fontSize: 8, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em',
                   border: `0.5px solid rgba(167,139,250,0.4)`,
-                  background: 'rgba(167,139,250,0.1)', color: accentColor,
+                  background: 'rgba(167,139,250,0.1)', color: accentColor, flexShrink: 0,
                 }}
               >
                 ▶ Next
               </button>
-              {/* Auto-advance toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button
-                  onClick={() => c.update({ autoAdvance: !c.autoAdvance })}
-                  title="Auto-advance on each bar"
-                  style={{
-                    padding: '2px 7px', borderRadius: 3, fontFamily: 'inherit',
-                    fontSize: 8, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em',
-                    border: `0.5px solid ${c.autoAdvance ? 'rgba(34,197,94,0.5)' : 'rgba(167,139,250,0.25)'}`,
-                    background: c.autoAdvance ? 'rgba(34,197,94,0.1)' : t.inputBg,
-                    color: c.autoAdvance ? '#22c55e' : t.textDim,
-                  }}
-                >
-                  ⟳ Auto
-                </button>
-                <input type="number" min={1} max={16} value={c.autoAdvanceBars}
-                  onChange={e => c.update({ autoAdvanceBars: Number(e.target.value) })}
-                  title="Bars per step"
-                  style={{ ...inputCss, width: 28, textAlign: 'center', fontFamily: 'monospace', fontSize: 9 }} />
-                <span style={{ fontSize: 7, color: t.textDim }}>bars</span>
-              </div>
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3 }}>
-                <span style={{ fontSize: 8, color: t.textDim }}>steps</span>
+              <button
+                onClick={() => c.update({ autoAdvance: !c.autoAdvance })}
+                title="Auto-advance on each bar"
+                style={{
+                  padding: '2px 7px', borderRadius: 3, fontFamily: 'inherit',
+                  fontSize: 8, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em',
+                  border: `0.5px solid ${c.autoAdvance ? 'rgba(34,197,94,0.5)' : 'rgba(167,139,250,0.25)'}`,
+                  background: c.autoAdvance ? 'rgba(34,197,94,0.1)' : t.inputBg,
+                  color: c.autoAdvance ? '#22c55e' : t.textDim, flexShrink: 0,
+                }}
+              >
+                ⟳ Auto
+              </button>
+              <input type="number" min={1} max={16} value={c.autoAdvanceBars}
+                onChange={e => c.update({ autoAdvanceBars: Number(e.target.value) })}
+                title="Bars per step"
+                style={{ ...inputCss, width: 28, textAlign: 'center', fontFamily: 'monospace', fontSize: 9, flexShrink: 0 }} />
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
                 <button onClick={() => c.update({ chordProgressionLength: Math.max(1, c.chordProgressionLength - 1) })}
-                  style={{ width: 18, height: 18, padding: 0, borderRadius: 3, border: `0.5px solid ${t.panelBorder}`, background: t.inputBg, color: t.textDim, fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', lineHeight: 1 }}>−</button>
-                <span style={{ fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: t.text, minWidth: 14, textAlign: 'center' }}>{c.chordProgressionLength}</span>
+                  style={{ width: 16, height: 16, padding: 0, borderRadius: 3, border: `0.5px solid ${t.panelBorder}`, background: t.inputBg, color: t.textDim, fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', lineHeight: 1 }}>−</button>
+                <span style={{ fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: t.text, minWidth: 12, textAlign: 'center' }}>{c.chordProgressionLength}</span>
                 <button onClick={() => c.update({ chordProgressionLength: Math.min(8, c.chordProgressionLength + 1) })}
-                  style={{ width: 18, height: 18, padding: 0, borderRadius: 3, border: `0.5px solid ${t.panelBorder}`, background: t.inputBg, color: t.textDim, fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', lineHeight: 1 }}>+</button>
+                  style={{ width: 16, height: 16, padding: 0, borderRadius: 3, border: `0.5px solid ${t.panelBorder}`, background: t.inputBg, color: t.textDim, fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', lineHeight: 1 }}>+</button>
               </div>
             </div>
 
@@ -483,7 +479,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                 <input type="number" min={0} max={8} value={c.chordOctave}
                   onChange={e => c.update({ chordOctave: Number(e.target.value) })}
                   style={{ ...inputCss, fontFamily: 'monospace', textAlign: 'center' }} />
-                <div style={{ fontSize: 8.5, color: '#a78bfa', fontFamily: 'monospace', whiteSpace: 'nowrap', letterSpacing: '0.03em' }}>
+                <div style={{ fontSize: 8.5, color: '#a78bfa', fontFamily: 'monospace', whiteSpace: 'nowrap', letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {getChordNoteNames(c.chordRoot, c.chordQuality)}
                 </div>
               </div>
@@ -492,7 +488,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
             {/* Progression slots */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '16px 14px 1fr 1.6fr 32px 1fr', gap: 4, alignItems: 'center', marginBottom: 2 }}>
-                {['#', '', 'Root', 'Quality', 'Oct', 'Bass'].map(h => (
+                {['#', '', 'Root', 'Qual', 'Oct', 'Bass'].map(h => (
                   <span key={h} style={{ fontSize: 7, color: t.textDim, letterSpacing: '0.06em', textAlign: 'center' }}>{h}</span>
                 ))}
               </div>
