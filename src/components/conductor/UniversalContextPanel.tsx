@@ -347,6 +347,25 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                 }}>
                   step {c.chordIndex + 1}
                 </span>
+                {(() => {
+                  const slot = c.chordProgression[c.chordIndex]
+                  const inSync = slot && slot.root === c.chordRoot && slot.quality === c.chordQuality
+                  if (inSync || !slot) return null
+                  return (
+                    <button
+                      onClick={() => c.update({ chordRoot: slot.root, chordQuality: slot.quality, chordOctave: slot.octave })}
+                      title="Sync from active slot"
+                      style={{
+                        marginLeft: 'auto', padding: '1px 6px', borderRadius: 2, cursor: 'pointer',
+                        fontSize: 7, fontWeight: 700, fontFamily: 'inherit',
+                        border: '0.5px solid rgba(167,139,250,0.4)', background: 'rgba(167,139,250,0.1)',
+                        color: '#a78bfa',
+                      }}
+                    >
+                      ↻ sync slot
+                    </button>
+                  )
+                })()}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr 34px 1fr', gap: 5, alignItems: 'center' }}>
                 <select value={c.chordRoot} onChange={e => c.update({ chordRoot: Number(e.target.value) })} style={inputCss}>
@@ -410,16 +429,6 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
   )
 }
 
-function chordQualityShort(q: string): string {
-  const map: Record<string, string> = {
-    'Major': '', 'Minor': 'm', 'Sus2': 'sus2', 'Sus4': 'sus4',
-    'Dim': '°', 'Aug': '+', 'Maj7': 'maj7', 'Min7': 'm7', 'Dom7': '7',
-    '7sus4': '7sus4', 'Add9': 'add9', 'Min-add9': 'm(add9)',
-    'Maj9': 'maj9', 'Min9': 'm9', 'Dom9': '9', 'Maj7add9': 'maj7(add9)',
-    'Min11': 'm11', 'Maj7#11': 'maj7#11',
-  }
-  return map[q] ?? q
-}
 
 function ChordProgressionSlot({
   index, isActive, slot, inputCss, t, onChange, onActivate,
