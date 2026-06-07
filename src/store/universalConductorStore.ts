@@ -82,6 +82,41 @@ const QUALITY_SHORT: Record<ConductorChordQuality, string> = {
   'Min11': 'm11', 'Maj7#11': 'maj7#11',
 }
 
+const SCALE_INTERVALS: Record<ConductorScale, number[]> = {
+  'major':           [0, 2, 4, 5, 7, 9, 11],
+  'minor':           [0, 2, 3, 5, 7, 8, 10],
+  'dorian':          [0, 2, 3, 5, 7, 9, 10],
+  'phrygian':        [0, 1, 3, 5, 7, 8, 10],
+  'lydian':          [0, 2, 4, 6, 7, 9, 11],
+  'mixolydian':      [0, 2, 4, 5, 7, 9, 10],
+  'locrian':         [0, 1, 3, 5, 6, 8, 10],
+  'pentatonic-major':[0, 2, 4, 7, 9],
+  'pentatonic-minor':[0, 3, 5, 7, 10],
+  'chromatic':       [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+}
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII']
+
+export function getScaleDegree(root: number, quality: ConductorChordQuality, key: number, scale: ConductorScale): string {
+  const intervals = SCALE_INTERVALS[scale]
+  const semitones = ((root - key) + 12) % 12
+  const degreeIndex = intervals.indexOf(semitones)
+  if (degreeIndex === -1) {
+    // chromatic — find nearest and prefix with b/#
+    const flatSemitones = ((root - key + 1) + 12) % 12
+    const nearestFlat = intervals.indexOf(flatSemitones)
+    if (nearestFlat !== -1) {
+      const roman = ROMAN[nearestFlat] ?? '?'
+      const isMinor = ['Minor','Min7','Min-add9','Min9','Min11','Dim'].includes(quality)
+      return `b${isMinor ? roman.toLowerCase() : roman}`
+    }
+    return '?'
+  }
+  const roman = ROMAN[degreeIndex] ?? '?'
+  const isMinor = ['Minor','Min7','Min-add9','Min9','Min11','Dim'].includes(quality)
+  return isMinor ? roman.toLowerCase() : roman
+}
+
 export function formatChordName(root: number, quality: ConductorChordQuality, bassRoot?: number | null): string {
   const rootName = CONDUCTOR_NOTE_NAMES[root]
   const suffix = QUALITY_SHORT[quality] ?? quality

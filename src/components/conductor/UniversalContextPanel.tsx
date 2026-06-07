@@ -10,9 +10,11 @@ import {
   HARMONIC_PRESETS,
   formatChordName,
   getChordNoteNames,
+  getScaleDegree,
   useUniversalConductorStore,
   type ChordSlot,
   type ConductorChordQuality,
+  type ConductorScale,
 } from '../../store/universalConductorStore'
 
 interface TransportSnapshot {
@@ -397,6 +399,8 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                   index={i}
                   isActive={c.chordIndex === i}
                   slot={c.chordProgression[i] ?? null}
+                  contextKey={c.key}
+                  contextScale={c.scale}
                   inputCss={inputCss}
                   t={t}
                   onChange={slot => c.updateChordSlot(i, slot)}
@@ -431,11 +435,13 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
 
 
 function ChordProgressionSlot({
-  index, isActive, slot, inputCss, t, onChange, onActivate,
+  index, isActive, slot, contextKey, contextScale, inputCss, t, onChange, onActivate,
 }: {
   index: number
   isActive: boolean
   slot: ChordSlot | null
+  contextKey: number
+  contextScale: ConductorScale
   inputCss: React.CSSProperties
   t: ReturnType<typeof import('../../lib/theme').useTheme>
   onChange: (slot: ChordSlot | null) => void
@@ -445,6 +451,7 @@ function ChordProgressionSlot({
   const cur = slot ?? { root: 0, quality: 'Min-add9' as ConductorChordQuality, octave: 3, bassRoot: null }
   const chordLabel = enabled ? formatChordName(cur.root, cur.quality, cur.bassRoot) : null
   const noteNames = enabled ? getChordNoteNames(cur.root, cur.quality) : null
+  const romanNumeral = enabled ? getScaleDegree(cur.root, cur.quality, contextKey, contextScale) : null
 
   return (
     <div style={{
@@ -501,6 +508,15 @@ function ChordProgressionSlot({
         <div style={{
           marginLeft: 34, marginTop: 2, display: 'flex', gap: 8, alignItems: 'baseline',
         }}>
+          {romanNumeral && (
+            <span style={{
+              fontSize: 7.5, fontFamily: 'monospace', fontWeight: 800, letterSpacing: '0.04em',
+              color: isActive ? 'rgba(167,139,250,0.9)' : 'rgba(167,139,250,0.5)',
+              minWidth: 16,
+            }}>
+              {romanNumeral}
+            </span>
+          )}
           {chordLabel && (
             <span style={{
               fontSize: 8.5, fontFamily: 'monospace', fontWeight: 700, letterSpacing: '0.03em',
@@ -512,7 +528,7 @@ function ChordProgressionSlot({
           {noteNames && (
             <span style={{
               fontSize: 7, fontFamily: 'monospace', letterSpacing: '0.05em',
-              color: 'rgba(167,139,250,0.45)',
+              color: 'rgba(167,139,250,0.35)',
             }}>
               {noteNames}
             </span>
