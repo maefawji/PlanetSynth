@@ -466,6 +466,27 @@ function computePredictedOrbit(
   return pts.join(' ')
 }
 
+function computePredictedPeriod(
+  liveBodies: LiveBody[],
+  G: number,
+  previewBody: LiveBody,
+): { seconds: number; bound: boolean } | null {
+  if (liveBodies.length === 0) return null
+  const center = liveBodies.reduce((best, body) => body.mass > best.mass ? body : best)
+  const r = Math.max(1, Math.hypot(previewBody.x - center.x, previewBody.y - center.y))
+  const speed = Math.hypot(previewBody.vx, previewBody.vy)
+  const mu = G * (center.mass + previewBody.mass)
+  const energy = 0.5 * speed * speed - mu / r
+  const bound = energy < -0.001 && mu > 0.001
+  const periodSim = bound
+    ? 2 * Math.PI * Math.sqrt(Math.max(1, -mu / (2 * energy)) ** 3 / mu)
+    : 2 * Math.PI * r / Math.max(speed, (mu > 0.001 ? Math.sqrt(mu / r) : speed) * 0.01)
+  return {
+    seconds: Math.max(0.3, Math.min(25, periodSim / 48)),
+    bound,
+  }
+}
+
 function circularOscilloscopePath(
   cx: number,
   cy: number,
@@ -1783,12 +1804,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     return Math.max(minMass, Math.round(minMass + t * (maxMass - minMass)))
   }
 
-  function planetMassFromDrag(dp: DragPlaceState): number {
-    const maxMass = Math.max(0.001, usePlanetStore.getState().nextPlanetDefaults.mass)
-    const minMass = Math.max(0.001, maxMass * 0.05)
-    const screenDist = Math.hypot(dp.dragX - dp.bodyX, dp.dragY - dp.bodyY) * zoomRef.current
-    const t = Math.min(1, screenDist / 220)
-    return Number((minMass + t * (maxMass - minMass)).toFixed(maxMass < 10 ? 2 : 1))
+  function planetPlacementMass(): number {
+    return Math.max(0.001, usePlanetStore.getState().nextPlanetDefaults.mass)
   }
 
   function commitDragPlace(dp: DragPlaceState) {
@@ -1804,7 +1821,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     const vy = isSun ? 0 : launchVelocity.vy
     const resolvedMass = isSun
       ? sunMassFromDrag(dp)
-      : planetMassFromDrag(dp)
+      : planetPlacementMass()
     const resolvedColor = defs.randomColor
       ? (dp.tool === 'add-sun'
           ? `hsl(${35 + Math.floor(Math.random() * 25)},90%,55%)`
@@ -2194,7 +2211,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     if (dragPlace.tool === 'add-sun') return null  // sun is fixed — no orbit preview
     const { vx, vy } = launchVelocityFromDrag(dragPlace)
     const previewBody: LiveBody = {
-      id: '__preview__', mass: planetMassFromDrag(dragPlace),
+      id: '__preview__', mass: planetPlacementMass(),
       x: dragPlace.bodyX, y: dragPlace.bodyY,
       z: 0, vx, vy, ax: 0, ay: 0, fixed: false,
     }
@@ -2250,8 +2267,23 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     const isSunDrag = dragPlace.tool === 'add-sun'
     const previewMass = isSunDrag
       ? sunMassFromDrag(dragPlace)
-      : planetMassFromDrag(dragPlace)
+      : planetPlacementMass()
     const isPlanetLaunch = dragPlace.tool === 'add-planet'
+    const launchVelocity = launchVelocityFromDrag(dragPlace)
+    const predictedPeriod = isPlanetLaunch
+      ? computePredictedPeriod(liveBodiesRef.current, simParamsRef.current.G, {
+          id: '__preview__',
+          mass: previewMass,
+          x: dragPlace.bodyX,
+          y: dragPlace.bodyY,
+          z: 0,
+          vx: launchVelocity.vx,
+          vy: launchVelocity.vy,
+          ax: 0,
+          ay: 0,
+          fixed: false,
+        })
+      : null
     return {
       col:      monochromeMode ? monoInk : isSunDrag ? '#f59e0b' : '#60a5fa',
       wr:       projectedBodyScreenR(
@@ -2269,6 +2301,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       sunMass:  previewMass,
       mass:     previewMass,
       isPlanetLaunch,
+      predictedPeriod,
     }
   })() : null
 
@@ -2724,11 +2757,18 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
               )}
               <circle cx={dragPlace.bodyX} cy={dragPlace.bodyY} r={dpOverlay.wr}
                 fill={dpOverlay.col} opacity={monochromeMode ? paperMainOpacity : 0.72} />
-              {(dpOverlay.isSun || dpOverlay.isPlanetLaunch) && (
+              {dpOverlay.isSun && (
                 <text x={dragPlace.bodyX} y={dragPlace.bodyY - dpOverlay.wr - 10 / zoom}
                   textAnchor="middle" fontSize={11 / zoom}
                   fill={dpOverlay.col} fontFamily="monospace" opacity={monochromeMode ? labelOpacity : 0.9}>
                   m={dpOverlay.mass}
+                </text>
+              )}
+              {dpOverlay.isPlanetLaunch && dpOverlay.predictedPeriod && (
+                <text x={dragPlace.bodyX} y={dragPlace.bodyY - dpOverlay.wr - 10 / zoom}
+                  textAnchor="middle" fontSize={11 / zoom}
+                  fill={dpOverlay.col} fontFamily="monospace" opacity={monochromeMode ? labelOpacity : 0.9}>
+                  T≈{dpOverlay.predictedPeriod.seconds.toFixed(1)}s{dpOverlay.predictedPeriod.bound ? '' : ' · unbound'}
                 </text>
               )}
             </g>
