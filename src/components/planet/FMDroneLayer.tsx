@@ -71,7 +71,7 @@ async function syncAllFMDroneEngines(engines: EngineMap): Promise<void> {
 
     const rootNote  = String(ep.fmDroneRootNote  ?? 'A2')
     const rootFreq  = noteToFreq(rootNote)
-    let   ratio     = Number(ep.fmDroneRatio    ?? 3)
+    const   ratio     = Number(ep.fmDroneRatio    ?? 3)
     let   index     = Number(ep.fmDroneIndex    ?? 3)
     let   brightness = 2000
     const volume    = Number(ep.fmDroneVolume   ?? 0.35)
@@ -140,13 +140,14 @@ export function FMDroneLayer() {
 
   // Stop all on unmount
   useEffect(() => {
+    const engines = enginesRef.current
     return () => {
-      for (const [id, eng] of enginesRef.current) {
+      for (const [id, eng] of engines) {
         eng.stop()
         releaseBus(id)
         clearBodyOutputLevel(id, 'fmdrone')
       }
-      enginesRef.current.clear()
+      engines.clear()
     }
   }, [])
 

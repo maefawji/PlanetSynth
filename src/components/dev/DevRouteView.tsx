@@ -326,7 +326,7 @@ function InstrumentCell({ bodyId, instrument, outLevel, selected, t }: {
 
 // ── Effect cell ───────────────────────────────────────────────────────────────
 
-function EffectCell({ bodyId, effects, outLevel, selected, t }: {
+function EffectCell({ bodyId, effects, outLevel: _outLevel, selected, t }: {
   bodyId: string
   effects: string[]
   outLevel: number
@@ -393,7 +393,7 @@ function MixerCell({ body, outLevel, selected, t }: {
 
 // ── Standpoint cell ───────────────────────────────────────────────────────────
 
-function StandpointCell({ bodyId, simParams, outLevel, selected, t }: {
+function StandpointCell({ bodyId, simParams, outLevel: _outLevel, selected, t }: {
   bodyId: string
   simParams: { standpointBodyId: string | null }
   outLevel: number

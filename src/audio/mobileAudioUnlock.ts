@@ -14,7 +14,7 @@ function kickSilent(ctx: AudioContext): void {
   osc.start(now)
   osc.stop(now + 0.03)
   window.setTimeout(() => {
-    try { osc.disconnect(); gain.disconnect() } catch (_) {}
+    try { osc.disconnect(); gain.disconnect() } catch { /* noop */ }
   }, 100)
 }
 
@@ -25,7 +25,7 @@ export function unlockMobileAudio(): Promise<void> {
   try {
     void ctx.resume()
     kickSilent(ctx)
-  } catch (_) {}
+  } catch { /* noop */ }
 
   if (_pending) return _pending
 

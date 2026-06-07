@@ -102,7 +102,7 @@ function Oscilloscope({ analyser }: { analyser: AnalyserNode | null }) {
       const drawLen = Math.min(buf.length - start, W*2)
       for (let i=0; i<drawLen; i++) {
         const x = (i/drawLen)*W, y = mid - buf[start+i]*mid*0.9
-        i===0 ? ctx2.moveTo(x,y) : ctx2.lineTo(x,y)
+        if (i===0) { ctx2.moveTo(x,y) } else { ctx2.lineTo(x,y) }
       }
       ctx2.stroke(); ctx2.shadowBlur = 0
       const barW = 3, levelH = Math.min(1,peak*1.2)*H
@@ -139,7 +139,7 @@ function TrailWaveform({ pts, signals, zoom, offset }: {
       ctx.beginPath(); ctx.strokeStyle = cfg.color; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'
       norm.forEach((v,i) => {
         const px=(i/(norm.length-1))*W, py=((1-v)/2)*H
-        i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py)
+        if (i===0) { ctx.moveTo(px,py) } else { ctx.lineTo(px,py) }
       })
       ctx.stroke()
     })
@@ -185,7 +185,7 @@ function SynthesisWaveform({ pts, signals, zoom, offset, dimColor, fallbackWavef
           ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.globalAlpha = alpha; ctx.lineJoin='round'
           fbPts.forEach((p,i) => {
             const px = (i/(fbPts.length-1))*W, py = ((1-p.y)/2)*H
-            i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py)
+            if (i===0) { ctx.moveTo(px,py) } else { ctx.lineTo(px,py) }
           })
           ctx.stroke(); ctx.globalAlpha = 1
         }
@@ -212,13 +212,13 @@ function SynthesisWaveform({ pts, signals, zoom, offset, dimColor, fallbackWavef
     signals.forEach((sig, si) => {
       const cfg = SIGNAL_CFG.find(s=>s.key===sig)!
       ctx.beginPath(); ctx.strokeStyle = cfg.color; ctx.lineWidth = 0.8; ctx.globalAlpha = 0.25
-      normed[si].forEach((v,i)=>{const px=(i/(normed[si].length-1))*W,py=((1-v)/2)*H;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py)})
+      normed[si].forEach((v,i)=>{const px=(i/(normed[si].length-1))*W,py=((1-v)/2)*H;if(i===0){ctx.moveTo(px,py)}else{ctx.lineTo(px,py)}})
       ctx.stroke()
     })
     ctx.globalAlpha = 1
     // draw sum
     ctx.beginPath(); ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 2; ctx.lineJoin='round'
-    sum_norm.forEach((v,i)=>{const px=(i/(sum_norm.length-1))*W,py=((1-v)/2)*H;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py)})
+    sum_norm.forEach((v,i)=>{const px=(i/(sum_norm.length-1))*W,py=((1-v)/2)*H;if(i===0){ctx.moveTo(px,py)}else{ctx.lineTo(px,py)}})
     ctx.stroke()
   }, [pts, signals, zoom, offset, dimColor, fallbackWaveformLeft, fallbackWaveformRight])
   return <canvas ref={canvasRef} width={1200} height={100} style={{width:'100%',height:100,display:'block',borderRadius:4}} />
@@ -251,6 +251,18 @@ function MiniKeyboard({ activeNote, onNoteOn, onNoteOff }: { activeNote: number|
 }
 
 // ── Main view ─────────────────────────────────────────────────────────────────
+
+const _bg = '#0a0a14', _border = 'rgba(255,255,255,0.07)', _dim = 'rgba(255,255,255,0.35)', _accent = '#818cf8'
+
+function SliderRow({ label, value, min, max, step, fmt, onChange }: { label:string; value:number; min:number; max:number; step:number; fmt?:(v:number)=>string; onChange:(v:number)=>void }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
+      <span style={{ fontSize:9, color:_dim, width:88, textAlign:'right', flexShrink:0 }}>{label}</span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(parseFloat(e.target.value))} style={{ flex:1, accentColor:_accent }} />
+      <span style={{ fontSize:9, fontFamily:'monospace', color:_accent, width:52, textAlign:'right', flexShrink:0 }}>{fmt?fmt(value):value}</span>
+    </div>
+  )
+}
 
 export function WaveLabView() {
   // Orbit + Trail state
@@ -289,6 +301,7 @@ export function WaveLabView() {
       // Trail points
       const pts: TrailPoint[] = Array.isArray(obj) ? obj : (obj.trail ?? obj.points)
       if (!pts || !Array.isArray(pts) || pts.length === 0 || !('x' in pts[0])) throw new Error('trail points[] not found')
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTrailPts(pts); setTrailMeta({ body: obj.body, n: pts.length }); setParseErr(''); setOffset(0)
       // Orbit snapshot
       if (obj.orbit && typeof obj.orbit.T === 'number') {
@@ -339,18 +352,8 @@ export function WaveLabView() {
   const noteOn  = useCallback((note: number) => { if(!engRef.current) return; if(heldNote!==null && heldNote!==note) engRef.current.noteOff(heldNote); engRef.current.noteOn(note,0.85); setHeldNote(note) }, [heldNote])
   const noteOff = useCallback((note: number) => { if(!engRef.current) return; engRef.current.noteOff(note); setHeldNote(prev=>prev===note?null:prev) }, [])
 
-  const bg = '#0a0a14', border = 'rgba(255,255,255,0.07)', dim = 'rgba(255,255,255,0.35)', accent = '#818cf8'
+  const bg = _bg, border = _border, dim = _dim, accent = _accent
   const panelStyle = { background:'rgba(255,255,255,0.03)', borderRadius:6, padding:'10px 12px', marginBottom:8 } as const
-
-  function SliderRow({ label, value, min, max, step, fmt, onChange }: { label:string; value:number; min:number; max:number; step:number; fmt?:(v:number)=>string; onChange:(v:number)=>void }) {
-    return (
-      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
-        <span style={{ fontSize:9, color:dim, width:88, textAlign:'right', flexShrink:0 }}>{label}</span>
-        <input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(parseFloat(e.target.value))} style={{ flex:1, accentColor:accent }} />
-        <span style={{ fontSize:9, fontFamily:'monospace', color:accent, width:52, textAlign:'right', flexShrink:0 }}>{fmt?fmt(value):value}</span>
-      </div>
-    )
-  }
 
   return (
     <div style={{ flex:1, display:'flex', flexDirection:'column', background:bg, color:'#e0e0e0', fontFamily:'inherit', overflow:'hidden' }}>
@@ -458,6 +461,7 @@ export function WaveLabView() {
           {/* Oscilloscope */}
           <div>
             <div style={{ fontSize:8, color:dim, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:4 }}>Oscilloscope</div>
+            {/* eslint-disable-next-line react-hooks/refs */}
             <Oscilloscope analyser={analyserRef.current} />
           </div>
 

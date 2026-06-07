@@ -27,14 +27,14 @@ function getToneNode(nodeId: string, nodeType: string): Tone.ToneAudioNode | nul
 }
 
 export function teardown() {
-  oscillators.forEach(o => { try { o.stop(); o.dispose() } catch (_) { /* ignore */ } })
-  noiseNodes.forEach(n => { try { n.stop(); n.dispose() } catch (_) { /* ignore */ } })
-  gainNodes.forEach(g => { try { g.dispose() } catch (_) { /* ignore */ } })
-  filterNodes.forEach(f => { try { f.dispose() } catch (_) { /* ignore */ } })
-  delayNodes.forEach(d => { try { d.dispose() } catch (_) { /* ignore */ } })
-  samplerPlayers.forEach(p => { try { p.stop(); p.dispose() } catch (_) { /* ignore */ } })
-  samplerFallbackSynths.forEach(s => { try { s.dispose() } catch (_) { /* ignore */ } })
-  samplerGains.forEach(g => { try { g.dispose() } catch (_) { /* ignore */ } })
+  oscillators.forEach(o => { try { o.stop(); o.dispose() } catch { /* ignore */ } })
+  noiseNodes.forEach(n => { try { n.stop(); n.dispose() } catch { /* ignore */ } })
+  gainNodes.forEach(g => { try { g.dispose() } catch { /* ignore */ } })
+  filterNodes.forEach(f => { try { f.dispose() } catch { /* ignore */ } })
+  delayNodes.forEach(d => { try { d.dispose() } catch { /* ignore */ } })
+  samplerPlayers.forEach(p => { try { p.stop(); p.dispose() } catch { /* ignore */ } })
+  samplerFallbackSynths.forEach(s => { try { s.dispose() } catch { /* ignore */ } })
+  samplerGains.forEach(g => { try { g.dispose() } catch { /* ignore */ } })
   oscillators.clear()
   noiseNodes.clear()
   gainNodes.clear()
@@ -129,7 +129,7 @@ export function buildGraph(project: ModularProject) {
     const src = getToneNode(edge.fromNodeId, fromNode.type)
     const dst = getToneNode(edge.toNodeId,   toNode.type)
     if (src && dst) {
-      try { src.connect(dst as Tone.InputNode) } catch (_) { /* ignore dup connect */ }
+      try { src.connect(dst as Tone.InputNode) } catch { /* ignore dup connect */ }
     }
   }
 
@@ -236,7 +236,7 @@ function triggerSampler(nodeId: string, project: ModularProject) {
     } else {
       fallback?.triggerAttackRelease('C2', '16n', Tone.now(), 0.85)
     }
-  } catch (_) {
+  } catch {
     /* ignore unexpected errors */
   }
 }
@@ -258,8 +258,8 @@ export async function startEngine(project: ModularProject): Promise<void> {
 }
 
 export function stopEngine() {
-  oscillators.forEach(o => { try { o.stop() } catch (_) { /* ignore */ } })
-  noiseNodes.forEach(n => { try { n.stop() } catch (_) { /* ignore */ } })
+  oscillators.forEach(o => { try { o.stop() } catch { /* ignore */ } })
+  noiseNodes.forEach(n => { try { n.stop() } catch { /* ignore */ } })
 }
 
 export async function resumeEngine(project: ModularProject): Promise<void> {

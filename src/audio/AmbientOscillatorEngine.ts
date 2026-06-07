@@ -157,7 +157,7 @@ export class AmbientOscillatorEngine {
   /** Disconnect lfoDepthGain from everything and reconnect to the new target. */
   private _applyLfoTarget(target: LfoTarget): void {
     if (!this.lfoDepthGain || !this.bodyOut) return
-    try { this.lfoDepthGain.disconnect() } catch (_) {}
+    try { this.lfoDepthGain.disconnect() } catch { /* noop */ }
 
     this._lfoTarget = target
     if (target === 'off') {
@@ -302,23 +302,23 @@ export class AmbientOscillatorEngine {
     if (release > 0.01) {
       amp.gain.setTargetAtTime(0.0001, now, Math.max(0.01, release / 3))
       const stopTime = now + release + 0.5
-      try { osc.stop(stopTime) } catch (_) {}
-      try { oscRight?.stop(stopTime) } catch (_) {}
+      try { osc.stop(stopTime) } catch { /* noop */ }
+      try { oscRight?.stop(stopTime) } catch { /* noop */ }
       setTimeout(() => {
         try {
           osc.disconnect(); oscRight?.disconnect(); amp.disconnect(); filter.disconnect()
           filterRight?.disconnect(); panLeft?.disconnect(); panRight?.disconnect()
-        } catch (_) {}
+        } catch { /* noop */ }
       }, (release + 0.8) * 1000)
     } else {
       amp.gain.setValueAtTime(0.0001, now)
-      try { osc.stop(now + 0.01) } catch (_) {}
-      try { oscRight?.stop(now + 0.01) } catch (_) {}
+      try { osc.stop(now + 0.01) } catch { /* noop */ }
+      try { oscRight?.stop(now + 0.01) } catch { /* noop */ }
       setTimeout(() => {
         try {
           osc.disconnect(); oscRight?.disconnect(); amp.disconnect(); filter.disconnect()
           filterRight?.disconnect(); panLeft?.disconnect(); panRight?.disconnect()
-        } catch (_) {}
+        } catch { /* noop */ }
       }, 50)
     }
   }
@@ -476,13 +476,13 @@ export class AmbientOscillatorEngine {
 
   dispose(): void {
     this.noteOffAll()
-    try { this.lfoOsc?.stop(); this.lfoOsc?.disconnect(); this.lfoDepthGain?.disconnect() } catch (_) {}
+    try { this.lfoOsc?.stop(); this.lfoOsc?.disconnect(); this.lfoDepthGain?.disconnect() } catch { /* noop */ }
     this.lfoOsc = null; this.lfoDepthGain = null
-    try { this._analyser?.disconnect() } catch (_) {}
+    try { this._analyser?.disconnect() } catch { /* noop */ }
     this._analyser = null
     const release = this.params.release
     setTimeout(() => {
-      try { this.panner?.disconnect(); this._limiter?.disconnect(); this.bodyOut?.disconnect() } catch (_) {}
+      try { this.panner?.disconnect(); this._limiter?.disconnect(); this.bodyOut?.disconnect() } catch { /* noop */ }
       this.ctx = null; this.panner = null; this._limiter = null; this.bodyOut = null
     }, (release + 1) * 1000)
   }

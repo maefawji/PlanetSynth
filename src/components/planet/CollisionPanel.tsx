@@ -4,6 +4,16 @@
 import { usePlanetStore } from '../../store/planetStore'
 import { useTheme } from '../../lib/theme'
 
+function Toggle({ checked, onChange, label, textColor }: { checked: boolean; onChange: (v: boolean) => void; label: string; textColor: string }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
+        style={{ accentColor: '#f87171' }} />
+      <span style={{ fontSize: 9, color: textColor }}>{label}</span>
+    </label>
+  )
+}
+
 export function CollisionPanel() {
   const t = useTheme()
   const simParams       = usePlanetStore(s => s.simParams)
@@ -14,14 +24,6 @@ export function CollisionPanel() {
   const dim    = t.textDim
   const border = t.divider
   const panel  = t.tagBg
-
-  const Toggle = ({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) => (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
-        style={{ accentColor: '#f87171' }} />
-      <span style={{ fontSize: 9, color: t.textMid }}>{label}</span>
-    </label>
-  )
 
   return (
     <div style={{ padding: '10px 12px', overflowY: 'auto', height: '100%' }}>
@@ -43,11 +45,11 @@ export function CollisionPanel() {
         {/* Toggles */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           <Toggle checked={collisionExcludeSun ?? true} onChange={v => updateSimParams({ collisionExcludeSun: v })}
-            label="Exclude fixed bodies (sun)" />
+            label="Exclude fixed bodies (sun)" textColor={t.textMid} />
           <Toggle checked={collisionSpawnStar ?? true} onChange={v => updateSimParams({ collisionSpawnStar: v })}
-            label="Spawn trigger star on hit" />
+            label="Spawn trigger star on hit" textColor={t.textMid} />
           <Toggle checked={collisionShowCircles !== false} onChange={v => updateSimParams({ collisionShowCircles: v })}
-            label="Show radius circles" />
+            label="Show radius circles" textColor={t.textMid} />
         </div>
       </div>
     </div>

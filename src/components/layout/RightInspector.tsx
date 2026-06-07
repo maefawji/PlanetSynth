@@ -4,7 +4,6 @@ import { useProjectStore } from '../../store/projectStore'
 import { useSelectionStore } from '../../store/selectionStore'
 import { useAudioStore } from '../../store/audioStore'
 import { usePlanetStore } from '../../store/planetStore'
-import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import { useControlSetStore } from '../../store/controlSetStore'
 import type { PlanetBody } from '../../store/planetStore'
 import type { PlanetTool } from '../planet/PlanetCanvas'
@@ -16,8 +15,6 @@ import { getBodyOutputLevel } from '../../audio/bodyOutputMeter'
 import type { GeometryType, JSONValue, SignalType } from '../../patch/types'
 import { useTheme } from '../../lib/theme'
 import { getMidiOutputs, getSelectedOutputId, setSelectedOutputId, isMidiReady, midiNoteToName } from '../../audio/midiManager'
-import { computeOrbitStats } from '../planet/DroneLayer'
-import { getPlanetLiveBodySnapshot, planetBodyStatsCache } from '../planet/PlanetCanvas'
 
 const signalColor: Record<SignalType, string> = {
   audio: '#1a1a1a', control: '#2563eb', trigger: '#c2410c', sample: '#db2777', geometry: '#16a34a', geometryList: '#7c3aed',
@@ -30,7 +27,7 @@ interface RightInspectorProps {
   onToggleCollapsed: () => void
 }
 
-export function RightInspector({ mode, planetTool, collapsed, onToggleCollapsed }: RightInspectorProps) {
+export function RightInspector({ mode, planetTool: _planetTool, collapsed, onToggleCollapsed }: RightInspectorProps) {
   const t               = useTheme()
   const selectedNodeId  = useSelectionStore(s => s.selectedNodeId)
   const selectedGeomId  = useSelectionStore(s => s.selectedGeometryId)
@@ -279,7 +276,7 @@ function PlanetMixerSection() {
       if (rack.instrument !== 'instrument-sampler') continue
       const ep = csStore.getBodyEffectiveParams(b.id) as Record<string, unknown>
       const samplerMode = String(ep.samplerMode ?? 'auto')
-      let sample = null
+      let sample: (typeof samples)[0] | null
       if (samplerMode === 'fixed') {
         const fixedId = String(ep.samplerSampleId ?? '')
         sample = fixedId ? (samples.find(s => s.id === fixedId) ?? null) : null
@@ -553,107 +550,6 @@ function MidiOutSection({
 // ── Body orbit stats section ──────────────────────────────────────────────────
 
 /** Live orbital statistics for one body, polled at 100 ms. */
-function BodyOrbitSection({ bodyId }: { bodyId: string }) {
-  const t      = useTheme()
-  const simpleTheme = usePlanetStore(s => s.simParams.simpleTheme)
-  const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
-  const simple = simpleTheme || monochromeMode
-
-  // Both liveStats and orbitStats are updated together in one interval.
-  // Calling update() immediately on mount avoids stale-display after reload
-  // (getPlanetLiveBodySnapshot() starts as [] and is only populated after
-  //  the first RAF frame, so calling it in the render phase always gave null).
-  const [liveStats,  setLiveStats]  = useState<ReturnType<typeof planetBodyStatsCache.get>>(null)
-  const [orbitStats, setOrbitStats] = useState<ReturnType<typeof computeOrbitStats>>(null)
-
-  useEffect(() => {
-    const update = () => {
-      setLiveStats(planetBodyStatsCache.get(bodyId) ?? null)
-      const { bodies: storeBodies, simParams: { G: liveG } } = usePlanetStore.getState()
-      const liveBodies = getPlanetLiveBodySnapshot()
-      const liveById   = new Map(liveBodies.map(b => [b.id, b]))
-      const effective  = storeBodies.map(b => {
-        const live = liveById.get(b.id)
-        return live ? { ...b, x: live.x, y: live.y, vx: live.vx, vy: live.vy } : b
-      })
-      const orbitBody = effective.find(b => b.id === bodyId) ?? null
-      setOrbitStats(orbitBody ? computeOrbitStats(orbitBody, effective, liveG) : null)
-    }
-    update() // populate immediately — don't wait 100ms on mount/body-change
-    const id = window.setInterval(update, 100)
-    return () => window.clearInterval(id)
-  }, [bodyId])
-
-  const accentCol = simple ? '#2563eb' : '#7c3aed'
-  const freeCol   = simple ? '#dc2626' : '#f87171'
-  const meterBg   = simple ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.06)'
-
-  return (
-    <div style={{ padding: '5px 12px 6px', borderTop: `0.5px solid ${t.divider}` }}>
-      {/* Header: ◎ Orbit · bound/free · center name */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
-        <span style={{ fontSize: 8, fontWeight: 700, color: accentCol, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-          ◎ Orbit
-        </span>
-        {orbitStats && (
-          <span style={{ fontSize: 7, color: orbitStats.bound ? accentCol : freeCol, letterSpacing: '0.05em' }}>
-            {orbitStats.bound ? '⟳ bound' : '↗ free'}
-          </span>
-        )}
-        {orbitStats && (
-          <span style={{ fontSize: 7, color: t.textDim, opacity: 0.65, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-            ← {orbitStats.centerName}
-          </span>
-        )}
-      </div>
-
-      {/* T / ecc / r / v — 2×2 grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 10px', marginBottom: 5 }}>
-        {([
-          { key: 'T',   val: orbitStats ? `${orbitStats.T_real.toFixed(1)}s` : '—', hint: 'orbital period'  },
-          { key: 'ecc', val: orbitStats ? orbitStats.ecc.toFixed(2)           : '—', hint: 'eccentricity'    },
-          { key: 'r',   val: orbitStats ? `${Math.round(orbitStats.r)}`       : '—', hint: 'distance'        },
-          { key: 'v',   val: orbitStats ? orbitStats.speed.toFixed(1)         : '—', hint: 'current speed'   },
-        ] as const).map(row => (
-          <div key={row.key} title={row.hint} style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-            <span style={{ fontSize: 8, color: t.textDim, width: 20, textAlign: 'right', flexShrink: 0 }}>{row.key}</span>
-            <span style={{ fontSize: 10, fontFamily: 'monospace', color: accentCol, lineHeight: 1 }}>{row.val}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Live bars: spd · r · acc · ω */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3.5 }}>
-        {([
-          { label: 'spd', norm: liveStats ? Math.min(1, liveStats.speed / 4)                : 0, color: '#60a5fa' },
-          { label: 'r',   norm: liveStats ? Math.min(1, liveStats.r / 700)                  : 0, color: '#34d399' },
-          { label: 'acc', norm: liveStats ? Math.min(1, liveStats.accel * 80)               : 0, color: '#f87171' },
-          { label: 'ω',   norm: liveStats ? Math.min(1, Math.abs(liveStats.omega) / 0.025) : 0, color: '#fbbf24' },
-        ] as const).map(({ label, norm, color }) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 8, color: t.textDim, width: 20, textAlign: 'right', flexShrink: 0, lineHeight: 1 }}>{label}</span>
-            <div style={{ flex: 1, height: 4, background: meterBg, borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{ width: `${norm * 100}%`, height: '100%', background: color, borderRadius: 2, transition: 'width 0.06s linear' }} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Phase angle */}
-      {liveStats && (
-        <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 8, color: t.textDim, width: 20, textAlign: 'right', flexShrink: 0 }}>φ</span>
-          <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#fbbf24' }}>
-            {liveStats.angleDeg.toFixed(1)}°
-          </span>
-          <span style={{ fontSize: 7, color: t.textDim, opacity: 0.6 }}>
-            lfo {(liveStats.lfoPhase * 100).toFixed(0)}%
-          </span>
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ── Planet body inspector ─────────────────────────────────────────────────────
 
@@ -877,7 +773,7 @@ export function PlanetBodyInspector({ hideHeader }: { hideHeader?: boolean } = {
 
 // ── Effector section ──────────────────────────────────────────────────────────
 
-const FX_COLOR: Record<string, string> = {
+const _FX_COLOR: Record<string, string> = {
   reverb:     '#f97316',
   delay:      '#a78bfa',
   distortion: '#ef4444',
@@ -886,209 +782,6 @@ const FX_COLOR: Record<string, string> = {
   autofilter: '#22d3ee',
   bitcrush:   '#fb923c',
   freeze:     '#7dd3fc',
-}
-
-function EffectorSection({
-  body, updateBody,
-}: {
-  body: PlanetBody
-  updateBody: (id: string, patch: Partial<PlanetBody>) => void
-}) {
-  const t = useTheme()
-  const type      = body.effectorType     ?? 'none'
-  const dist      = body.effectorDistance ?? 200
-  const maxWet    = body.effectorMaxWet   ?? 0.7
-  const isActive  = type !== 'none'
-  const accentCol = isActive ? (FX_COLOR[type] ?? '#f97316') : t.textDim
-
-  const inputStyle: React.CSSProperties = {
-    flex: 1, minWidth: 0, fontSize: 11, fontFamily: 'monospace',
-    border: 'none', borderRadius: 4, padding: '2px 6px', background: t.inputBg, color: t.inputText,
-  }
-  const labelStyle: React.CSSProperties = {
-    fontSize: 9, color: t.textDim, width: 58, textAlign: 'right', flexShrink: 0,
-  }
-
-  return (
-    <div style={{ padding: '8px 12px', borderTop: `0.5px solid ${t.divider}` }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: isActive ? 7 : 0 }}>
-        <span style={{
-          fontSize: 9, fontWeight: 600, color: accentCol,
-          textTransform: 'uppercase', letterSpacing: '0.05em', flex: 1,
-        }}>
-          Effector
-        </span>
-        <select
-          value={type}
-          onChange={e => updateBody(body.id, { effectorType: e.target.value as PlanetBody['effectorType'] })}
-          style={{
-            fontSize: 10, border: 'none', borderRadius: 4, padding: '2px 5px',
-            background: isActive ? `${accentCol}1a` : t.inputBg,
-            color: isActive ? accentCol : t.textMid,
-            fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer',
-          }}
-        >
-          <option value="none">— None —</option>
-          <option value="reverb">Reverb</option>
-          <option value="delay">Delay</option>
-          <option value="distortion">Distortion</option>
-          <option value="chorus">Chorus</option>
-          <option value="phaser">Phaser</option>
-          <option value="autofilter">Auto-Filter</option>
-          <option value="bitcrush">Bit Crush</option>
-          <option value="freeze">Freeze</option>
-        </select>
-      </div>
-
-      {isActive && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {/* Shared: Radius + Max wet */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={labelStyle}>Radius</span>
-            <input type="number" value={dist} min={10} step={20}
-              onChange={e => updateBody(body.id, { effectorDistance: Math.max(10, Number(e.target.value)) })}
-              style={inputStyle} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={labelStyle}>Max wet</span>
-            <input type="number" value={maxWet} min={0} max={1} step={0.05}
-              onChange={e => updateBody(body.id, { effectorMaxWet: Math.max(0, Math.min(1, Number(e.target.value))) })}
-              style={inputStyle} />
-          </div>
-
-          {/* Reverb: Decay */}
-          {type === 'reverb' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>Decay</span>
-              <input type="number" value={body.effectorDecay ?? 2.5} min={0.1} max={15} step={0.5}
-                onChange={e => updateBody(body.id, { effectorDecay: Math.max(0.1, Number(e.target.value)) })}
-                style={inputStyle} />
-              <span style={{ fontSize: 9, color: t.textDim, flexShrink: 0 }}>s</span>
-            </div>
-          )}
-
-          {/* Delay: Division + Feedback */}
-          {type === 'delay' && (<>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>Delay</span>
-              <select
-                value={String(body.effectorDelayDivision ?? 0.25)}
-                onChange={e => updateBody(body.id, { effectorDelayDivision: Number(e.target.value) })}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-              >
-                <option value="2">2×</option>
-                <option value="1">1×</option>
-                <option value="0.5">1/2</option>
-                <option value="0.25">1/4</option>
-                <option value="0.125">1/8</option>
-                <option value="0.0625">1/16</option>
-              </select>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>Feedback</span>
-              <input type="number" value={body.effectorFeedback ?? 0.4} min={0} max={0.9} step={0.05}
-                onChange={e => updateBody(body.id, { effectorFeedback: Math.max(0, Math.min(0.9, Number(e.target.value))) })}
-                style={inputStyle} />
-            </div>
-          </>)}
-
-          {/* Distortion: Amount */}
-          {type === 'distortion' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>Distort</span>
-              <input type="number" value={body.effectorDistortion ?? 0.4} min={0} max={1} step={0.05}
-                onChange={e => updateBody(body.id, { effectorDistortion: Math.max(0, Math.min(1, Number(e.target.value))) })}
-                style={inputStyle} />
-            </div>
-          )}
-
-          {/* Chorus: Rate + Depth */}
-          {type === 'chorus' && (<>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>Rate</span>
-              <input type="number" value={body.effectorChorusFreq ?? 1.5} min={0.1} max={20} step={0.1}
-                onChange={e => updateBody(body.id, { effectorChorusFreq: Math.max(0.1, Number(e.target.value)) })}
-                style={inputStyle} />
-              <span style={{ fontSize: 9, color: t.textDim, flexShrink: 0 }}>Hz</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>Depth</span>
-              <input type="number" value={body.effectorChorusDepth ?? 0.5} min={0} max={1} step={0.05}
-                onChange={e => updateBody(body.id, { effectorChorusDepth: Math.max(0, Math.min(1, Number(e.target.value))) })}
-                style={inputStyle} />
-            </div>
-          </>)}
-
-          {/* Phaser: Rate + Octaves */}
-          {type === 'phaser' && (<>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>Rate</span>
-              <input type="number" value={body.effectorPhaserRate ?? 0.5} min={0.05} max={5} step={0.05}
-                onChange={e => updateBody(body.id, { effectorPhaserRate: Math.max(0.05, Number(e.target.value)) })}
-                style={inputStyle} />
-              <span style={{ fontSize: 9, color: t.textDim, flexShrink: 0 }}>Hz</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>Octaves</span>
-              <input type="number" value={body.effectorPhaserOctaves ?? 3} min={1} max={6} step={1}
-                onChange={e => updateBody(body.id, { effectorPhaserOctaves: Math.max(1, Math.min(6, Number(e.target.value))) })}
-                style={inputStyle} />
-            </div>
-          </>)}
-
-          {/* Auto-Filter: Rate + Depth + Base Freq */}
-          {type === 'autofilter' && (<>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>LFO rate</span>
-              <input type="number" value={body.effectorAutoFilterFreq ?? 1.0} min={0.05} max={8} step={0.05}
-                onChange={e => updateBody(body.id, { effectorAutoFilterFreq: Math.max(0.05, Number(e.target.value)) })}
-                style={inputStyle} />
-              <span style={{ fontSize: 9, color: t.textDim, flexShrink: 0 }}>Hz</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>Depth</span>
-              <input type="number" value={body.effectorAutoFilterDepth ?? 1.0} min={0} max={1} step={0.05}
-                onChange={e => updateBody(body.id, { effectorAutoFilterDepth: Math.max(0, Math.min(1, Number(e.target.value))) })}
-                style={inputStyle} />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>Base</span>
-              <input type="number" value={body.effectorAutoFilterBaseFreq ?? 200} min={80} max={2000} step={20}
-                onChange={e => updateBody(body.id, { effectorAutoFilterBaseFreq: Math.max(80, Number(e.target.value)) })}
-                style={inputStyle} />
-              <span style={{ fontSize: 9, color: t.textDim, flexShrink: 0 }}>Hz</span>
-            </div>
-          </>)}
-
-          {/* Bit Crush: Bits */}
-          {type === 'bitcrush' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>Bits</span>
-              <input type="number" value={body.effectorBitDepth ?? 8} min={2} max={16} step={1}
-                onChange={e => updateBody(body.id, { effectorBitDepth: Math.max(2, Math.min(16, Number(e.target.value))) })}
-                style={inputStyle} />
-            </div>
-          )}
-
-          {/* Freeze: Decay */}
-          {type === 'freeze' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={labelStyle}>Decay</span>
-              <input type="number" value={body.effectorFreezeDecay ?? 30} min={10} max={60} step={5}
-                onChange={e => updateBody(body.id, { effectorFreezeDecay: Math.max(10, Number(e.target.value)) })}
-                style={inputStyle} />
-              <span style={{ fontSize: 9, color: t.textDim, flexShrink: 0 }}>s</span>
-            </div>
-          )}
-
-          <div style={{ fontSize: 8.5, color: t.textDim, lineHeight: 1.4, marginTop: 1 }}>
-            範囲内の天体の音にエフェクトをかける。近いほど wet が上がる。
-          </div>
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1109,6 +802,7 @@ function NodeInspector({ nodeId, nodeType, params }: {
   nodeId: string; nodeType: string; params: Record<string, JSONValue>
 }) {
   const def        = nodeRegistry[nodeType]
+  const t          = useTheme()
   const updateNode = useProjectStore(s => s.updateNodeParams)
   const addSampleAsset = useProjectStore(s => s.addSampleAsset)
   const samples    = useProjectStore(s => s.project.samples)
@@ -1152,8 +846,6 @@ function NodeInspector({ nodeId, nodeType, params }: {
   }
 
   if (!def) return null
-
-  const t = useTheme()
 
   return (
     <div>
@@ -1338,6 +1030,7 @@ function GeomInspector({ geomId, geomType, sampleId, params, mode }: {
 
   useEffect(() => {
     if (!sampleId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPlayback(null)
       return
     }

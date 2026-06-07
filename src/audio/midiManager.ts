@@ -66,7 +66,7 @@ async function _doInit(): Promise<void> {
   }
 }
 
-function _handleStateChange(_e: MIDIConnectionEvent) {
+function _handleStateChange(_: MIDIConnectionEvent) {
   _attachInputListeners()
 }
 

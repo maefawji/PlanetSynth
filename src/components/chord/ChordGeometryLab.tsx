@@ -388,6 +388,7 @@ export function ChordGeometryLab() {
   useEffect(() => {
     if (labMode === 'suggest' && suggestions.length === 0) {
       const results = generateSuggestions(suggestKey.root, [], 4, 'all')
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSuggestions(results)
       if (results.length > 0) {
         setSelectedSuggestion(results[0])

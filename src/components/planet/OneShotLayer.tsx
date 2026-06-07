@@ -116,7 +116,7 @@ async function syncAllOneShotEngines(engines: EngineMap): Promise<void> {
       try {
         const ctx = Tone.getContext().rawContext as AudioContext
         eng.getOutputNode().gain.setTargetAtTime(engVol, ctx.currentTime, 0.02)
-      } catch (_) {}
+      } catch { /* noop */ }
 
       // VU meter: include standpoint attenuation for display purposes
       const spatial       = computeBodyRackOutputSpatial(body.id, effectiveBodies, simParams, ep as never)
@@ -177,13 +177,14 @@ export function OneShotLayer() {
 
   // Cleanup on unmount
   useEffect(() => {
+    const engines = enginesRef.current
     return () => {
-      for (const [id, { eng, busHeld }] of enginesRef.current) {
+      for (const [id, { eng, busHeld }] of engines) {
         eng.dispose()
         unregisterBodyOneShotEngine(id)
         if (busHeld) releaseBus(id)
       }
-      enginesRef.current.clear()
+      engines.clear()
     }
   }, [])
 

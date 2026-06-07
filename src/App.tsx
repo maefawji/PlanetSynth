@@ -17,7 +17,6 @@ import { LongSamplerLayer } from './components/planet/LongSamplerLayer'
 import { OscSynthLayer } from './components/planet/OscSynthLayer'
 import { WaveLabInstrumentLayer } from './components/planet/WaveLabInstrumentLayer'
 import { WholeInstrumentLayer } from './components/planet/WholeInstrumentLayer'
-import { SamplerInstrumentPanel } from './components/sampler/SamplerInstrumentPanel'
 import { OneShotSamplerPanel } from './components/sampler/OneShotSamplerPanel'
 import { DevRouteView } from './components/dev/DevRouteView'
 import { OscView } from './components/osc/OscView'
@@ -76,13 +75,11 @@ export default function App() {
   const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
   const monochromeInverted = useCanvasSettingsStore(s => s.monochromeInverted)
   const wholeInstrumentPanelOpen = useWholeInstrumentStore(s => s.panelOpen)
-  const setWholeInstrumentPanelOpen = useWholeInstrumentStore(s => s.setPanelOpen)
   const orbitHubPanelOpen = useOrbitHubStore(s => s.panelOpen)
   const [leftCollapsed, setLeftCollapsed] = useState(true)
   const [rightCollapsed, setRightCollapsed] = useState(true)
   const [rackCollapsed, setRackCollapsed] = useState(false)
   const [rackH, setRackH] = useState(RACK_DEFAULT)
-  const [samplerPanel, setSamplerPanel]   = useState<{ bodyId: string; slotKey: string } | null>(null)
   const [oneShotPanel, setOneShotPanel]   = useState<{ bodyId: string; slotKey: string } | null>(null)
   const rackDragging = useRef(false)
   const rackStartY   = useRef(0)
@@ -429,14 +426,14 @@ export default function App() {
               </div>
             </div>
 
-            {/* Sampler instrument editor panel — temporarily hidden */}
-            {false && samplerPanel && (
+            {/* Sampler instrument editor panel — temporarily hidden
+            {samplerPanel && (
               <SamplerInstrumentPanel
                 bodyId={samplerPanel.bodyId}
                 slotKey={samplerPanel.slotKey}
                 onClose={() => setSamplerPanel(null)}
               />
-            )}
+            )} */}
 
             {/* One-shot sampler panel */}
             {oneShotPanel && (

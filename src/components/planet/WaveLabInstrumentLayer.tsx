@@ -33,7 +33,6 @@ import {
 import { computeOrbitStats } from './DroneLayer'
 import {
   getPlanetLiveBodySnapshot,
-  planetBodyStatsCache,
   getBodyTrailPoints,
 } from './PlanetCanvas'
 
@@ -99,10 +98,12 @@ function orbitVal(
 const _engines = new Map<string, AmbientOscillatorEngine>()
 const _waveformRefreshListeners = new Set<(bodyId: string) => void>()
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function getBodyWaveLabEngine(bodyId: string): AmbientOscillatorEngine | undefined {
   return _engines.get(bodyId)
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function subscribeWaveLabWaveformRefresh(listener: (bodyId: string) => void): () => void {
   _waveformRefreshListeners.add(listener)
   return () => _waveformRefreshListeners.delete(listener)
@@ -112,6 +113,7 @@ function notifyWaveLabWaveformRefresh(bodyId: string): void {
   for (const listener of _waveformRefreshListeners) listener(bodyId)
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function refreshBodyWaveLabWaveform(
   bodyId: string,
   opts: { applyToActive?: boolean } = { applyToActive: false },

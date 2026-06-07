@@ -271,7 +271,7 @@ const CY = 50
 const f = (n: number) => n.toFixed(2)
 const fp = (p: Pt) => `${f(p.x)},${f(p.y)}`
 const deg = (a: number) => a * Math.PI / 180
-const strokeOf = (_w: SigilStrokeWeight) => 1.55
+const strokeOf = (_: SigilStrokeWeight) => 1.55
 
 function makePrng(seed: number): () => number {
   let s = seed | 0
@@ -329,7 +329,7 @@ function circle(c: Pt, r: number, role: SigilRole, w: number, mode: SigilRenderM
   return { kind: 'circle', cx: c.x, cy: c.y, r, renderMode: mode, role, strokeWidth: mode === 'fill' ? 0 : w, opacity }
 }
 
-function filledPolygon(points: Pt[], role: SigilRole, opacity = 1): SigilShape {
+function _filledPolygon(points: Pt[], role: SigilRole, opacity = 1): SigilShape {
   return { kind: 'polygon', points, renderMode: 'fill', role, opacity }
 }
 
@@ -587,9 +587,9 @@ function coreMotif(motif: CoreMotif, role: SigilRole, w: number, slotDef: Slot):
 function addTerminalMotif(shapes: SigilShape[], terminals: Anchor[], motif: TerminalMotif, w: number): void {
   if (motif === 'none') return
   for (const { p, angle } of terminals.slice(0, 3)) {
-    const tip = polar(7, angle, p)
-    const left = polar(5, angle + 145, p)
-    const right = polar(5, angle - 145, p)
+    const _tip = polar(7, angle, p)
+    const _left = polar(5, angle + 145, p)
+    const _right = polar(5, angle - 145, p)
     if (motif === 'dot') shapes.push(circle(p, 3.25, 'accent', w, 'fill'))
     else if (motif === 'ball') shapes.push(circle(p, 3.4, 'accent', w, 'stroke'))
     else if (motif === 'bar') shapes.push(line(polar(4, angle + 90, p), polar(4, angle - 90, p), 'accent', w * 0.78))

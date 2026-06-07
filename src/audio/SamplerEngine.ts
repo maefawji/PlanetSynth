@@ -49,7 +49,6 @@ function buildPlayBuffer(
   reverse: boolean,
   pingpong: boolean,
 ): AudioBuffer {
-  const ctx       = raw  // we only need sampleRate + numberOfChannels from it
   const sr        = raw.sampleRate
   const nch       = raw.numberOfChannels
   const rawLen    = raw.length
@@ -221,7 +220,7 @@ export class SamplerEngine {
     if (!this.ctx || !this.master || !this.playBuffer) return
 
     // Stop existing source without fade
-    try { this.source?.stop() } catch (_) {}
+    try { this.source?.stop() } catch { /* noop */ }
     this.source = null
 
     const now = this.ctx.currentTime
@@ -278,7 +277,7 @@ export class SamplerEngine {
     this.master.gain.setValueAtTime(Math.max(this.master.gain.value, 0.0001), now)
     this.master.gain.exponentialRampToValueAtTime(0.0001, end)
 
-    try { this.source?.stop(end + 0.05) } catch (_) {}
+    try { this.source?.stop(end + 0.05) } catch { /* noop */ }
 
     setTimeout(() => {
       this.source    = null

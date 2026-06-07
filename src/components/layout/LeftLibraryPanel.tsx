@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ChevronLeft, ChevronRight, FolderOpen, Settings, SlidersHorizontal, Upload, Crosshair, Activity, Sun, Music, Wand2, ToggleLeft, Star, Radio, CircleHelp, Sparkles, Radar, Zap, Save as SaveIcon, Download, Gauge } from 'lucide-react'
 import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
-import { usePlanetStore, type PlanetSimParams } from '../../store/planetStore'
+import { usePlanetStore } from '../../store/planetStore'
 import { CollisionPanel } from '../planet/CollisionPanel'
 import { clearStardustDots } from '../planet/PlanetCanvas'
 import { useWholeInstrumentStore } from '../../store/wholeInstrumentStore'
@@ -27,7 +27,6 @@ import {
   samplesFromFiles,
   samplesFromLibrary,
   saveSampleLibraryFile,
-  hydrateSamplesFromFolder,
   loadDefaultFolderSamples,
   pickDefaultFolder,
   type CachedSampleLibrary,
@@ -431,7 +430,7 @@ type FileNode   = { type: 'file';   name: string; path: string }
 type FolderNode = { type: 'folder'; name: string; path: string; children: TreeNode[] }
 type TreeNode   = FileNode | FolderNode
 
-function buildTree(paths: string[]): TreeNode[] {
+function _buildTree(paths: string[]): TreeNode[] {
   const root: TreeNode[] = []
   for (const filePath of paths) {
     const parts = filePath.split('/')
@@ -448,150 +447,6 @@ function buildTree(paths: string[]): TreeNode[] {
     nodes.push({ type: 'file', name: parts[parts.length - 1], path: filePath })
   }
   return root
-}
-
-function LibraryExplorer({ loadedSamples }: { loadedSamples: SampleAsset[] }) {
-  const t = useTheme()
-  const [tree, setTree]         = useState<TreeNode[]>([])
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [status, setStatus]     = useState<'loading' | 'empty' | 'ok'>('loading')
-  const { addSampleAssets } = useProjectStore()
-
-  useEffect(() => {
-    fetch('/samples/_index.json', { cache: 'no-cache' })
-      .then(r => r.json())
-      .then((files: string[]) => {
-        setTree(buildTree(files))
-        setStatus(files.length === 0 ? 'empty' : 'ok')
-        // Expand all top-level folders by default
-        const topFolders = buildTree(files).filter(n => n.type === 'folder').map(n => n.path)
-        setExpanded(new Set(topFolders))
-      })
-      .catch(() => setStatus('empty'))
-  }, [])
-
-  function isLoaded(filePath: string) {
-    return loadedSamples.some(s => s.sourcePath === `/samples/${filePath}` || s.id === `builtin:${filePath}`)
-  }
-  function getLoaded(filePath: string) {
-    return loadedSamples.find(s => s.sourcePath === `/samples/${filePath}` || s.id === `builtin:${filePath}`)
-  }
-
-  async function handleFileClick(filePath: string) {
-    let sample = getLoaded(filePath)
-    if (!sample) {
-      // Load on demand
-      try {
-        const url  = '/samples/' + filePath.split('/').map(encodeURIComponent).join('/')
-        const blob = await fetch(url).then(r => r.blob())
-        const objectUrl = URL.createObjectURL(blob)
-        const ext = filePath.lastIndexOf('.') >= 0 ? filePath.slice(filePath.lastIndexOf('.')).toLowerCase() : ''
-        const mime: Record<string,string> = { '.wav':'audio/wav','.mp3':'audio/mpeg','.ogg':'audio/ogg','.flac':'audio/flac','.aiff':'audio/aiff','.aif':'audio/aiff','.m4a':'audio/mp4','.mp4':'audio/mp4','.webm':'audio/webm' }
-        const newSample: SampleAsset = {
-          id: `builtin:${filePath}`,
-          name: filePath.split('/').pop()!.replace(/\.[^.]+$/, ''),
-          objectUrl,
-          fileType: mime[ext] ?? 'audio/*',
-          sourcePath: `/samples/${filePath}`,
-          source: 'builtin',
-        }
-        addSampleAssets([newSample])
-        sample = newSample
-      } catch { return }
-    }
-  }
-
-  function renderNodes(nodes: TreeNode[], depth = 0): React.ReactNode {
-    return nodes.map(node => {
-      const indent = depth * 12 + 8
-      if (node.type === 'folder') {
-        const open = expanded.has(node.path)
-        return (
-          <div key={node.path}>
-            <button
-              onClick={() => setExpanded(prev => {
-                const next = new Set(prev)
-                open ? next.delete(node.path) : next.add(node.path)
-                return next
-              })}
-              style={{
-                width: '100%', textAlign: 'left', border: 'none', background: 'none',
-                cursor: 'pointer', padding: `4px 8px 4px ${indent}px`,
-                display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = t.hoverBg)}
-              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-            >
-              <span style={{ fontSize: 9, color: t.textDim, width: 8, flexShrink: 0 }}>{open ? '▼' : '▶'}</span>
-              <span style={{ fontSize: 11, color: '#f59e0b' }}>📁</span>
-              <span style={{ fontSize: 11, color: t.textMid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {node.name}
-              </span>
-            </button>
-            {open && renderNodes(node.children, depth + 1)}
-          </div>
-        )
-      }
-      // file
-      const loaded = isLoaded(node.path)
-      return (
-        <button
-          key={node.path}
-          title={loaded ? node.path : `Load "${node.name}"`}
-          onClick={() => handleFileClick(node.path)}
-          style={{
-            width: '100%', textAlign: 'left', border: 'none', background: 'none',
-            cursor: 'pointer', padding: `4px 8px 4px ${indent}px`,
-            display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = t.hoverBg)}
-          onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-        >
-          <span style={{ width: 8, flexShrink: 0 }} />
-          <span style={{ fontSize: 10, color: loaded ? '#60a5fa' : t.textDim }}>♪</span>
-          <span style={{
-            fontSize: 11, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            color: loaded ? t.text : t.textMid,
-          }}>
-            {node.name.replace(/\.[^.]+$/, '')}
-          </span>
-          {loaded && (
-            <span style={{ fontSize: 8, color: '#60a5fa', background: 'rgba(96,165,250,0.10)', borderRadius: 3, padding: '1px 4px', flexShrink: 0 }}>
-              ✓
-            </span>
-          )}
-        </button>
-      )
-    })
-  }
-
-  return (
-    <div style={{ borderBottom: `0.5px solid ${t.divider}` }}>
-      <div style={{
-        padding: '6px 8px 4px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
-        <span style={{ fontSize: 9, fontWeight: 700, color: t.textMid, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Library Folder
-        </span>
-        <span style={{ fontSize: 9, color: t.textDim }}>/public/samples/</span>
-      </div>
-
-      {status === 'loading' && (
-        <div style={{ fontSize: 10, color: t.textDim, padding: '4px 12px 8px' }}>Loading…</div>
-      )}
-      {status === 'empty' && (
-        <div style={{ fontSize: 10, color: t.textDim, padding: '4px 12px 8px', lineHeight: 1.5 }}>
-          Drop audio files into <code style={{ fontSize: 9, background: t.inputBg, padding: '1px 3px', borderRadius: 2 }}>public/samples/</code> to see them here.
-        </div>
-      )}
-      {status === 'ok' && (
-        <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-          {renderNodes(tree)}
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2434,7 +2289,7 @@ function MidiPanel() {
   const rowStyle: React.CSSProperties = {
     display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6,
   }
-  const labelStyle: React.CSSProperties = {
+  const _labelStyle: React.CSSProperties = {
     fontSize: 8, fontWeight: 700, color: t.textDim,
     textTransform: 'uppercase', letterSpacing: '0.09em',
     width: 40, flexShrink: 0,

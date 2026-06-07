@@ -21,7 +21,7 @@ function _loop(ts: number): void {
   if (ts - _last >= 66) {
     _last = ts
     for (const cb of _callbacks.values()) {
-      try { cb() } catch (_) { /* don't let one layer crash others */ }
+      try { cb() } catch { /* don't let one layer crash others */ }
     }
   }
   _rafId = requestAnimationFrame(_loop)

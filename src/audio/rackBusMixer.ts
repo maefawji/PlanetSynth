@@ -89,12 +89,12 @@ export function setBusStandpointSpatial(bodyId: string, volume: number, pan: num
 export function destroyBus(bodyId: string): void {
   const bus = _buses.get(bodyId)
   if (!bus) return
-  try { bus.inputGain.disconnect()       } catch (_) {}
-  try { bus.faderGain.disconnect()       } catch (_) {}
-  try { bus.standpointGain.disconnect()  } catch (_) {}
-  try { bus.standpointPanner.disconnect()} catch (_) {}
-  try { bus.analyser?.disconnect()       } catch (_) {}
-  try { bus.toneGain.dispose()           } catch (_) {}
+  try { bus.inputGain.disconnect()       } catch { /* noop */ }
+  try { bus.faderGain.disconnect()       } catch { /* noop */ }
+  try { bus.standpointGain.disconnect()  } catch { /* noop */ }
+  try { bus.standpointPanner.disconnect()} catch { /* noop */ }
+  try { bus.analyser?.disconnect()       } catch { /* noop */ }
+  try { bus.toneGain.dispose()           } catch { /* noop */ }
   _buses.delete(bodyId)
 }
 
@@ -131,7 +131,7 @@ export function getBusOscilloscopeData(bodyId: string): Float32Array | null {
 
 export function clearBusOscilloscopeAnalysers(): void {
   for (const bus of _buses.values()) {
-    try { bus.analyser?.disconnect() } catch (_) {}
+    try { bus.analyser?.disconnect() } catch { /* noop */ }
     bus.analyser = null
     bus.analyserBuf = null
   }

@@ -134,6 +134,7 @@ export function computeOrbitTelemetry(bodies: Array<PlanetBody & { ax?: number; 
   const BINS = 8
   const angleBins = new Array(BINS).fill(0)
   const planetBodies = bodies.filter(b => b !== sun)
+  let phaseEntropy = 0
   if (planetBodies.length > 0) {
     for (const b of planetBodies) {
       const a = Math.atan2(b.y - sun.y, b.x - sun.x) // -π..π
@@ -149,9 +150,7 @@ export function computeOrbitTelemetry(bodies: Array<PlanetBody & { ax?: number; 
         entropy -= p * Math.log2(p)
       }
     }
-    var phaseEntropy = entropy / Math.log2(BINS) // [0,1]
-  } else {
-    var phaseEntropy = 0
+    phaseEntropy = entropy / Math.log2(BINS) // [0,1]
   }
 
   // closePairCount: pairs within threshold

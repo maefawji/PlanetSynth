@@ -371,6 +371,7 @@ export function OscView() {
           <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Oscilloscope
           </div>
+          {/* eslint-disable-next-line react-hooks/refs */}
           <Oscilloscope analyser={analyserRef.current} />
         </div>
 

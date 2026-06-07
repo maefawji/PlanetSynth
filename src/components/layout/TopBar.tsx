@@ -47,23 +47,6 @@ type AppMode = 'planet' | 'osc' | 'dev' | 'wave-lab' | 'whole-lab' | 'orbit-hub'
 
 const SHOW_RETRIGGER_BUTTON = false
 
-type PlanetSynthProjectState = {
-  planet?: {
-    bodies?: unknown
-    simParams?: unknown
-    nextSunDefaults?: unknown
-    nextPlanetDefaults?: unknown
-    cameraFollowBodyId?: unknown
-  }
-  racks?: {
-    userControlSets?: unknown
-    globalRack?: unknown
-    bodyRacks?: unknown
-    rackParamOverrides?: unknown
-  }
-  canvasSettings?: unknown
-  universalConductor?: unknown
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -148,7 +131,7 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
   const isDirty   = useProjectStore(s => s.isDirty)
   const loadProj  = useProjectStore(s => s.loadProject)
   const markClean = useProjectStore(s => s.markClean)
-  const isRunning = useAudioStore(s => s.isRunning)
+  const _isRunning = useAudioStore(s => s.isRunning)
   const setRunning = useAudioStore(s => s.setRunning)
   const setStatus  = useAudioStore(s => s.setStatus)
   const simParams          = usePlanetStore(s => s.simParams)
@@ -239,11 +222,11 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
     }
   }
 
-  function stopAll() {
+  function _stopAll() {
     // 1. Instantly zero the master gain — synchronous, 100% reliable regardless of context state
-    try { Tone.getDestination().volume.value = -Infinity } catch (_) {}
+    try { Tone.getDestination().volume.value = -Infinity } catch { /* noop */ }
     // 2. Stop transport (Chord Lab sequencer etc.)
-    try { Tone.Transport.stop(); Tone.Transport.cancel() } catch (_) {}
+    try { Tone.Transport.stop(); Tone.Transport.cancel() } catch { /* noop */ }
     // 3. Stop intersection synth players
     stopIntersectionSamples()
     // 4. Best-effort context suspend (fire-and-forget — don't await)

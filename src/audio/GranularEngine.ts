@@ -62,9 +62,9 @@ export class GranularEngine {
 
   private teardownGraph(): void {
     // Dispose transient nodes — finalOut is kept alive for the bus connection
-    try { this.reverb?.dispose()     } catch (_) {}
-    try { this.outputGain?.dispose() } catch (_) {}
-    try { this.panner?.dispose()     } catch (_) {}
+    try { this.reverb?.dispose()     } catch { /* noop */ }
+    try { this.outputGain?.dispose() } catch { /* noop */ }
+    try { this.panner?.dispose()     } catch { /* noop */ }
     this.reverb     = null
     this.outputGain = null
     this.panner     = null
@@ -84,7 +84,7 @@ export class GranularEngine {
 
     // Tear down existing player if sample changed
     if (this.player) {
-      try { this.player.stop(); this.player.dispose() } catch (_) {}
+      try { this.player.stop(); this.player.dispose() } catch { /* noop */ }
       this.player   = null
       this.loadedUrl = ''
     }
@@ -107,7 +107,7 @@ export class GranularEngine {
     // Wait for buffer to load, then start
     try {
       await Tone.loaded()
-    } catch (_) {
+    } catch {
       return
     }
 
@@ -115,18 +115,18 @@ export class GranularEngine {
     try {
       this.player.start()
       this.isPlaying = true
-    } catch (_) {}
+    } catch { /* noop */ }
   }
 
   stop(): void {
     if (!this.isPlaying) return
     this.isPlaying = false
-    try { this.player?.stop() } catch (_) {}
+    try { this.player?.stop() } catch { /* noop */ }
 
     // Schedule cleanup after reverb tail
     const tailMs = Math.round((this.params.reverbMix > 0.01 ? 3 : 0.3) * 1000)
     setTimeout(() => {
-      try { this.player?.dispose() } catch (_) {}
+      try { this.player?.dispose() } catch { /* noop */ }
       this.player   = null
       this.loadedUrl = ''
       this.teardownGraph()

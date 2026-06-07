@@ -201,13 +201,14 @@ export function SamplerLayer() {
 
   // Stop all on unmount
   useEffect(() => {
+    const engines = enginesRef.current
     return () => {
-      for (const [id, eng] of enginesRef.current) {
+      for (const [id, eng] of engines) {
         eng.stop()
         releaseBus(id)
         clearBodyOutputLevel(id, 'sampler')
       }
-      enginesRef.current.clear()
+      engines.clear()
     }
   }, [])
 

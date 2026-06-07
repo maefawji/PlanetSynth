@@ -59,6 +59,7 @@ export type OrbitStats = {
  * Compute raw orbital statistics for `body` relative to the heaviest neighbour.
  * Returns null when the body is isolated (no other bodies present).
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function computeOrbitStats(
   body: PlanetBody,
   bodies: PlanetBody[],
@@ -81,8 +82,8 @@ export function computeOrbitStats(
   const energy = 0.5 * speed * speed - mu / r
   const bound  = energy < -0.001 && mu > 0.001
 
-  let T_real = 5.0
-  let ecc    = 0.3
+  let T_real: number
+  let ecc: number
 
   if (bound) {
     const a    = Math.max(1, -mu / (2 * energy))
@@ -111,6 +112,7 @@ export function computeOrbitStats(
  *       distance      → brightness tint
  * rootNote, volume, reverbMix remain caller-supplied.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function computeOrbitDroneParams(
   body: PlanetBody,
   bodies: PlanetBody[],
@@ -249,13 +251,14 @@ export function DroneLayer() {
 
   // Stop all on unmount
   useEffect(() => {
+    const engines = enginesRef.current
     return () => {
-      for (const [id, eng] of enginesRef.current) {
+      for (const [id, eng] of engines) {
         eng.stop()
         releaseBus(id)
         clearBodyOutputLevel(id, 'drone')
       }
-      enginesRef.current.clear()
+      engines.clear()
     }
   }, [])
 

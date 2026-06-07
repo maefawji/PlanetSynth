@@ -34,7 +34,7 @@ function loadUserControlSets(): ControlSet[] {
       ['trigger', 'note', 'instrument', 'effect'].includes(cs.category) &&
       typeof cs.name === 'string' && cs.params && typeof cs.params === 'object'
     ) as ControlSet[]
-  } catch (_) {
+  } catch {
     return []
   }
 }
@@ -43,7 +43,7 @@ function persistUserControlSets(sets: ControlSet[]): void {
   if (typeof window === 'undefined') return
   try {
     window.localStorage.setItem(USER_CONTROL_SETS_STORAGE_KEY, JSON.stringify(sets))
-  } catch (_) {}
+  } catch { /* noop */ }
 }
 
 function makeUserControlSetId(category: ControlSetCategory): string {

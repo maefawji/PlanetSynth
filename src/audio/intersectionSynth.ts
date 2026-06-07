@@ -113,10 +113,10 @@ const selfSendGains = new Map<string, Tone.Gain>()
 const proximityRackSends = new Map<string, Tone.Gain>()
 
 function destroyEffectNode(bus: EffectorBus) {
-  try { bus.effect.disconnect(); bus.effect.dispose() } catch (_) {}
+  try { bus.effect.disconnect(); bus.effect.dispose() } catch { /* noop */ }
   // Chorus and AutoFilter have internal clocks that need stopping
   if ((bus.effect as Tone.Chorus | Tone.AutoFilter).stop) {
-    try { (bus.effect as Tone.Chorus | Tone.AutoFilter).stop() } catch (_) {}
+    try { (bus.effect as Tone.Chorus | Tone.AutoFilter).stop() } catch { /* noop */ }
   }
 }
 
@@ -208,26 +208,26 @@ export function ensureEffectorBus(bodyId: string, params: EffectorBusParams): vo
     if (typeChanged || reverbModeChanged) {
       // Type or reverb mode changed — destroy and recreate below
       destroyEffectNode(existing)
-      try { existing.inputGain.disconnect();  existing.inputGain.dispose()  } catch (_) {}
-      try { existing.outputGain.disconnect(); existing.outputGain.dispose() } catch (_) {}
+      try { existing.inputGain.disconnect();  existing.inputGain.dispose()  } catch { /* noop */ }
+      try { existing.outputGain.disconnect(); existing.outputGain.dispose() } catch { /* noop */ }
       effectorBuses.delete(bodyId)
       // Disconnect all sends so they get recreated with the new bus
       for (const [key, gain] of sendGains) {
         if (key.endsWith(`:${bodyId}`)) {
-          try { gain.disconnect(); gain.dispose() } catch (_) {}
+          try { gain.disconnect(); gain.dispose() } catch { /* noop */ }
           sendGains.delete(key)
         }
       }
       // Disconnect self-send so it gets recreated with the new inputGain
       const oldSelfGain = selfSendGains.get(bodyId)
       if (oldSelfGain) {
-        try { oldSelfGain.disconnect(); oldSelfGain.dispose() } catch (_) {}
+        try { oldSelfGain.disconnect(); oldSelfGain.dispose() } catch { /* noop */ }
         selfSendGains.delete(bodyId)
       }
       // Disconnect proximity rack sends so they reconnect to the new inputGain
       for (const [key, gain] of proximityRackSends) {
         if (key.endsWith(`:${bodyId}`)) {
-          try { gain.disconnect(); gain.dispose() } catch (_) {}
+          try { gain.disconnect(); gain.dispose() } catch { /* noop */ }
           proximityRackSends.delete(key)
         }
       }
@@ -310,28 +310,28 @@ export function destroyEffectorBus(bodyId: string): void {
   // Disconnect all sends pointing at this bus
   for (const [key, gain] of sendGains) {
     if (key.endsWith(`:${bodyId}`)) {
-      try { gain.disconnect(); gain.dispose() } catch (_) {}
+      try { gain.disconnect(); gain.dispose() } catch { /* noop */ }
       sendGains.delete(key)
     }
   }
   // Disconnect self-send from rack bus
   const selfGain = selfSendGains.get(bodyId)
   if (selfGain) {
-    try { selfGain.disconnect(); selfGain.dispose() } catch (_) {}
+    try { selfGain.disconnect(); selfGain.dispose() } catch { /* noop */ }
     selfSendGains.delete(bodyId)
   }
   // Disconnect all proximity rack sends pointing at this bus
   for (const [key, gain] of proximityRackSends) {
     if (key.endsWith(`:${bodyId}`)) {
-      try { gain.disconnect(); gain.dispose() } catch (_) {}
+      try { gain.disconnect(); gain.dispose() } catch { /* noop */ }
       proximityRackSends.delete(key)
     }
   }
   const bus = effectorBuses.get(bodyId)
   if (!bus) return
-  try { bus.inputGain.disconnect();  bus.inputGain.dispose()  } catch (_) {}
+  try { bus.inputGain.disconnect();  bus.inputGain.dispose()  } catch { /* noop */ }
   destroyEffectNode(bus)
-  try { bus.outputGain.disconnect(); bus.outputGain.dispose() } catch (_) {}
+  try { bus.outputGain.disconnect(); bus.outputGain.dispose() } catch { /* noop */ }
   effectorBuses.delete(bodyId)
 }
 
@@ -407,7 +407,7 @@ export function clearBodySelfEffectorSend(bodyId: string): void {
   selfGain.gain.rampTo(0, 0.1)
   selfSendGains.delete(bodyId)
   window.setTimeout(() => {
-    try { selfGain.disconnect(); selfGain.dispose() } catch (_) {}
+    try { selfGain.disconnect(); selfGain.dispose() } catch { /* noop */ }
   }, 200)
 }
 
@@ -449,7 +449,7 @@ export function clearBodyProximityRackSend(sourceBodyId: string, effectorBodyId:
 function disposeSampleSendGains(sampleId: string): void {
   for (const [key, gain] of sendGains) {
     if (key.startsWith(`${sampleId}:`)) {
-      try { gain.disconnect(); gain.dispose() } catch (_) {}
+      try { gain.disconnect(); gain.dispose() } catch { /* noop */ }
       sendGains.delete(key)
     }
   }
@@ -515,17 +515,17 @@ function triggerLayeredSample(sample: SampleAsset, options: TriggerSoundOptions)
     env.triggerRelease(releaseAt)
     const releaseSeconds = typeof env.release === 'number' ? env.release : Number(env.release) || 0
     window.setTimeout(() => {
-      try { player.stop() } catch (_) {}
-      try { player.dispose() } catch (_) {}
-      try { env.dispose() } catch (_) {}
-      try { pitchShift.dispose() } catch (_) {}
-      try { panner.dispose() } catch (_) {}
+      try { player.stop() } catch { /* noop */ }
+      try { player.dispose() } catch { /* noop */ }
+      try { env.dispose() } catch { /* noop */ }
+      try { pitchShift.dispose() } catch { /* noop */ }
+      try { panner.dispose() } catch { /* noop */ }
     }, Math.ceil((remaining + releaseSeconds + 0.2) * 1000))
   }).catch(() => {
-    try { player.dispose() } catch (_) {}
-    try { env.dispose() } catch (_) {}
-    try { pitchShift.dispose() } catch (_) {}
-    try { panner.dispose() } catch (_) {}
+    try { player.dispose() } catch { /* noop */ }
+    try { env.dispose() } catch { /* noop */ }
+    try { pitchShift.dispose() } catch { /* noop */ }
+    try { panner.dispose() } catch { /* noop */ }
   })
 }
 
@@ -542,7 +542,7 @@ export function triggerIntersectionSound(
   if (!sample) return  // no sample assigned → silent
   try {
     triggerSample(sample, sourceGeom, targetGeom, options)
-  } catch (_) { /* ignore stale context */ }
+  } catch { /* ignore stale context */ }
 }
 
 function mapRange(v: number, inMin: number, inMax: number, outMin: number, outMax: number): number {
@@ -559,7 +559,7 @@ function triggerSample(sample: SampleAsset, sourceGeom: GeometryObject, targetGe
   player.volume.value = Tone.gainToDb(options.volume ?? mapRange(rB, 10, 320, 0.35, 0.95))
   if (player.loaded) {
     const now = Tone.now()
-    try { player.stop(now) } catch (_) { /* ignore if not started */ }
+    try { player.stop(now) } catch { /* ignore if not started */ }
     const duration = player.buffer.duration
     const offset = Math.max(0, Math.min(options.startSeconds ?? 0, Math.max(0, duration - 0.001)))
     player.start(now, offset)
@@ -573,16 +573,16 @@ function getSamplePlayer(sample: SampleAsset): Tone.Player {
   const cachedUrl = samplePlayerUrls.get(sample.id)
   if (cached && cachedUrl === sample.objectUrl) return cached
   if (cached) {
-    try { cached.stop(); cached.dispose() } catch (_) { /* ignore stale player */ }
+    try { cached.stop(); cached.dispose() } catch { /* ignore stale player */ }
     samplePlayers.delete(sample.id)
     samplePlayerUrls.delete(sample.id)
     playerStartInfo.delete(sample.id)
     const oldEnv = sampleAmpEnvs.get(sample.id)
-    if (oldEnv) { try { oldEnv.dispose() } catch (_) {} sampleAmpEnvs.delete(sample.id) }
+    if (oldEnv) { try { oldEnv.dispose() } catch { /* noop */ } sampleAmpEnvs.delete(sample.id) }
     const oldPitchShift = samplePitchShifts.get(sample.id)
-    if (oldPitchShift) { try { oldPitchShift.dispose() } catch (_) {} samplePitchShifts.delete(sample.id) }
+    if (oldPitchShift) { try { oldPitchShift.dispose() } catch { /* noop */ } samplePitchShifts.delete(sample.id) }
     const oldPanner = samplePanners.get(sample.id)
-    if (oldPanner) { try { oldPanner.dispose() } catch (_) {} samplePanners.delete(sample.id) }
+    if (oldPanner) { try { oldPanner.dispose() } catch { /* noop */ } samplePanners.delete(sample.id) }
   }
 
   const player = new Tone.Player({ url: sample.objectUrl, autostart: false })
@@ -631,9 +631,9 @@ export function triggerBodySound(
     player.volume.value = Tone.gainToDb(Math.max(0, Math.min(1, options.volume ?? 0.85)))
     if (player.loaded) {
       const now = Tone.now()
-      try { player.stop(now) } catch (_) { /* ignore if not started */ }
+      try { player.stop(now) } catch { /* ignore if not started */ }
       if (ampEnv) {
-        try { ampEnv.triggerRelease(now) } catch (_) {}
+        try { ampEnv.triggerRelease(now) } catch { /* noop */ }
         ampEnv.triggerAttack(now + 0.002)
       }
       const duration = player.buffer.duration
@@ -641,31 +641,31 @@ export function triggerBodySound(
       player.start(now, offset)
       playerStartInfo.set(sample.id, { toneTime: now, offset })
     }
-  } catch (_) { /* ignore stale context */ }
+  } catch { /* ignore stale context */ }
 }
 
 export function disposeIntersectionSynth() {
   // Dispose send gains
-  for (const gain of sendGains.values()) { try { gain.dispose() } catch (_) {} }
+  for (const gain of sendGains.values()) { try { gain.dispose() } catch { /* noop */ } }
   sendGains.clear()
   // Dispose self-send gains
-  for (const gain of selfSendGains.values()) { try { gain.disconnect(); gain.dispose() } catch (_) {} }
+  for (const gain of selfSendGains.values()) { try { gain.disconnect(); gain.dispose() } catch { /* noop */ } }
   selfSendGains.clear()
   // Dispose proximity rack send gains
-  for (const gain of proximityRackSends.values()) { try { gain.disconnect(); gain.dispose() } catch (_) {} }
+  for (const gain of proximityRackSends.values()) { try { gain.disconnect(); gain.dispose() } catch { /* noop */ } }
   proximityRackSends.clear()
   // Dispose effector buses
   for (const bus of effectorBuses.values()) {
-    try { bus.inputGain.dispose()  } catch (_) {}
+    try { bus.inputGain.dispose()  } catch { /* noop */ }
     destroyEffectNode(bus)
-    try { bus.outputGain.dispose() } catch (_) {}
+    try { bus.outputGain.dispose() } catch { /* noop */ }
   }
   effectorBuses.clear()
   // Dispose players + envelopes
-  samplePlayers.forEach(player => { try { player.dispose() } catch (_) {} })
-  sampleAmpEnvs.forEach(env    => { try { env.dispose()    } catch (_) {} })
-  samplePitchShifts.forEach(pitchShift => { try { pitchShift.dispose() } catch (_) {} })
-  samplePanners.forEach(panner => { try { panner.dispose() } catch (_) {} })
+  samplePlayers.forEach(player => { try { player.dispose() } catch { /* noop */ } })
+  sampleAmpEnvs.forEach(env    => { try { env.dispose()    } catch { /* noop */ } })
+  samplePitchShifts.forEach(pitchShift => { try { pitchShift.dispose() } catch { /* noop */ } })
+  samplePanners.forEach(panner => { try { panner.dispose() } catch { /* noop */ } })
   samplePlayers.clear()
   sampleAmpEnvs.clear()
   samplePitchShifts.clear()
@@ -677,7 +677,7 @@ export function disposeIntersectionSynth() {
 export function stopIntersectionSamples() {
   const now = Tone.now()
   samplePlayers.forEach(player => {
-    try { player.stop(now) } catch (_) { /* ignore if not started */ }
+    try { player.stop(now) } catch { /* ignore if not started */ }
   })
   playerStartInfo.clear()
 }
@@ -685,7 +685,7 @@ export function stopIntersectionSamples() {
 export async function prepareIntersectionSamples(samples: SampleAsset[]): Promise<void> {
   for (const sample of samples) {
     if (!sample.objectUrl) continue
-    try { getSamplePlayer(sample) } catch (_) { /* skip unloaded/missing samples */ }
+    try { getSamplePlayer(sample) } catch { /* skip unloaded/missing samples */ }
   }
   await Tone.loaded()
 }
@@ -695,13 +695,13 @@ export function forgetSamplePlayers(sampleIds?: string[]): void {
   for (const id of ids) {
     disposeSampleSendGains(id)
     const player = samplePlayers.get(id)
-    if (player) { try { player.stop(); player.dispose() } catch (_) {} }
+    if (player) { try { player.stop(); player.dispose() } catch { /* noop */ } }
     const env = sampleAmpEnvs.get(id)
-    if (env) { try { env.dispose() } catch (_) {} }
+    if (env) { try { env.dispose() } catch { /* noop */ } }
     const pitchShift = samplePitchShifts.get(id)
-    if (pitchShift) { try { pitchShift.dispose() } catch (_) {} }
+    if (pitchShift) { try { pitchShift.dispose() } catch { /* noop */ } }
     const panner = samplePanners.get(id)
-    if (panner) { try { panner.dispose() } catch (_) {} }
+    if (panner) { try { panner.dispose() } catch { /* noop */ } }
     samplePlayers.delete(id)
     sampleAmpEnvs.delete(id)
     samplePitchShifts.delete(id)
@@ -733,11 +733,11 @@ export function startStandpointSound(sample: SampleAsset, volume: number, playba
       const now = Tone.now()
       if (player.loaded) {
         player.start(now, 0)
-        if (ampEnv) { try { ampEnv.triggerAttack(now) } catch (_) {} }
+        if (ampEnv) { try { ampEnv.triggerAttack(now) } catch { /* noop */ } }
         playerStartInfo.set(sample.id, { toneTime: now, offset: 0 })
       }
     }
-  } catch (_) {}
+  } catch { /* noop */ }
 }
 
 export function setPlayerPan(sampleId: string, pan: number, rampTime = 0.05): void {
@@ -754,10 +754,10 @@ export function stopStandpointSound(sampleId: string): void {
   player.loop = false
   const now = Tone.now()
   if (ampEnv) {
-    try { ampEnv.triggerRelease(now) } catch (_) {}
-    try { player.stop(now + globalAdsr.release + 0.05) } catch (_) {}
+    try { ampEnv.triggerRelease(now) } catch { /* noop */ }
+    try { player.stop(now + globalAdsr.release + 0.05) } catch { /* noop */ }
   } else {
-    try { player.stop(now) } catch (_) {}
+    try { player.stop(now) } catch { /* noop */ }
   }
   playerStartInfo.delete(sampleId)
 }
@@ -793,7 +793,7 @@ export function stopAllLoopingPlayers(): void {
   samplePlayers.forEach(player => {
     if (player.loop) {
       player.loop = false
-      try { player.stop(now) } catch (_) {}
+      try { player.stop(now) } catch { /* noop */ }
     }
   })
   playerStartInfo.clear()

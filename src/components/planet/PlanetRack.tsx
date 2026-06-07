@@ -14,7 +14,7 @@ import {
 import { computeOrbitDroneParams, computeOrbitStats } from './DroneLayer'
 import { getPlanetLiveBodySnapshot, planetBodyStatsCache, getBodyTrailPoints, type PlanetBodyStats, type PlanetTool } from './PlanetCanvas'
 import { getBodyWaveLabEngine, subscribeWaveLabWaveformRefresh } from './WaveLabInstrumentLayer'
-import { PlanetBodyInspector, NextBodyInspector } from '../layout/RightInspector'
+import { PlanetBodyInspector } from '../layout/RightInspector'
 import { draggingControlSetId, setDraggingControlSetId } from '../../lib/dragControlSet'
 import { computeBodyRackOutputSpatial } from '../../audio/bodyRackOutput'
 import { getBodyTriggerAge, markBodyTriggered } from '../../audio/intersectionSynth'
@@ -212,6 +212,7 @@ function RackBodySigil({
 }) {
   const sigil = useMemo(
     () => generateFromGrammar(bodySigilGrammar(body)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [body.id, body.name, body.sigilGrammar],
   )
   return (
@@ -316,7 +317,7 @@ const OSC_SYNTH_2COL_LABELS: Record<string, string> = {
   oscSynthLfoRate:         'rate',
   oscSynthLfoDepth:        'depth',
 }
-const OSC_SYNTH_2COL_ORDER = [
+const _OSC_SYNTH_2COL_ORDER = [
   'oscSynthWaveform',        'oscSynthLevel',
   'oscSynthAttack',          'oscSynthDecay',
   'oscSynthSustain',         'oscSynthRelease',
@@ -547,6 +548,7 @@ function RackMixerColumn({ bodyId, simple }: { bodyId: string | null; simple: bo
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!bodyId) { setVuLevel(0); setFader(1); setSpPan(0); setSpActive(false); return }
     const id = window.setInterval(() => {
       setVuLevel(getBodyOutputLevel(bodyId))
@@ -581,7 +583,7 @@ function RackMixerColumn({ bodyId, simple }: { bodyId: string | null; simple: bo
   const faderColor = fader  > 0.7   ? accentCol : fader   > 0.35  ? '#fbbf24' : '#f87171'
 
   // The "display" number: actual signal while playing, fader gain when idle
-  const displayNum = vuLevel > 0.01 ? vuLevel : fader
+  const _displayNum = vuLevel > 0.01 ? vuLevel : fader
   const displayCol = vuLevel > 0.01 ? vuColor : faderColor
 
   const dB = vuLevel > 0.0001 ? 20 * Math.log10(vuLevel) : -100
@@ -709,6 +711,7 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
   const G      = usePlanetStore(s => s.simParams.G)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!selectedBodyId) { setLiveStats(null); return }
     const poll = () => setLiveStats(planetBodyStatsCache.get(selectedBodyId) ?? null)
     poll()
@@ -717,6 +720,7 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
   }, [selectedBodyId])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!selectedBodyId) { setTrailPts(null); return }
     const refresh = () => setTrailPts(getBodyTrailPoints(selectedBodyId))
     refresh()
@@ -728,7 +732,7 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
   const accentCol = simple ? '#2563eb'             : '#7c3aed'
   const freeCol   = simple ? '#dc2626'             : '#f87171'
   const divLine   = simple ? 'rgba(0,0,0,0.07)'   : 'rgba(255,255,255,0.07)'
-  const orbitBg   = simple ? 'rgba(0,0,0,0.04)'   : 'rgba(255,255,255,0.04)'
+  const _orbitBg  = simple ? 'rgba(0,0,0,0.04)'   : 'rgba(255,255,255,0.04)'
   const meterBg   = simple ? 'rgba(0,0,0,0.07)'   : 'rgba(255,255,255,0.06)'
 
   const liveBodies = getPlanetLiveBodySnapshot()
@@ -741,7 +745,7 @@ function RackOrbitColumn({ selectedBodyId, simple }: { selectedBodyId: string | 
   const body       = selectedBodyId ? (effectiveBodies.find(b => b.id === selectedBodyId) ?? null) : null
   const orbitStats = body ? computeOrbitStats(body, effectiveBodies, G) : null
 
-  const CollapseBtn = ({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) => (
+  const _CollapseBtn = ({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) => (
     <button onClick={onToggle} style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       background: 'none', border: 'none', cursor: 'pointer',
@@ -1032,6 +1036,7 @@ function OrbitInputBlock({ bodyId, dimText, accent, triggerType, division }: {
 
   useEffect(() => {
     smoothRawOrbitsRef.current = 0
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!bodyId) { setLiveStats(null); return }
     const id = window.setInterval(() => {
       const stats = planetBodyStatsCache.get(bodyId) ?? null
@@ -1070,6 +1075,7 @@ function OrbitInputBlock({ bodyId, dimText, accent, triggerType, division }: {
   // ── cumulative progress ────────────────────────────────────────────────────
   // Progress within the current cycle (0→1). div controls how many orbits per cycle.
   // Use smoothed high-water mark — never goes backwards within a cycle.
+  // eslint-disable-next-line react-hooks/refs
   const rawOrbits  = smoothRawOrbitsRef.current
   const cycleLen   = Math.max(0.0625, division)   // orbits per trigger cycle
   const progress   = (rawOrbits % cycleLen) / cycleLen   // 0–1
@@ -1079,9 +1085,8 @@ function OrbitInputBlock({ bodyId, dimText, accent, triggerType, division }: {
   // ── T-period progress — wall-clock based ─────────────────────────────────
   // Uses performance.now() elapsed since last trigger vs. the stored interval (ms).
   const tpIntervalMs  = liveStats?.tperiodIntervalMs ?? 0
-  const tpWallElapsed = (liveStats?.lastTriggerWallMs && tpIntervalMs > 0)
-    ? Math.max(0, performance.now() - liveStats.lastTriggerWallMs)
-    : 0
+  // eslint-disable-next-line react-hooks/purity
+  const tpWallElapsed = (liveStats?.lastTriggerWallMs && tpIntervalMs > 0) ? Math.max(0, performance.now() - liveStats.lastTriggerWallMs) : 0
   const tpProgress    = tpIntervalMs > 0 ? Math.min(1, tpWallElapsed / tpIntervalMs) : 0
 
   // SVG arc helper — returns "M ... A ..." path for a circle arc
@@ -1479,6 +1484,7 @@ function InlineArpContent({
   const progressionEnabled = Boolean(getArpParam(overrides, 'arpChordProgressionEnabled', false))
   const chordNotes = progressionEnabled ? buildRackProgressionChordNotes(overrides, 0) : buildRackChordNotes(overrides)
   const chordLabel = chordNotes.map(midiToNoteName).join(' ')
+  // eslint-disable-next-line react-hooks/purity
   const liveAge = liveState ? performance.now() - liveState.updatedAt : Infinity
   const liveActive = progressionEnabled && liveState && liveAge < 6000
   const liveNotes = liveState?.notes?.length ? liveState.notes : chordNotes
@@ -2958,7 +2964,7 @@ function WaveLabLfoPreview({
     for (let i = 0; i < W; i++) {
       const ph = i / Math.max(1, W - 1)
       const y = (0.5 - lfoWaveValue(waveform, ph) * amp) * H
-      i === 0 ? ctx.moveTo(i, y) : ctx.lineTo(i, y)
+      if (i === 0) { ctx.moveTo(i, y) } else { ctx.lineTo(i, y) }
     }
     ctx.stroke()
   }, [waveform, rate, depth, active, simple])
@@ -3052,10 +3058,13 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple, onClose }: { bodyI
   const bodies = usePlanetStore(s => s.bodies)
   const G = usePlanetStore(s => s.simParams.G)
   const globalInstrument = globalRack.instrument ? getControlSetById(globalRack.instrument) : null
-  const ep = (bodyId
-    ? getBodyEffectiveParams(bodyId)
-    : { ...(globalInstrument?.params ?? {}), ...(rackParamOverrides[slotKey] ?? {}) }
-  ) as Record<string, unknown>
+  const ep = useMemo(
+    () => (bodyId
+      ? getBodyEffectiveParams(bodyId)
+      : { ...(globalInstrument?.params ?? {}), ...(rackParamOverrides[slotKey] ?? {}) }
+    ) as Record<string, unknown>,
+    [bodyId, getBodyEffectiveParams, globalInstrument?.params, rackParamOverrides, slotKey],
+  )
 
   const [manualADSR, setManualADSR] = useState(false)
   const [, setWaveRefreshSeq] = useState(0)
@@ -3254,7 +3263,7 @@ function WaveLabMiniCanvas({ pts, sigs }: { pts: Array<{x:number;y:number}>; sig
       const min=Math.min(...arr),max=Math.max(...arr),range=max-min||1
       const norm = arr.map(v=>(v-min)/range*2-1)
       ctx.beginPath(); ctx.strokeStyle=sigColors[sig]??'#fff'; ctx.lineWidth=1.5; ctx.lineJoin='round'
-      norm.forEach((v,i)=>{const px=(i/(norm.length-1))*W,py=((1-v)/2)*H;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py)})
+      norm.forEach((v,i)=>{const px=(i/(norm.length-1))*W,py=((1-v)/2)*H;if (i===0) { ctx.moveTo(px,py) } else { ctx.lineTo(px,py) }})
       ctx.stroke()
     })
   }, [pts, sigs])
@@ -3286,7 +3295,7 @@ function WaveLabMiniSynth({ pts, sigs }: { pts: Array<{x:number;y:number}>; sigs
     // draw each signal faintly
     sigs.forEach((sig, si) => {
       ctx.beginPath(); ctx.strokeStyle=sigColors[sig]??'#fff'; ctx.lineWidth=0.8; ctx.globalAlpha=0.2; ctx.lineJoin='round'
-      arrays[si].forEach((v,i)=>{const px=(i/(arrays[si].length-1))*W,py=((1-v)/2)*H;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py)})
+      arrays[si].forEach((v,i)=>{const px=(i/(arrays[si].length-1))*W,py=((1-v)/2)*H;if (i===0) { ctx.moveTo(px,py) } else { ctx.lineTo(px,py) }})
       ctx.stroke()
     })
     ctx.globalAlpha=1
@@ -3295,20 +3304,34 @@ function WaveLabMiniSynth({ pts, sigs }: { pts: Array<{x:number;y:number}>; sigs
     const smin=Math.min(...summed),smax=Math.max(...summed),srange=smax-smin||1
     const norm = summed.map(v=>(v-smin)/srange*2-1)
     ctx.beginPath(); ctx.strokeStyle='#a78bfa'; ctx.lineWidth=1.8; ctx.lineJoin='round'
-    norm.forEach((v,i)=>{const px=(i/(norm.length-1))*W,py=((1-v)/2)*H;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py)})
+    norm.forEach((v,i)=>{const px=(i/(norm.length-1))*W,py=((1-v)/2)*H;if (i===0) { ctx.moveTo(px,py) } else { ctx.lineTo(px,py) }})
     ctx.stroke()
   }, [pts, sigs])
   return <canvas ref={canvasRef} width={800} height={200} style={{width:'100%',height:'100%',display:'block'}} />
 }
 
+function WaveLabPreview({ label, children, dim, panelBg, border }: { label: string; children: ReactNode; dim: string; panelBg: string; border: string }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 6.8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2, lineHeight: 1 }}>
+        {label}
+      </div>
+      <div style={{ height: 38, borderRadius: 3, overflow: 'hidden', background: panelBg, border: `0.5px solid ${border}` }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function InlineWaveLabContent({
-  bodyId, slotKey, cs, simple, accent,
+  bodyId, slotKey, cs, simple, accent: _accent,
 }: { bodyId: string | null; slotKey: string; cs: ControlSet; simple: boolean; accent: string }) {
   const { getBodyEffectiveParams, rackParamOverrides, setSlotOverride } = useControlSetStore()
   const [trailPts, setTrailPts] = useState<Array<{x: number; y: number}> | null>(null)
   const [, setWaveRefreshSeq] = useState(0)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!bodyId) { setTrailPts(null); return }
     const refresh = () => setTrailPts(getBodyTrailPoints(bodyId))
     refresh()
@@ -3344,17 +3367,6 @@ function InlineWaveLabContent({
     setSlotOverride(slotKey, { wavLabSig: next.length > 0 ? next.join(',') : 'x' })
   }
 
-  const Preview = ({ label, children }: { label: string; children: ReactNode }) => (
-    <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 6.8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2, lineHeight: 1 }}>
-        {label}
-      </div>
-      <div style={{ height: 38, borderRadius: 3, overflow: 'hidden', background: panelBg, border: `0.5px solid ${border}` }}>
-        {children}
-      </div>
-    </div>
-  )
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5, paddingTop: 2 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
@@ -3382,21 +3394,21 @@ function InlineWaveLabContent({
         })}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-        <Preview label="Orbit Trail">
+        <WaveLabPreview label="Orbit Trail" dim={dim} panelBg={panelBg} border={border}>
           {trailPts && trailPts.length >= 2
             ? <WaveLabMiniCanvas pts={trailPts} sigs={activeSigs} />
             : <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:7, color:dim }}>{bodyId ? '…' : 'no body'}</div>
           }
-        </Preview>
-        <Preview label="Synthesis">
+        </WaveLabPreview>
+        <WaveLabPreview label="Synthesis" dim={dim} panelBg={panelBg} border={border}>
           {trailPts && trailPts.length >= 2
             ? <WaveLabMiniSynth pts={trailPts} sigs={activeSigs} />
             : <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:7, color:dim }}>{bodyId ? '…' : 'no body'}</div>
           }
-        </Preview>
-        <Preview label="Oscilloscope">
+        </WaveLabPreview>
+        <WaveLabPreview label="Oscilloscope" dim={dim} panelBg={panelBg} border={border}>
           <WaveLabOscillo analyser={engine?.analyserNode ?? null} />
-        </Preview>
+        </WaveLabPreview>
       </div>
     </div>
   )
@@ -3595,13 +3607,13 @@ function OrbitStepExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: strin
 }
 
 function OneShotStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string | null; slotKey: string; simple: boolean; onClose?: () => void }) {
-  const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
+  const _overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
   const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
   const getBodyEffectiveParams2 = useControlSetStore(s => s.getBodyEffectiveParams)
   const getBodyTriggerParamsList2 = useControlSetStore(s => s.getBodyTriggerParamsList)
   const effectiveParams = bodyId ? getBodyEffectiveParams2(bodyId) : null
-  const triggerParams = bodyId ? (getBodyTriggerParamsList2(bodyId)[0] ?? null) : null
+  const _triggerParams = bodyId ? (getBodyTriggerParamsList2(bodyId)[0] ?? null) : null
   const bodies = usePlanetStore(s => s.bodies)
   const G = usePlanetStore(s => s.simParams.G)
   const body = bodyId ? (bodies.find(b => b.id === bodyId) ?? null) : null
@@ -3614,7 +3626,7 @@ function OneShotStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
   const source = String((effectiveParams as Record<string, unknown> | null)?.sampleOrbitSource ?? 'current')
   const numer = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopNumer ?? 1))
   const denom = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopDenom ?? 1))
-  const pitchFix = Boolean((effectiveParams as Record<string, unknown> | null)?.samplePitchCorrection)
+  const _pitchFix = Boolean((effectiveParams as Record<string, unknown> | null)?.samplePitchCorrection)
   const stretchRatio = numer / denom
   const playbackRate = bufDurSec > 0 && sourceSec !== null && sourceSec > 0 ? (bufDurSec * stretchRatio / sourceSec) : null
   const accent = '#f59e0b'
@@ -3767,13 +3779,13 @@ function GenericSlotExpanded({ slotKey, cs, simple, onClose }: { slotKey: string
 // ─────────────────────────────────────────────────────────────────────────────
 
 function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string | null; slotKey: string; simple: boolean; onClose?: () => void }) {
-  const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
+  const _overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
   const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
   const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
   const getBodyEffectiveParams2 = useControlSetStore(s => s.getBodyEffectiveParams)
   const getBodyTriggerParamsList2 = useControlSetStore(s => s.getBodyTriggerParamsList)
   const effectiveParams = bodyId ? getBodyEffectiveParams2(bodyId) : null
-  const triggerParams = bodyId ? (getBodyTriggerParamsList2(bodyId)[0] ?? null) : null
+  const _triggerParams = bodyId ? (getBodyTriggerParamsList2(bodyId)[0] ?? null) : null
   const bodies = usePlanetStore(s => s.bodies)
   const G = usePlanetStore(s => s.simParams.G)
   const body = bodyId ? (bodies.find(b => b.id === bodyId) ?? null) : null
@@ -3861,7 +3873,7 @@ function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [bodyId, targetDurSec, dim])
+  }, [bodyId, targetDurSec, bufDurSec, dim])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -4201,6 +4213,7 @@ function SlotCard({
   // ── Osc Synth Orbit: live orbit stats ─────────────────────────────────────
   const [oscOrbitStats, setOscOrbitStats] = useState<ReturnType<typeof computeOrbitStats>>(null)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isOscSynthOrbit || !bodyId) { setOscOrbitStats(null); return }
     const poll = () => {
       const { bodies: bs, simParams: sp } = usePlanetStore.getState()
@@ -4213,7 +4226,7 @@ function SlotCard({
     poll()
     const id = window.setInterval(poll, 100)
     return () => window.clearInterval(id)
-  }, [isOscSynthOrbit, bodyId])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOscSynthOrbit, bodyId])   
 
   function oscEp(key: string, dflt: unknown): unknown {
     const ov = overrides as Record<string, unknown>
@@ -4817,6 +4830,7 @@ function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }
   const [oscData, setOscData] = useState<Float32Array | null>(null)
   const rafRef = useRef<number>(0)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!body) { setOscData(null); return }
     const poll = () => {
       if (simParams.showRackBodyOscilloscope) {
@@ -4829,7 +4843,7 @@ function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }
     }
     rafRef.current = requestAnimationFrame(poll)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [body?.id, simParams.showRackBodyOscilloscope])
+  }, [body?.id, body, simParams.showRackBodyOscilloscope])
 
   const isSP        = body ? simParams.standpointBodyId === body.id : false
   const isFollowing = body ? cameraFollowBodyId === body.id : false
@@ -4984,7 +4998,7 @@ function RackBodyCentroidColumn({ simple, inspectorExpanded, onToggleInspector }
   )
 }
 
-function RackInspectorColumn({ planetTool, simple, expanded }: { planetTool: PlanetTool | undefined; simple: boolean; expanded: boolean }) {
+function RackInspectorColumn({ planetTool: _planetTool, simple, expanded }: { planetTool: PlanetTool | undefined; simple: boolean; expanded: boolean }) {
   const selectedBodyId = usePlanetStore(s => s.selectedBodyId)
   const scrollColor = simple ? 'rgba(0,0,0,0.12) transparent' : 'rgba(255,255,255,0.08) transparent'
   const border = simple ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.06)'
@@ -5029,7 +5043,54 @@ interface PlanetRackProps {
   planetTool?: PlanetTool
 }
 
-export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampler, onExtendOneShot, planetTool }: PlanetRackProps) {
+function MakeUniqueButton({ slot, bodyId, simple, makeBodyRackUnique }: {
+  slot: 'triggers' | 'note' | 'instrument' | 'effects'
+  bodyId: string
+  simple: boolean
+  makeBodyRackUnique: (bodyId: string, slot: 'triggers' | 'note' | 'instrument' | 'effects') => void
+}) {
+  return (
+    <button
+      title="Make this global rack slot unique for this body"
+      onClick={e => {
+        e.stopPropagation()
+        makeBodyRackUnique(bodyId, slot)
+      }}
+      style={{
+        position: 'absolute',
+        top: 3,
+        right: 4,
+        zIndex: 3,
+        height: 14,
+        padding: '0 5px',
+        borderRadius: 3,
+        border: `0.5px solid ${simple ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.18)'}`,
+        background: simple ? 'rgba(255,255,255,0.86)' : 'rgba(13,13,22,0.88)',
+        color: simple ? 'rgba(0,0,0,0.62)' : 'rgba(255,255,255,0.68)',
+        fontSize: 6.5,
+        fontWeight: 800,
+        letterSpacing: '0.05em',
+        textTransform: 'uppercase',
+        lineHeight: 1,
+        fontFamily: 'inherit',
+        cursor: 'pointer',
+        boxShadow: simple ? '0 1px 4px rgba(0,0,0,0.10)' : '0 1px 6px rgba(0,0,0,0.35)',
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.color = simple ? '#111827' : '#fff'
+        e.currentTarget.style.borderColor = simple ? 'rgba(0,0,0,0.34)' : 'rgba(255,255,255,0.36)'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.color = simple ? 'rgba(0,0,0,0.62)' : 'rgba(255,255,255,0.68)'
+        e.currentTarget.style.borderColor = simple ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.18)'
+      }}
+    >
+      unique
+    </button>
+  )
+}
+
+export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampler, onExtendOneShot: _onExtendOneShot, planetTool }: PlanetRackProps) {
   const simpleTheme    = usePlanetStore(s => s.simParams.simpleTheme)
   const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
   const simple         = simpleTheme || monochromeMode
@@ -5105,48 +5166,6 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
     } else {
       setGlobalSlot(slot, null)
     }
-  }
-
-  function MakeUniqueButton({ slot }: { slot: 'triggers' | 'note' | 'instrument' | 'effects' }) {
-    return (
-      <button
-        title="Make this global rack slot unique for this body"
-        onClick={e => {
-          e.stopPropagation()
-          makeBodyRackUnique(bodyId, slot)
-        }}
-        style={{
-          position: 'absolute',
-          top: 3,
-          right: 4,
-          zIndex: 3,
-          height: 14,
-          padding: '0 5px',
-          borderRadius: 3,
-          border: `0.5px solid ${simple ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.18)'}`,
-          background: simple ? 'rgba(255,255,255,0.86)' : 'rgba(13,13,22,0.88)',
-          color: simple ? 'rgba(0,0,0,0.62)' : 'rgba(255,255,255,0.68)',
-          fontSize: 6.5,
-          fontWeight: 800,
-          letterSpacing: '0.05em',
-          textTransform: 'uppercase',
-          lineHeight: 1,
-          fontFamily: 'inherit',
-          cursor: 'pointer',
-          boxShadow: simple ? '0 1px 4px rgba(0,0,0,0.10)' : '0 1px 6px rgba(0,0,0,0.35)',
-        }}
-        onMouseEnter={e => {
-          e.currentTarget.style.color = simple ? '#111827' : '#fff'
-          e.currentTarget.style.borderColor = simple ? 'rgba(0,0,0,0.34)' : 'rgba(255,255,255,0.36)'
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.color = simple ? 'rgba(0,0,0,0.62)' : 'rgba(255,255,255,0.68)'
-          e.currentTarget.style.borderColor = simple ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.18)'
-        }}
-      >
-        unique
-      </button>
-    )
   }
 
   // ── Rack-level drag state (whole rack is one drop target) ─────────────────
@@ -5449,7 +5468,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
                       onClear={() => handleClearTrigger(i)}
                       expandedSlotKey={expandedSlotKey}
                       onToggleExpand={key => setExpandedSlotKey(prev => prev === key ? null : key)} />
-                    {isBodyMode && !hasTriggerOv && <MakeUniqueButton slot="triggers" />}
+                    {isBodyMode && !hasTriggerOv && <MakeUniqueButton slot="triggers" bodyId={bodyId} simple={simple} makeBodyRackUnique={makeBodyRackUnique} />}
                   </div>
                 ) : null
               ) : (
@@ -5482,7 +5501,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
                     onClear={() => handleClear('note', hasNoteOv)}
                     expandedSlotKey={expandedSlotKey}
                     onToggleExpand={key => setExpandedSlotKey(prev => prev === key ? null : key)} />
-                  {isBodyMode && !hasNoteOv && <MakeUniqueButton slot="note" />}
+                  {isBodyMode && !hasNoteOv && <MakeUniqueButton slot="note" bodyId={bodyId} simple={simple} makeBodyRackUnique={makeBodyRackUnique} />}
                 </div>
               ) : (
                 <EmptySlot simple={simple} highlighted={rackDragCat === 'note'} />
@@ -5519,7 +5538,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
                     }
                     expandedSlotKey={expandedSlotKey}
                     onToggleExpand={key => setExpandedSlotKey(prev => prev === key ? null : key)} />
-                  {isBodyMode && !hasInstrumentOv && <MakeUniqueButton slot="instrument" />}
+                  {isBodyMode && !hasInstrumentOv && <MakeUniqueButton slot="instrument" bodyId={bodyId} simple={simple} makeBodyRackUnique={makeBodyRackUnique} />}
                 </div>
               ) : (
                 <EmptySlot simple={simple} highlighted={rackDragCat === 'instrument'} />
@@ -5552,7 +5571,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
                       onClear={() => handleClearEffect(i)}
                       expandedSlotKey={expandedSlotKey}
                       onToggleExpand={key => setExpandedSlotKey(prev => prev === key ? null : key)} />
-                    {isBodyMode && !hasEffectsOv && <MakeUniqueButton slot="effects" />}
+                    {isBodyMode && !hasEffectsOv && <MakeUniqueButton slot="effects" bodyId={bodyId} simple={simple} makeBodyRackUnique={makeBodyRackUnique} />}
                   </div>
                 ) : null
               )}

@@ -157,8 +157,8 @@ export class PadDroneEngine {
     this.master.gain.setValueAtTime(Math.max(this.master.gain.value, 0.0001), now)
     this.master.gain.exponentialRampToValueAtTime(0.0001, end)
 
-    for (const { osc } of this.voices) try { osc.stop(end + 0.1) } catch (_) {}
-    for (const lfo      of this.lfos)  try { lfo.stop(end + 0.1) } catch (_) {}
+    for (const { osc } of this.voices) try { osc.stop(end + 0.1) } catch { /* noop */ }
+    for (const lfo      of this.lfos)  try { lfo.stop(end + 0.1) } catch { /* noop */ }
 
     setTimeout(() => {
       this.voices = []

@@ -169,9 +169,9 @@ export class FMDroneEngine {
     this.master.gain.setValueAtTime(Math.max(this.master.gain.value, 0.0001), now)
     this.master.gain.exponentialRampToValueAtTime(0.0001, end)
 
-    try { this.carrier?.stop(end + 0.1)   } catch (_) {}
-    try { this.modulator?.stop(end + 0.1) } catch (_) {}
-    try { this.lfo?.stop(end + 0.1)       } catch (_) {}
+    try { this.carrier?.stop(end + 0.1)   } catch { /* noop */ }
+    try { this.modulator?.stop(end + 0.1) } catch { /* noop */ }
+    try { this.lfo?.stop(end + 0.1)       } catch { /* noop */ }
 
     setTimeout(() => {
       this.carrier   = null

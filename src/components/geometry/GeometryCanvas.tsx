@@ -242,7 +242,7 @@ export function GeometryCanvas({ tool, mode = 'sampler' }: Props) {
               flashDotEl(circA.id)
             }
           }
-          inside ? prev.add(circB.id) : prev.delete(circB.id)
+          if (inside) { prev.add(circB.id) } else { prev.delete(circB.id) }
         }
       }
 
@@ -291,7 +291,7 @@ export function GeometryCanvas({ tool, mode = 'sampler' }: Props) {
               flashDotEl(way.id)
             }
           }
-          inside ? wayPrev.add(circle.id) : wayPrev.delete(circle.id)
+          if (inside) { wayPrev.add(circle.id) } else { wayPrev.delete(circle.id) }
         }
       }
 
@@ -316,7 +316,7 @@ export function GeometryCanvas({ tool, mode = 'sampler' }: Props) {
                 flashDotEl(pt.id)
               }
             }
-            inside ? ptPrev.add(curve.id) : ptPrev.delete(curve.id)
+            if (inside) { ptPrev.add(curve.id) } else { ptPrev.delete(curve.id) }
           }
         }
 
@@ -340,7 +340,7 @@ export function GeometryCanvas({ tool, mode = 'sampler' }: Props) {
                 flashDotEl(samplerCurve.id)
               }
             }
-            inside ? samplerPrev.add(curve.id) : samplerPrev.delete(curve.id)
+            if (inside) { samplerPrev.add(curve.id) } else { samplerPrev.delete(curve.id) }
           }
         }
       }
@@ -377,7 +377,7 @@ export function GeometryCanvas({ tool, mode = 'sampler' }: Props) {
               flashDotEl(a.owner.id, radiusA)
               flashDotEl(b.owner.id, radiusB)
             }
-            inside ? pairPrev.add(pairId) : pairPrev.delete(pairId)
+            if (inside) { pairPrev.add(pairId) } else { pairPrev.delete(pairId) }
 
             // ── A's rising-edge ───────────────────────────────────────────────
             const keyA = `rendezvous_${a.owner.id}`
@@ -388,7 +388,7 @@ export function GeometryCanvas({ tool, mode = 'sampler' }: Props) {
               const triggerA = rMode === 'source-curve' ? a.owner : b.owner
               triggerIntersectionSound(a.owner, triggerA, samplesRef.current, triggerOptions(a.owner, triggerA, a.point.x, a.point.y, distance, collisionDistance))
             }
-            inside ? prevA.add(b.owner.id) : prevA.delete(b.owner.id)
+            if (inside) { prevA.add(b.owner.id) } else { prevA.delete(b.owner.id) }
 
             // ── B's rising-edge (mirror) ──────────────────────────────────────
             const keyB = `rendezvous_${b.owner.id}`
@@ -398,7 +398,7 @@ export function GeometryCanvas({ tool, mode = 'sampler' }: Props) {
               const triggerB = rMode === 'source-curve' ? b.owner : a.owner
               triggerIntersectionSound(b.owner, triggerB, samplesRef.current, triggerOptions(b.owner, triggerB, b.point.x, b.point.y, distance, collisionDistance))
             }
-            inside ? prevB.add(a.owner.id) : prevB.delete(a.owner.id)
+            if (inside) { prevB.add(a.owner.id) } else { prevB.delete(a.owner.id) }
           }
         }
       }
@@ -736,6 +736,7 @@ export function GeometryCanvas({ tool, mode = 'sampler' }: Props) {
       <rect width="100%" height="100%" fill="url(#dotGrid)" onClick={handleBgClick} />
 
       <g transform={`translate(${viewOffset.x} ${viewOffset.y}) scale(${zoom})`}>
+        {/* eslint-disable react-hooks/purity, react-hooks/refs */}
         {geometry.map(obj => (
           <GeomShape
             key={obj.id}
@@ -748,6 +749,7 @@ export function GeometryCanvas({ tool, mode = 'sampler' }: Props) {
             onEditHandleMouseDown={handleEditHandleMouseDown}
           />
         ))}
+        {/* eslint-enable react-hooks/purity, react-hooks/refs */}
 
         {activeSamplerCurves.map(obj => (
           <SamplerCurvePlayhead
@@ -784,6 +786,7 @@ export function GeometryCanvas({ tool, mode = 'sampler' }: Props) {
               onMouseDown={e => {
                 if (e.button !== 0) return
                 e.stopPropagation()
+                // eslint-disable-next-line react-hooks/refs
                 setStandpointDrag({ startCanvas: canvasPoint(e as React.MouseEvent<SVGSVGElement>), startPos: { x: sp.x, y: sp.y } })
               }}
             >
@@ -1049,7 +1052,7 @@ function mapRangeClamped(value: number, inMin: number, inMax: number, outMin: nu
   return outMin + (outMax - outMin) * t
 }
 
-function rendezvousRadius(_geom: GeometryObject): number {
+function rendezvousRadius(_: GeometryObject): number {
   return Math.max(0, useSamplerModeStore.getState().rendezvousDistance)
 }
 

@@ -100,7 +100,7 @@ async function syncAllStretchEngines(engines: EngineMap): Promise<void> {
       try {
         const ctx = Tone.getContext().rawContext as AudioContext
         eng.getOutputNode().gain.setTargetAtTime(engVol, ctx.currentTime, 0.02)
-      } catch (_) {}
+      } catch { /* noop */ }
 
       const spatial         = computeBodyRackOutputSpatial(body.id, effectiveBodies, simParams, ep as never)
       const capturedBodyId  = body.id
@@ -142,13 +142,14 @@ export function StretchSamplerLayer() {
   }, [])
 
   useEffect(() => {
+    const engines = enginesRef.current
     return () => {
-      for (const [id, { eng, busHeld }] of enginesRef.current) {
+      for (const [id, { eng, busHeld }] of engines) {
         eng.dispose()
         unregisterBodyStretchSamplerEngine(id)
         if (busHeld) releaseBus(id)
       }
-      enginesRef.current.clear()
+      engines.clear()
     }
   }, [])
 

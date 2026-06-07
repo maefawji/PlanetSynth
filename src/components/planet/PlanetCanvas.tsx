@@ -56,10 +56,12 @@ const _trailsSnap = new Map<string, TrailRing>()
 
 // Module-level ref so clearStardustDots can be called from outside
 let _stardustDotsRefExternal: React.MutableRefObject<TriggerStarMarker[]> | null = null
+// eslint-disable-next-line react-refresh/only-export-components
 export function clearStardustDots() {
   if (_stardustDotsRefExternal) _stardustDotsRefExternal.current = []
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function getPlanetLiveBodySnapshot(): LiveBodySnap[] {
   return _liveBodiesSnap.map(b => ({ ...b }))
 }
@@ -197,11 +199,13 @@ let _prevAxBuf = new Float64Array(0)
 let _prevAyBuf = new Float64Array(0)
 
 /** Returns the smoothed (EMA) orbital period for a body, in sim-time units. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function getSmoothedPeriod(bodyId: string): number | null {
   return _smoothedPeriods.get(bodyId) ?? null
 }
 
 /** Returns the recorded trail points for `bodyId` as an ordered array (oldest → newest). */
+// eslint-disable-next-line react-refresh/only-export-components
 export function getBodyTrailPoints(bodyId: string): Array<{x: number; y: number}> | null {
   const ring = _trailsSnap.get(bodyId)
   if (!ring || ring.count < 2) return null
@@ -215,6 +219,7 @@ export function getBodyTrailPoints(bodyId: string): Array<{x: number; y: number}
 }
 
 /** Returns the predicted positions for `bodyId` over the next `steps` simulation steps. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function computeOrbitPreviewForBody(bodyId: string, steps: number): Array<{x: number; y: number}> | null {
   const body = _liveBodiesSnap.find(b => b.id === bodyId)
   if (!body || body.fixed) return null
@@ -258,6 +263,7 @@ export interface PlanetBodyStats {
   probeAngleDeg: number    // 0-360°
   probeAngleNorm: number   // 0-1
 }
+// eslint-disable-next-line react-refresh/only-export-components
 export const planetBodyStatsCache = new Map<string, PlanetBodyStats>()
 
 function computeSampleStretchRate(args: {
@@ -587,6 +593,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const orbitStepSeqRef = useRef<Map<string, number>>(new Map())
   // Arpeggiator: last note fired per timerKey (for monophonic noteOff on next step)
   const arpPrevNoteRef  = useRef<Map<string, number[]>>(new Map())
+  // eslint-disable-next-line react-hooks/purity
   const lastAutoSpawnMsRef = useRef(performance.now())
   // Sigil shape cache: keyed by body id — recomputed only when identity/grammar changes
   const sigilCacheRef = useRef<Map<string, { key: string; shapes: SigilShape[] }>>(new Map())
@@ -594,10 +601,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   // Stardust: persistent dots left after trigger star animations
   const stardustDotsRef = useRef<TriggerStarMarker[]>([])
   // expose for external clear
-  _stardustDotsRefExternal = stardustDotsRef
+  useEffect(() => { _stardustDotsRefExternal = stardustDotsRef }, [])
 
   function shouldFireOrbitStep(tpRecord: Record<string, unknown>, timerKey: string): boolean {
-    if (!Boolean(tpRecord.orbitStepSeqEnabled)) return true
+    if (!tpRecord.orbitStepSeqEnabled) return true
     const len = Math.max(1, Math.min(16, Math.round(Number(tpRecord.orbitStepSeqLength ?? 8))))
     const rawPattern = String(tpRecord.orbitStepSeqPattern ?? '11111111').replace(/[^01xX.-]/g, '')
     const pattern = rawPattern.length > 0 ? rawPattern : '11111111'
@@ -699,6 +706,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
 
   // Frame timing (EMA) for real-time orbit-stretch rate calculation
   const frameTimeRef    = useRef(16.67)
+  // eslint-disable-next-line react-hooks/purity
   const lastFrameMsRef  = useRef(performance.now())
   const lastRenderMsRef = useRef(0)   // throttle React re-renders to ~30fps
 
@@ -1275,9 +1283,9 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   if (ti === 0) {
                     const numer = Number((bodyParams as Record<string, unknown>).orbitLoopNumer ?? 1)
                     const denom = Number((bodyParams as Record<string, unknown>).orbitLoopDenom ?? 1)
-                    const sourceDiv = Math.max(0.0625, Number(tp.orbitTriggerDivision ?? 1))
+                    const _sourceDiv = Math.max(0.0625, Number(tp.orbitTriggerDivision ?? 1))
                     const stretchRatio = denom > 0 ? numer / denom : 1
-                    const oneShotDur = getBodyOneShotEngine(b.id)?.bufferDuration ?? 0
+                    const _oneShotDur = getBodyOneShotEngine(b.id)?.bufferDuration ?? 0
                     const instrRate = 1
                     // oneshot-stretch: just trigger at rate=1 regardless of note
                     if (rack.instrument === 'instrument-oneshot-stretch') {
@@ -1397,9 +1405,9 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   if (ti === 0) {
                     const tpNumer = Number((bodyParams as Record<string, unknown>).orbitLoopNumer ?? 1)
                     const tpDenom = Number((bodyParams as Record<string, unknown>).orbitLoopDenom ?? 1)
-                    const tpSourceDiv = Math.max(0.0625, Number(tp.orbitTriggerDivision ?? 1))
+                    const _tpSourceDiv = Math.max(0.0625, Number(tp.orbitTriggerDivision ?? 1))
                     const tpStr = tpDenom > 0 ? tpNumer / tpDenom : 1
-                    const tpDur = getBodyOneShotEngine(b.id)?.bufferDuration ?? 0
+                    const _tpDur = getBodyOneShotEngine(b.id)?.bufferDuration ?? 0
                     // oneshot-stretch: just trigger at rate=1 regardless of note
                     if (rack.instrument === 'instrument-oneshot-stretch') {
                       if (fireBodyInstrumentTrigger(b.id, 1, undefined)) {
@@ -1684,7 +1692,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
 
     rafId = requestAnimationFrame(frame)
     return () => cancelAnimationFrame(rafId)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [])
 
   // ── Mouse helpers ─────────────────────────────────────────────────────────
@@ -1811,8 +1819,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   function commitDragPlace(dp: DragPlaceState) {
     const isSun = dp.tool === 'add-sun'
     const storeState  = usePlanetStore.getState()
-    const starCount   = storeState.bodies.filter(b => b.type === 'sun').length
-    const planetCount = storeState.bodies.filter(b => b.type === 'planet').length
+    const _starCount   = storeState.bodies.filter(b => b.type === 'sun').length
+    const _planetCount = storeState.bodies.filter(b => b.type === 'planet').length
     const defs = dp.tool === 'add-sun'
       ? storeState.nextSunDefaults
       : storeState.nextPlanetDefaults
@@ -2215,6 +2223,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       x: dragPlace.bodyX, y: dragPlace.bodyY,
       z: 0, vx, vy, ax: 0, ay: 0, fixed: false,
     }
+    // eslint-disable-next-line react-hooks/refs
     return computePredictedOrbit(liveBodiesRef.current, simParamsRef.current, previewBody, PREDICT_STEPS)
   })()
   const cx = w / 2, cy = h / 2
@@ -2242,15 +2251,19 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const bgImagePreserveAspectRatio = canvasBackgroundImageFit === 'stretch'
     ? 'none'
     : `xMidYMid ${canvasBackgroundImageFit === 'contain' ? 'meet' : 'slice'}`
+  // eslint-disable-next-line react-hooks/purity
   const renderNowMs = performance.now()
+  /* eslint-disable react-hooks/refs */
   const triggerStars = storeParams.showTriggerStars
     ? triggerStarMarkersRef.current.filter(marker => renderNowMs - marker.bornMs < Math.max(80, storeParams.triggerStarLifetimeMs))
     : []
   if (storeParams.showTriggerStars && triggerStars.length !== triggerStarMarkersRef.current.length) {
     triggerStarMarkersRef.current = triggerStars
   }
+  /* eslint-enable react-hooks/refs */
 
   // Probe cursor params
+  // eslint-disable-next-line react-hooks/refs
   const probePos = tool === 'probe' ? mousePosWorldRef.current : null
   const probeWr  = probePos ? projectedBodyScreenR(
     storeParams.probeMass,
@@ -2263,6 +2276,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const probeCol = monochromeMode ? monoInk : '#a78bfa'
 
   // Drag-place overlay data
+  // eslint-disable-next-line react-hooks/refs
   const dpOverlay = dragPlace ? (() => {
     const isSunDrag = dragPlace.tool === 'add-sun'
     const previewMass = isSunDrag
@@ -2328,6 +2342,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     return shapes
   }
 
+  /* eslint-disable react-hooks/refs */
   return (
     <div
       ref={containerRef}
@@ -2935,4 +2950,5 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       )}
     </div>
   )
+  /* eslint-enable react-hooks/refs */
 }

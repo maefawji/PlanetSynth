@@ -122,7 +122,7 @@ export class OneShotSamplerEngine {
       prev.gain.linearRampToValueAtTime(0, now + 0.003)   // 3ms fade-out
       const prevSrc = this.currentSource
       setTimeout(() => {
-        try { prevSrc.stop() } catch (_) {}
+        try { prevSrc.stop() } catch { /* noop */ }
         prevSrc.disconnect()
         prev.disconnect()
       }, 20)
@@ -169,7 +169,7 @@ export class OneShotSamplerEngine {
     this.currentFadeGain.gain.linearRampToValueAtTime(0, now + 0.01)
     const src  = this.currentSource
     const fade = this.currentFadeGain
-    try { src.stop(now + 0.015) } catch (_) {}
+    try { src.stop(now + 0.015) } catch { /* noop */ }
     setTimeout(() => { src.disconnect(); fade.disconnect() }, 50)
     this.currentSource   = null
     this.currentFadeGain = null
@@ -197,7 +197,7 @@ export class OneShotSamplerEngine {
 
   dispose(): void {
     this.stop()
-    try { this.outputGain?.disconnect() } catch (_) {}
+    try { this.outputGain?.disconnect() } catch { /* noop */ }
     this.buffer      = null
     this.outputGain  = null
     this.ctx         = null

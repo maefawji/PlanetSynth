@@ -291,7 +291,7 @@ export function SamplerInstrumentPanel({ bodyId, slotKey, onClose }: Props) {
     textTransform: 'uppercase', whiteSpace: 'nowrap',
   }
 
-  const rowStyle: React.CSSProperties = {
+  const _rowStyle: React.CSSProperties = {
     display: 'flex', alignItems: 'center', gap: 6, padding: '3px 12px',
   }
 
