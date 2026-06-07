@@ -67,8 +67,8 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
     if (slot && (slot.root !== c.chordRoot || slot.quality !== c.chordQuality)) {
       c.update({ chordRoot: slot.root, chordQuality: slot.quality, chordOctave: slot.octave })
     }
-    // Only run on mount — eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // intentionally run once on mount
 
   function toggleTransport() {
     if (transport.state === 'PLAY') {
@@ -466,7 +466,6 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                   contextKey={c.key}
                   contextScale={c.scale}
                   inputCss={inputCss}
-                  t={t}
                   onChange={slot => c.updateChordSlot(i, slot)}
                   onActivate={() => {
                     const slot = c.chordProgression[i]
@@ -499,7 +498,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
 
 
 function ChordProgressionSlot({
-  index, isActive, slot, contextKey, contextScale, inputCss, t, onChange, onActivate,
+  index, isActive, slot, contextKey, contextScale, inputCss, onChange, onActivate,
 }: {
   index: number
   isActive: boolean
@@ -507,7 +506,6 @@ function ChordProgressionSlot({
   contextKey: number
   contextScale: ConductorScale
   inputCss: React.CSSProperties
-  t: ReturnType<typeof import('../../lib/theme').useTheme>
   onChange: (slot: ChordSlot | null) => void
   onActivate: () => void
 }) {

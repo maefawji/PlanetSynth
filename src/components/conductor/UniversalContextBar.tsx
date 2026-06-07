@@ -49,8 +49,6 @@ export function UniversalContextBar() {
   const bpm = useUniversalConductorStore(state => state.bpm)
   const key = useUniversalConductorStore(state => state.key)
   const scale = useUniversalConductorStore(state => state.scale)
-  const tuning = useUniversalConductorStore(state => state.tuning)
-  const gridResolution = useUniversalConductorStore(state => state.gridResolution)
   const timeSignatureNumerator = useUniversalConductorStore(state => state.timeSignatureNumerator)
   const timeSignatureDenominator = useUniversalConductorStore(state => state.timeSignatureDenominator)
   const harmonicMode = useUniversalConductorStore(state => state.harmonicMode)
@@ -62,6 +60,7 @@ export function UniversalContextBar() {
   const activeSlot = chordProgression[chordIndex]
   const [transport, setTransport] = useState(readTransportSnapshot)
   const [open, setOpen] = useState(false)
+  const [anchor, setAnchor] = useState({ left: 455, right: 8, top: 38 })
   const barRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -85,14 +84,14 @@ export function UniversalContextBar() {
     { label: 'POSITION', value: `${transport.bar}.${transport.beat}.${transport.tick}` },
   ]
 
-  // Compute panel anchor from bar position
-  const getAnchor = () => {
+  // Update anchor when open state changes
+  useEffect(() => {
+    if (!open) return
     const el = barRef.current
-    if (!el) return { left: 455, right: 8, top: 38 }
+    if (!el) return
     const rect = el.getBoundingClientRect()
-    return { left: rect.left, right: window.innerWidth - rect.right, top: rect.bottom }
-  }
-  const anchor = getAnchor()
+    setAnchor({ left: rect.left, right: window.innerWidth - rect.right, top: rect.bottom })
+  }, [open])
 
   return (
     <>

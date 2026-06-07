@@ -3,6 +3,7 @@ import {
   CONDUCTOR_CHORD_QUALITIES,
   CONDUCTOR_NOTE_NAMES,
   CONDUCTOR_SCALES,
+  HARMONIC_MODES,
   useUniversalConductorStore,
 } from '../../store/universalConductorStore'
 
@@ -103,20 +104,20 @@ export function UniversalConductorPanel() {
           <div style={{ fontSize: 8, color: t.textDim, marginTop: 3 }}>root · quality · octave</div>
         </Field>
 
-        <NormalizedField
-          label="Density"
-          value={conductor.density}
-          color={t.textMid}
-          dimColor={t.textDim}
-          onChange={density => conductor.update({ density })}
-        />
-        <NormalizedField
-          label="Tension"
-          value={conductor.tension}
-          color={t.textMid}
-          dimColor={t.textDim}
-          onChange={tension => conductor.update({ tension })}
-        />
+        <Field label="Harmonic Mode" color={t.textMid}>
+          <select value={conductor.harmonicMode} onChange={e => conductor.update({ harmonicMode: e.target.value as typeof conductor.harmonicMode })} style={inputStyle}>
+            {HARMONIC_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </Field>
+
+        <NormalizedField label="Density" value={conductor.density} color={t.textMid} dimColor={t.textDim}
+          onChange={density => conductor.update({ density })} />
+        <NormalizedField label="Tension" value={conductor.tension} color={t.textMid} dimColor={t.textDim}
+          onChange={tension => conductor.update({ tension })} />
+        <NormalizedField label="Quantize" value={conductor.quantize} color={t.textMid} dimColor={t.textDim}
+          onChange={quantize => conductor.update({ quantize })} />
+        <NormalizedField label="Sustain" value={conductor.sustain} color={t.textMid} dimColor={t.textDim}
+          onChange={sustain => conductor.update({ sustain })} />
 
         <div style={{
           padding: '8px 9px',
