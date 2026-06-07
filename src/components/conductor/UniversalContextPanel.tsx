@@ -293,13 +293,13 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
           {/* ── Right: chord progression ── */}
           <div style={{ padding: '13px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             {/* Header row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
               <div style={dimSectionLabel}>Chord Progression</div>
               <button
                 onClick={c.advanceChordIndex}
                 title="Advance to next chord"
                 style={{
-                  padding: '2px 8px', borderRadius: 3, fontFamily: 'inherit',
+                  padding: '2px 7px', borderRadius: 3, fontFamily: 'inherit',
                   fontSize: 8, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em',
                   border: `0.5px solid rgba(167,139,250,0.4)`,
                   background: 'rgba(167,139,250,0.1)', color: accentColor,
@@ -307,6 +307,27 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
               >
                 ▶ Next
               </button>
+              {/* Auto-advance toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button
+                  onClick={() => c.update({ autoAdvance: !c.autoAdvance })}
+                  title="Auto-advance on each bar"
+                  style={{
+                    padding: '2px 7px', borderRadius: 3, fontFamily: 'inherit',
+                    fontSize: 8, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em',
+                    border: `0.5px solid ${c.autoAdvance ? 'rgba(34,197,94,0.5)' : 'rgba(167,139,250,0.25)'}`,
+                    background: c.autoAdvance ? 'rgba(34,197,94,0.1)' : t.inputBg,
+                    color: c.autoAdvance ? '#22c55e' : t.textDim,
+                  }}
+                >
+                  ⟳ Auto
+                </button>
+                <input type="number" min={1} max={16} value={c.autoAdvanceBars}
+                  onChange={e => c.update({ autoAdvanceBars: Number(e.target.value) })}
+                  title="Bars per step"
+                  style={{ ...inputCss, width: 28, textAlign: 'center', fontFamily: 'monospace', fontSize: 9 }} />
+                <span style={{ fontSize: 7, color: t.textDim }}>bars</span>
+              </div>
               <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span style={{ fontSize: 8, color: t.textDim }}>steps</span>
                 <input type="number" min={1} max={8} value={c.chordProgressionLength}

@@ -234,6 +234,8 @@ export interface UniversalConductorValues {
   chordProgression: (ChordSlot | null)[]
   chordProgressionLength: number
   chordIndex: number
+  autoAdvance: boolean
+  autoAdvanceBars: number
   registerBassMin: number
   registerBassMax: number
   registerBodyMin: number
@@ -271,6 +273,8 @@ export const DEFAULT_UNIVERSAL_CONDUCTOR: UniversalConductorValues = {
   chordProgression: Array(8).fill(null),
   chordProgressionLength: 4,
   chordIndex: 0,
+  autoAdvance: false,
+  autoAdvanceBars: 1,
   registerBassMin: 36,
   registerBassMax: 52,
   registerBodyMin: 52,
@@ -302,6 +306,7 @@ export function normalizeUniversalConductor(
   if (patch.maxPolyphony !== undefined) next.maxPolyphony = clamp(Math.round(Number(patch.maxPolyphony) || 5), 1, 16)
   if (patch.chordProgressionLength !== undefined) next.chordProgressionLength = clamp(Math.round(Number(patch.chordProgressionLength) || 4), 1, 8)
   if (patch.chordIndex !== undefined) next.chordIndex = clamp(Math.round(Number(patch.chordIndex) || 0), 0, 7)
+  if (patch.autoAdvanceBars !== undefined) next.autoAdvanceBars = clamp(Math.round(Number(patch.autoAdvanceBars) || 1), 1, 16)
   if (patch.registerBassMin !== undefined) next.registerBassMin = clamp(Math.round(Number(patch.registerBassMin)), 0, 127)
   if (patch.registerBassMax !== undefined) next.registerBassMax = clamp(Math.round(Number(patch.registerBassMax)), 0, 127)
   if (patch.registerBodyMin !== undefined) next.registerBodyMin = clamp(Math.round(Number(patch.registerBodyMin)), 0, 127)
@@ -338,6 +343,8 @@ export function getUniversalConductorValues(): UniversalConductorValues {
     chordProgression: s.chordProgression,
     chordProgressionLength: s.chordProgressionLength,
     chordIndex: s.chordIndex,
+    autoAdvance: s.autoAdvance,
+    autoAdvanceBars: s.autoAdvanceBars,
     registerBassMin: s.registerBassMin,
     registerBassMax: s.registerBassMax,
     registerBodyMin: s.registerBodyMin,
@@ -425,6 +432,8 @@ export const useUniversalConductorStore = create<UniversalConductorState>()(
         chordProgression: state.chordProgression,
         chordProgressionLength: state.chordProgressionLength,
         chordIndex: state.chordIndex,
+        autoAdvance: state.autoAdvance,
+        autoAdvanceBars: state.autoAdvanceBars,
         registerBassMin: state.registerBassMin,
         registerBassMax: state.registerBassMax,
         registerBodyMin: state.registerBodyMin,
