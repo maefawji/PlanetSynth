@@ -5424,7 +5424,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
           <RackOrbitColumn selectedBodyId={isBodyMode ? selectedBodyId : null} simple={simple} />
           <div style={{ width: 1, background: divCol, margin: '6px 0', flexShrink: 0 }} />
 
-          {/* ── Scrollable slots area (Trigger → Mixer) ── */}
+          {/* ── Scrollable slots area (Trigger → Effects) ── */}
           <div style={{
             flex: 1, display: 'flex', alignItems: 'stretch',
             position: 'relative',
@@ -5562,11 +5562,11 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
             </div>
           </div>
 
-          {/* ── MIXER OUTPUT ── */}
+          </div>{/* end scrollable slots */}
+
+          {/* ── MIXER OUTPUT (pinned — rightmost) ── */}
           <div style={{ width: 1, background: divCol, margin: '6px 0', flexShrink: 0 }} />
           <RackMixerColumn bodyId={isBodyMode ? selectedBodyId : null} simple={simple} />
-
-          </div>{/* end scrollable slots */}
         </div>
       )}
     </div>
