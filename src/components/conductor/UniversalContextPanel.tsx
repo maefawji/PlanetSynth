@@ -292,6 +292,18 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
             {/* Header row */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <div style={dimSectionLabel}>Chord Progression</div>
+              <button
+                onClick={c.advanceChordIndex}
+                title="Advance to next chord"
+                style={{
+                  padding: '2px 8px', borderRadius: 3, fontFamily: 'inherit',
+                  fontSize: 8, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em',
+                  border: `0.5px solid rgba(167,139,250,0.4)`,
+                  background: 'rgba(167,139,250,0.1)', color: accentColor,
+                }}
+              >
+                ▶ Next
+              </button>
               <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span style={{ fontSize: 8, color: t.textDim }}>steps</span>
                 <input type="number" min={1} max={8} value={c.chordProgressionLength}
@@ -302,17 +314,20 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
 
             {/* Preset buttons */}
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              {HARMONIC_PRESETS.map(p => (
-                <button key={p.name} onClick={() => c.applyPreset(p)} style={{
-                  padding: '3px 8px', borderRadius: 3, fontFamily: 'inherit',
-                  fontSize: 8.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em',
-                  border: `0.5px solid rgba(167,139,250,0.3)`,
-                  background: 'rgba(167,139,250,0.08)',
-                  color: accentColor,
-                }}>
-                  {p.name}
-                </button>
-              ))}
+              {HARMONIC_PRESETS.map(p => {
+                const isMatch = c.harmonicMode === p.harmonicMode && c.key === p.key && c.scale === p.scale
+                return (
+                  <button key={p.name} onClick={() => c.applyPreset(p)} style={{
+                    padding: '3px 8px', borderRadius: 3, fontFamily: 'inherit',
+                    fontSize: 8.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em',
+                    border: `0.5px solid ${isMatch ? 'rgba(167,139,250,0.6)' : 'rgba(167,139,250,0.25)'}`,
+                    background: isMatch ? 'rgba(167,139,250,0.18)' : 'rgba(167,139,250,0.06)',
+                    color: isMatch ? '#c4b5fd' : accentColor,
+                  }}>
+                    {p.name}
+                  </button>
+                )
+              })}
             </div>
 
             {/* Current chord */}

@@ -309,13 +309,23 @@ export const useUniversalConductorStore = create<UniversalConductorState>()(
         })
       },
       advanceChordIndex() {
-        set(state => ({
-          chordIndex: (state.chordIndex + 1) % state.chordProgressionLength,
-        }))
+        set(state => {
+          const nextIndex = (state.chordIndex + 1) % state.chordProgressionLength
+          const nextSlot = state.chordProgression[nextIndex]
+          return {
+            chordIndex: nextIndex,
+            ...(nextSlot ? {
+              chordRoot: nextSlot.root,
+              chordQuality: nextSlot.quality,
+              chordOctave: nextSlot.octave,
+            } : {}),
+          }
+        })
       },
       applyPreset(preset) {
         const slots: (ChordSlot | null)[] = Array(8).fill(null)
         preset.chords.forEach((c, i) => { slots[i] = c })
+        const first = preset.chords[0]
         set({
           key: preset.key,
           scale: preset.scale,
@@ -328,6 +338,11 @@ export const useUniversalConductorStore = create<UniversalConductorState>()(
           chordProgression: slots,
           chordProgressionLength: preset.chords.length,
           chordIndex: 0,
+          ...(first ? {
+            chordRoot: first.root,
+            chordQuality: first.quality,
+            chordOctave: first.octave,
+          } : {}),
         })
       },
       reset() {
