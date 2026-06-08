@@ -66,6 +66,7 @@ export default function App() {
   const simpleTheme        = usePlanetStore(s => s.simParams.simpleTheme)
   const setSelectedBodyId  = usePlanetStore(s => s.setSelectedBodyId)
   const selectedBodyId     = usePlanetStore(s => s.selectedBodyId)
+  const bodies             = usePlanetStore(s => s.bodies)
   const probeMass    = usePlanetStore(s => s.simParams.probeMass)
   const updateSimParams = usePlanetStore(s => s.updateSimParams)
   const nextPlanetDefaults = usePlanetStore(s => s.nextPlanetDefaults)
@@ -114,11 +115,27 @@ export default function App() {
     return () => window.removeEventListener('keydown', unlockAudioOnce)
   }, [unlockAudioOnce])
 
+  const bodiesRef = useRef(bodies)
+  const selectedBodyIdRef = useRef(selectedBodyId)
+  useEffect(() => { bodiesRef.current = bodies }, [bodies])
+  useEffect(() => { selectedBodyIdRef.current = selectedBodyId }, [selectedBodyId])
+
   useEffect(() => {
     if (appMode !== 'planet') return
     function onKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return
-      if (e.key === 's' || e.key === 'S') { setPlanetTool('add-sun') }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        const bs = bodiesRef.current
+        const sel = selectedBodyIdRef.current
+        if (bs.length === 0) return
+        const idx = bs.findIndex(b => b.id === sel)
+        const next = e.key === 'ArrowDown'
+          ? bs[(idx + 1) % bs.length]
+          : bs[(idx - 1 + bs.length) % bs.length]
+        setSelectedBodyId(next.id)
+      }
+      else if (e.key === 's' || e.key === 'S') { setPlanetTool('add-sun') }
       else if (e.key === 'p' || e.key === 'P') { setPlanetTool('add-planet') }
       else if (e.key === 'Escape') { setSelectedBodyId(null); setPlanetTool('select') }
     }
@@ -477,6 +494,8 @@ export default function App() {
               onExtendSampler={(bId, sk) => setSamplerPanel({ bodyId: bId, slotKey: sk })}
               onExtendOneShot={(bId, sk) => setOneShotPanel({ bodyId: bId, slotKey: sk })}
               planetTool={planetTool}
+              leftPanelWidth={leftCollapsed ? 34 : 246}
+              rightPanelWidth={rightCollapsed ? 34 : 260}
             />
           )}
         </div>

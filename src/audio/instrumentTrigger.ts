@@ -161,8 +161,7 @@ export function fireBodyInstrumentTrigger(
     const ep      = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
     const note    = noteOverride ?? (body?.midiNote ?? 60)
     const release = Number(ep.oscSynthRelease ?? 1.5)
-    const hasWave = refreshBodyWaveLabWaveform(bodyId, { applyToActive: false })
-    if (!hasWave && !eng.hasOrbitWaveform) return false
+    if (!eng.hasOrbitWaveform) return false
     eng.noteOn(note, (body?.midiVelocity ?? 100) / 127)
     scheduleNoteOff(`wave-lab:${bodyId}:${note}`, Math.max(300, release * 2000), () => eng.noteOff(note))
     return true

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { SigilGrammar } from '../sigil/sigilGenerator'
+import { generateStarIdentity } from '../lib/starNaming'
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
@@ -139,6 +140,7 @@ export interface PlanetSimParams {
   standpointMaxDist: number     // world-units distance at which volume reaches standpointMinVol
   standpointMinVol: number      // minimum volume at max distance (0 = silent)
   /** Directional (cone) attenuation from the standpoint */
+  showBodyNameCross: boolean               // prefix body names with cross symbol on canvas
   showStandpointVisual: boolean            // show standpoint ring/cone on canvas
   standpointDirectional: boolean          // enable directional cone
   standpointFacing: 'velocity' | 'manual' // direction source
@@ -310,6 +312,12 @@ export interface PlanetSimParams {
   // ── Arpeggiator trigger ───────────────────────────────────────────────────
   arpMode:   boolean   // true = this trigger cycles through arp notes
   arpPlayMode: 'arp' | 'chord'
+  arpContextSource: 'manual' | 'universal'
+  universalArpPartCount: 2 | 3
+  universalArpRole: 'bass' | 'body' | 'tension'
+  universalArpOrder: 'up' | 'down' | 'updown' | 'random'
+  universalArpOctaveShift: number
+  universalArpOctaveSpan: 1 | 2
   arpLength: number    // active step count 1–4
   arpNote0:  number    // step 0 (default 48 = C3)
   arpNote1:  number    // step 1 (default 52 = E3)
@@ -390,36 +398,46 @@ const BODY_EFFECTOR_DEFAULTS = {
   volume: 0.7,  // ≈ -3.1 dB (linear 0–1)
 }
 
-export const DEFAULT_BODIES: PlanetBody[] = [
-  {
-    id: 'sun', name: 'Sun', type: 'sun',
-    mass: 1000, x: 0, y: 0, z: 0, vx: 0, vy: 0,
-    fixed: true, color: '#f59e0b', sampleId: null,
-    standpointFacingAngle: 270,
-    orbitLoopNumer: 1, orbitLoopDenom: 1,
-    ...BODY_EFFECTOR_DEFAULTS,
-    ...BODY_DRONE_DEFAULTS,
-    ...BODY_MIDI_DEFAULTS,
-  },
-  {
-    id: 'planet', name: 'Planet', type: 'planet',
-    mass: 1, x: 280, y: 0, z: 0, vx: 0, vy: 1.89,
-    fixed: false, color: '#60a5fa', sampleId: null,
-    orbitLoopNumer: 1, orbitLoopDenom: 1,
-    ...BODY_EFFECTOR_DEFAULTS,
-    ...BODY_DRONE_DEFAULTS,
-    ...BODY_MIDI_DEFAULTS, midiNote: 62,
-  },
-  {
-    id: 'perturber', name: 'Perturber', type: 'planet',
-    mass: 80, x: -600, y: 180, z: 0, vx: 1.2, vy: 0,
-    fixed: false, color: '#f472b6', sampleId: null,
-    orbitLoopNumer: 1, orbitLoopDenom: 1,
-    ...BODY_EFFECTOR_DEFAULTS,
-    ...BODY_DRONE_DEFAULTS,
-    ...BODY_MIDI_DEFAULTS, midiNote: 64,
-  },
-]
+function makeDefaultBodies(): PlanetBody[] {
+  const sunId   = generateStarIdentity()
+  const planId  = generateStarIdentity(new Set([sunId.id]), new Set([sunId.properName]))
+  const pertId  = generateStarIdentity(new Set([sunId.id, planId.id]), new Set([sunId.properName, planId.properName]))
+  return [
+    {
+      id: 'sun', name: sunId.properName, type: 'sun',
+      designation: sunId.designation, catalogId: sunId.id,
+      mass: 1000, x: 0, y: 0, z: 0, vx: 0, vy: 0,
+      fixed: true, color: '#f59e0b', sampleId: null,
+      standpointFacingAngle: 270,
+      orbitLoopNumer: 1, orbitLoopDenom: 1,
+      ...BODY_EFFECTOR_DEFAULTS,
+      ...BODY_DRONE_DEFAULTS,
+      ...BODY_MIDI_DEFAULTS,
+    },
+    {
+      id: 'planet', name: planId.properName, type: 'planet',
+      designation: planId.designation, catalogId: planId.id,
+      mass: 1, x: 280, y: 0, z: 0, vx: 0, vy: 1.89,
+      fixed: false, color: '#60a5fa', sampleId: null,
+      orbitLoopNumer: 1, orbitLoopDenom: 1,
+      ...BODY_EFFECTOR_DEFAULTS,
+      ...BODY_DRONE_DEFAULTS,
+      ...BODY_MIDI_DEFAULTS, midiNote: 62,
+    },
+    {
+      id: 'perturber', name: pertId.properName, type: 'planet',
+      designation: pertId.designation, catalogId: pertId.id,
+      mass: 80, x: -600, y: 180, z: 0, vx: 1.2, vy: 0,
+      fixed: false, color: '#f472b6', sampleId: null,
+      orbitLoopNumer: 1, orbitLoopDenom: 1,
+      ...BODY_EFFECTOR_DEFAULTS,
+      ...BODY_DRONE_DEFAULTS,
+      ...BODY_MIDI_DEFAULTS, midiNote: 64,
+    },
+  ]
+}
+
+export const DEFAULT_BODIES: PlanetBody[] = makeDefaultBodies()
 
 export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   G: 1,
@@ -451,7 +469,7 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   // The rack system's trigger CS drives triggers; simParams are the fallback.
   // Keeping these OFF ensures "empty trigger slot = no trigger".
   rendezvousDistance: 0,
-  collisionExcludeSun: true,
+  collisionExcludeSun: false,
   collisionSpawnStar: true,
   collisionShowCircles: true,
   orbitTriggerMode: 'none',
@@ -480,6 +498,7 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   standpointBodyId: 'sun',
   standpointMaxDist: 700,
   standpointMinVol: 0,
+  showBodyNameCross: false,
   showStandpointVisual: true,
   standpointDirectional: true,
   standpointFacing: 'velocity',
@@ -606,6 +625,12 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
 
   arpMode:   false,
   arpPlayMode: 'arp',
+  arpContextSource: 'manual',
+  universalArpPartCount: 2,
+  universalArpRole: 'bass',
+  universalArpOrder: 'up',
+  universalArpOctaveShift: 0,
+  universalArpOctaveSpan: 1,
   arpLength: 4,
   arpNote0:  48,  // C3
   arpNote1:  52,  // E3
@@ -670,9 +695,14 @@ export const usePlanetStore = create<PlanetState>(set => ({
 
   removeBody: id => set(state => {
     const nextBodies = state.bodies.filter(b => b.id !== id)
+    let nextSelectedId = state.selectedBodyId
+    if (state.selectedBodyId === id) {
+      const idx = state.bodies.findIndex(b => b.id === id)
+      nextSelectedId = nextBodies[idx]?.id ?? nextBodies[idx - 1]?.id ?? null
+    }
     return {
       bodies: nextBodies,
-      selectedBodyId: state.selectedBodyId === id ? null : state.selectedBodyId,
+      selectedBodyId: nextSelectedId,
       selectedBodyIds: state.selectedBodyIds.filter(i => i !== id),
       simParams: state.simParams.standpointBodyId === id
         ? { ...state.simParams, standpointBodyId: nextBodies[0]?.id ?? null }
@@ -707,7 +737,7 @@ export const usePlanetStore = create<PlanetState>(set => ({
   setCameraFollowBodyId: id => set({ cameraFollowBodyId: id }),
 
   resetToDefaults: () => set(state => ({
-    bodies: DEFAULT_BODIES.map(b => ({ ...b })),
+    bodies: makeDefaultBodies(),
     simParams: { ...DEFAULT_SIM_PARAMS },
     selectedBodyId: null,
     selectedBodyIds: [],

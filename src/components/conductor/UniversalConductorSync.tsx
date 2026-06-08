@@ -11,7 +11,7 @@ export function UniversalConductorSync() {
   const autoAdvance = useUniversalConductorStore(state => state.autoAdvance)
   const autoAdvanceBars = useUniversalConductorStore(state => state.autoAdvanceBars)
   const advanceChordIndex = useUniversalConductorStore(state => state.advanceChordIndex)
-  const scheduleIdRef = useRef<number | null>(null)
+  const autoAdvanceTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     Tone.getTransport().bpm.value = bpm
@@ -26,24 +26,32 @@ export function UniversalConductorSync() {
   }, [tuning])
 
   useEffect(() => {
-    const transport = Tone.getTransport()
-    if (scheduleIdRef.current !== null) {
-      transport.clear(scheduleIdRef.current)
-      scheduleIdRef.current = null
+    if (autoAdvanceTimerRef.current !== null) {
+      window.clearInterval(autoAdvanceTimerRef.current)
+      autoAdvanceTimerRef.current = null
     }
     if (autoAdvance) {
-      const interval = `${autoAdvanceBars}m`
-      scheduleIdRef.current = transport.scheduleRepeat(() => {
+      const beatDurationMs = (60_000 / bpm) * (4 / timeSignatureDenominator)
+      const barDurationMs = beatDurationMs * timeSignatureNumerator
+      const intervalMs = Math.max(100, barDurationMs * autoAdvanceBars)
+      autoAdvanceTimerRef.current = window.setInterval(() => {
         advanceChordIndex()
-      }, interval)
+      }, intervalMs)
     }
     return () => {
-      if (scheduleIdRef.current !== null) {
-        transport.clear(scheduleIdRef.current)
-        scheduleIdRef.current = null
+      if (autoAdvanceTimerRef.current !== null) {
+        window.clearInterval(autoAdvanceTimerRef.current)
+        autoAdvanceTimerRef.current = null
       }
     }
-  }, [autoAdvance, autoAdvanceBars, advanceChordIndex])
+  }, [
+    autoAdvance,
+    autoAdvanceBars,
+    bpm,
+    timeSignatureNumerator,
+    timeSignatureDenominator,
+    advanceChordIndex,
+  ])
 
   return null
 }

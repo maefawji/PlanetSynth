@@ -81,7 +81,10 @@ export class AmbientOscillatorEngine {
   private _limiter:     DynamicsCompressorNode | null = null
 
   // Optional orbit-derived PeriodicWave (set via setOrbitWaveform)
-  private _periodicWave: PeriodicWave     | null = null
+  // When _periodicWaveL/_periodicWaveR are both set, stereo orbit waveforms are used.
+  private _periodicWave:  PeriodicWave    | null = null
+  private _periodicWaveL: PeriodicWave    | null = null
+  private _periodicWaveR: PeriodicWave    | null = null
 
   private _outputScale = 1
   private _outputPan   = 0
@@ -211,10 +214,13 @@ export class AmbientOscillatorEngine {
     const filter = ctx.createBiquadFilter()
     const leftWave  = p.waveformLeft  ?? p.waveform
     const rightWave = p.waveformRight ?? leftWave
-    const useStereoPair = !this._periodicWave && rightWave !== leftWave
+    const hasStereoOrbits = !!(this._periodicWaveL && this._periodicWaveR)
+    const useStereoPair = hasStereoOrbits || (!this._periodicWave && rightWave !== leftWave)
     const voiceLevel = targetLevel * (useStereoPair ? 0.62 : 1)
 
-    if (this._periodicWave) {
+    if (hasStereoOrbits) {
+      osc.setPeriodicWave(this._periodicWaveL!)
+    } else if (this._periodicWave) {
       osc.setPeriodicWave(this._periodicWave)
     } else {
       osc.type = leftWave
@@ -245,7 +251,11 @@ export class AmbientOscillatorEngine {
       const panLeft = ctx.createStereoPanner()
       const panRight = ctx.createStereoPanner()
 
-      oscRight.type = rightWave
+      if (hasStereoOrbits) {
+        oscRight.setPeriodicWave(this._periodicWaveR!)
+      } else {
+        oscRight.type = rightWave
+      }
       oscRight.frequency.value = freq
       filterRight.type = 'lowpass'
       filterRight.frequency.value = p.filterCutoff
@@ -340,15 +350,44 @@ export class AmbientOscillatorEngine {
     const N = pts.length
     if (N < 4) return
 
-    // Center and find peak
+    this._periodicWaveL = null
+    this._periodicWaveR = null
+    this._periodicWave = this._buildPeriodicWave(pts)
+    if (!this._periodicWave) return
+
+    if (opts.applyToActive !== false) {
+      for (const voice of this.voices.values()) {
+        voice.osc.setPeriodicWave(this._periodicWave)
+      }
+    }
+  }
+
+  /** Set separate L/R orbit-derived PeriodicWaves. Clears the mono _periodicWave. */
+  setOrbitWaveformStereo(
+    ptsL: ReadonlyArray<{ x: number; y: number }>,
+    ptsR: ReadonlyArray<{ x: number; y: number }>,
+    opts: { applyToActive?: boolean } = {},
+  ): void {
+    if (!this.ctx) return
+    this._periodicWave = null
+    this._periodicWaveL = this._buildPeriodicWave(ptsL)
+    this._periodicWaveR = this._buildPeriodicWave(ptsR)
+    if (opts.applyToActive !== false && this._periodicWaveL && this._periodicWaveR) {
+      for (const voice of this.voices.values()) {
+        voice.osc.setPeriodicWave(this._periodicWaveL)
+        if (voice.oscRight) voice.oscRight.setPeriodicWave(this._periodicWaveR)
+      }
+    }
+  }
+
+  private _buildPeriodicWave(pts: ReadonlyArray<{ x: number; y: number }>): PeriodicWave | null {
+    if (!this.ctx || pts.length < 4) return null
+    const N = pts.length
     let sumY = 0
     for (const p of pts) sumY += p.y
     const meanY = sumY / N
     let peak = 1e-9
     for (const p of pts) peak = Math.max(peak, Math.abs(p.y - meanY))
-
-    // DFT → PeriodicWave coefficients
-    // x(θ) = Σ_k [ real[k]·cos(kθ) + imag[k]·sin(kθ) ]
     const half = Math.min(Math.floor(N / 2) + 1, 257)
     const realCoef = new Float32Array(half)
     const imagCoef = new Float32Array(half)
@@ -365,22 +404,14 @@ export class AmbientOscillatorEngine {
       imagCoef[k] = (2 * im) / N
     }
     realCoef[0] = 0
-
-    // disableNormalization: false → browser normalizes peak to ±1 (safe headroom)
-    this._periodicWave = this.ctx.createPeriodicWave(realCoef, imagCoef, { disableNormalization: false })
-
-    if (opts.applyToActive !== false) {
-      // Apply to all currently running voices. Live waveform replacement can
-      // click, so callers that update frequently should opt out.
-      for (const voice of this.voices.values()) {
-        voice.osc.setPeriodicWave(this._periodicWave)
-      }
-    }
+    return this.ctx.createPeriodicWave(realCoef, imagCoef, { disableNormalization: false })
   }
 
   /** Clear any orbit-derived waveform and revert to params.waveform. */
   clearOrbitWaveform(): void {
-    this._periodicWave = null
+    this._periodicWave  = null
+    this._periodicWaveL = null
+    this._periodicWaveR = null
     for (const voice of this.voices.values()) {
       voice.osc.type = this.params.waveform
       if (voice.oscRight) voice.oscRight.type = this.params.waveformRight ?? this.params.waveform
@@ -469,7 +500,7 @@ export class AmbientOscillatorEngine {
   }
 
   get hasOrbitWaveform(): boolean {
-    return this._periodicWave !== null
+    return this._periodicWave !== null || (this._periodicWaveL !== null && this._periodicWaveR !== null)
   }
 
   // ── Dispose ────────────────────────────────────────────────────────────────────

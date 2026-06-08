@@ -122,18 +122,27 @@ export function refreshBodyWaveLabWaveform(
   if (!eng) return false
 
   const ep = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
-  const sigsStr = String(ep.wavLabSig ?? 'x')
-  const sigs = sigsStr.split(',').filter(s =>
-    ['x','y','r','angle','speed'].includes(s)
-  ) as WavSig[]
+  const VALID = ['x','y','r','angle','speed']
+  const parseSigs = (key: string, fallback: string) =>
+    String(ep[key] ?? fallback).split(',').filter(s => VALID.includes(s)) as WavSig[]
+
+  const sigsL = parseSigs('wavLabSigL', String(ep.wavLabSig ?? 'x'))
+  const sigsR = parseSigs('wavLabSigR', String(ep.wavLabSig ?? 'x'))
+  const stereo = sigsL.join(',') !== sigsR.join(',')
 
   const trailPts = getBodyTrailPoints(bodyId)
   if (!trailPts || trailPts.length < 4) return false
 
-  const wfPts = buildTrailWaveform(trailPts, sigs.length > 0 ? sigs : ['x'])
-  if (wfPts.length < 4) return false
-
-  eng.setOrbitWaveform(wfPts, opts)
+  if (stereo) {
+    const wfL = buildTrailWaveform(trailPts, sigsL.length > 0 ? sigsL : ['x'])
+    const wfR = buildTrailWaveform(trailPts, sigsR.length > 0 ? sigsR : ['x'])
+    if (wfL.length < 4 || wfR.length < 4) return false
+    eng.setOrbitWaveformStereo(wfL, wfR, opts)
+  } else {
+    const wfPts = buildTrailWaveform(trailPts, sigsL.length > 0 ? sigsL : ['x'])
+    if (wfPts.length < 4) return false
+    eng.setOrbitWaveform(wfPts, opts)
+  }
   notifyWaveLabWaveformRefresh(bodyId)
   return true
 }
@@ -141,6 +150,7 @@ export function refreshBodyWaveLabWaveform(
 // ── Sync ──────────────────────────────────────────────────────────────────────
 
 type EngineMap = Map<string, AmbientOscillatorEngine>
+const _sigsKeyCache = new Map<string, string>() // bodyId → last sigsKey
 
 async function syncEngines(engines: EngineMap): Promise<void> {
   const { bodies }              = usePlanetStore.getState()
@@ -182,6 +192,7 @@ async function syncEngines(engines: EngineMap): Promise<void> {
       lfoWaveform: (ep.oscSynthLfoWaveform as OscillatorType) ?? 'sine',
     }
 
+    const sigsKey = `${String(ep.wavLabSigL ?? ep.wavLabSig ?? 'x')}|${String(ep.wavLabSigR ?? ep.wavLabSig ?? 'x')}`
     let eng = engines.get(body.id)
     if (!eng) {
       eng = new AmbientOscillatorEngine()
@@ -191,8 +202,16 @@ async function syncEngines(engines: EngineMap): Promise<void> {
       _engines.set(body.id, eng)
       retainBus(body.id)
       eng.getOutputNode().connect(getBusInputNode(body.id))
+      // Build waveform for the first time (deferred so audio init isn't blocked)
+      _sigsKeyCache.set(body.id, sigsKey)
+      setTimeout(() => refreshBodyWaveLabWaveform(body.id, { applyToActive: false }), 0)
     } else {
       eng.setParams(p)
+      // Rebuild waveform if signals changed (deferred to avoid blocking audio scheduler)
+      if (_sigsKeyCache.get(body.id) !== sigsKey) {
+        _sigsKeyCache.set(body.id, sigsKey)
+        setTimeout(() => refreshBodyWaveLabWaveform(body.id, { applyToActive: false }), 0)
+      }
     }
 
     setBusVolume(body.id, body.muted ? 0 : (body.volume ?? 1))
@@ -204,6 +223,7 @@ async function syncEngines(engines: EngineMap): Promise<void> {
       eng.noteOffAll()
       engines.delete(id)
       _engines.delete(id)
+      _sigsKeyCache.delete(id)
       releaseBus(id)
       clearBodyOutputLevel(id, 'wave-lab')
     }

@@ -26,7 +26,7 @@ import type { PlanetBody, PlanetSimParams } from '../../store/planetStore'
 import { BODY_DRONE_DEFAULTS, BODY_MIDI_DEFAULTS } from '../../store/planetStore'
 import { ADSR_OFF, computeOrbitAdsr } from '../../audio/orbitAdsr'
 import type { SampleAsset } from '../../patch/types'
-import { setBodyOutputLevel, clearBodyOutputLevel } from '../../audio/bodyOutputMeter'
+import { setBodyOutputLevel, clearBodyOutputLevel, getBodyOutputLevel } from '../../audio/bodyOutputMeter'
 import { computeBodyRackOutputSpatial } from '../../audio/bodyRackOutput'
 import { clearBusOscilloscopeAnalysers, getBusOscilloscopeData, setBusStandpointSpatial } from '../../audio/rackBusMixer'
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
@@ -38,12 +38,139 @@ import { sendMidiNote } from '../../audio/midiManager'
 import { unlockMobileAudio } from '../../audio/mobileAudioUnlock'
 import { generateStarIdentity, collectExistingIdentities } from '../../lib/starNaming'
 import { useArpProgressionStore } from '../../store/arpProgressionStore'
+import { useUniversalConductorStore } from '../../store/universalConductorStore'
+import {
+  getUniversalArpeggioSnapshot,
+  readUniversalArpeggioParams,
+  universalArpeggioStepIndex,
+} from '../../lib/universalArpeggio'
 import { resolveOrbitDurationSource } from '../../lib/orbitDurationSource'
 import { computeOrbitStats } from './DroneLayer'
 import { randomGrammar, randomSeed, generateFromGrammar } from '../../sigil/sigilGenerator'
 import type { SigilGrammar, SigilShape } from '../../sigil/sigilGenerator'
 
 export type PlanetTool = 'select' | 'add-sun' | 'add-planet' | 'probe'
+
+function CanvasBodyIndicator({
+  body,
+  index,
+  selected,
+  color,
+  onSelect,
+  onVolumeChange,
+}: {
+  body: PlanetBody
+  index: number
+  selected: boolean
+  color: string
+  onSelect: () => void
+  onVolumeChange: (volume: number) => void
+}) {
+  const dotRef = useRef<HTMLSpanElement>(null)
+
+  useEffect(() => {
+    const dot = dotRef.current
+    if (!dot) return
+    let displayedLevel = 0
+    const update = () => {
+      const level = getBodyOutputLevel(body.id)
+      displayedLevel = level >= displayedLevel ? level : displayedLevel * 0.78
+      const rawIntensity = Math.max(0, Math.min(1, displayedLevel))
+      const intensity = Math.pow(rawIntensity, 0.38)
+      dot.style.opacity = String(0.16 + intensity * 0.84)
+      dot.style.filter = `saturate(${0.22 + intensity * 0.78}) brightness(${0.64 + intensity * 0.36})`
+      dot.style.transform = `scale(${0.86 + intensity * 0.14})`
+      dot.style.boxShadow = intensity > 0.02
+        ? `0 0 ${4 + intensity * 8}px ${color}${Math.round(60 + intensity * 135).toString(16).padStart(2, '0')}`
+        : 'none'
+    }
+    update()
+    const timer = window.setInterval(update, 50)
+    return () => window.clearInterval(timer)
+  }, [body.id, color])
+
+  const dragRef = useRef<{ startY: number; startVol: number } | null>(null)
+  const isDraggingRef = useRef(false)
+
+  const handleMouseDown = (event: React.MouseEvent) => {
+    event.stopPropagation()
+    dragRef.current = { startY: event.clientY, startVol: body.volume ?? 1 }
+    isDraggingRef.current = false
+
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current) return
+      const dy = dragRef.current.startY - e.clientY
+      if (!isDraggingRef.current && Math.abs(dy) < 3) return
+      isDraggingRef.current = true
+      const newVol = Math.max(0, Math.min(1, dragRef.current.startVol + dy / 80))
+      onVolumeChange(newVol)
+    }
+    const onUp = (e: MouseEvent) => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      if (!isDraggingRef.current) {
+        onSelect()
+        ;(e.target as HTMLElement | null)?.blur?.()
+      }
+      dragRef.current = null
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      {selected && (
+        <span style={{
+          whiteSpace: 'nowrap',
+          fontSize: 10,
+          color,
+          opacity: 0.85,
+          pointerEvents: 'none',
+          textShadow: '0 1px 4px #000a',
+        }}>
+          {body.name}
+        </span>
+      )}
+      <button
+        type="button"
+        title={`${index + 1}. ${body.name}  |  vol: ${Math.round((body.volume ?? 1) * 100)}%`}
+        aria-label={`Select ${body.name}`}
+        onMouseDown={handleMouseDown}
+        onMouseUp={event => event.currentTarget.blur()}
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: '50%',
+          border: selected ? `1.5px dashed ${color}` : 'none',
+          background: 'transparent',
+          boxShadow: selected ? `0 0 10px ${color}55` : 'none',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 0,
+          cursor: 'ns-resize',
+          outline: 'none',
+        }}
+      >
+        <span
+          ref={dotRef}
+          style={{
+            width: body.type === 'sun' ? 14 : 10,
+            height: body.type === 'sun' ? 14 : 10,
+            borderRadius: '50%',
+            background: color,
+            display: 'block',
+            opacity: 0.16,
+            transform: 'scale(0.86)',
+            filter: 'saturate(0.22) brightness(0.64)',
+            transition: 'opacity 50ms linear, filter 50ms linear, transform 50ms linear, box-shadow 50ms linear',
+          }}
+        />
+      </button>
+    </div>
+  )
+}
 
 // ── Orbit-preview snapshot (updated every RAF frame) ─────────────────────────
 // Lets RightInspector compute next-orbit prediction without coupling to the
@@ -988,19 +1115,104 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
             const sbi = sbMap.get(bodyId)
             if (sbi?.muted) return                     // body is muted — skip
 
+            // ── Resolve arpeggio note for rendezvous trigger ──────────────────
+            const rack = rkCache.get(bodyId)
+            // Skip bodies that have no rendezvous trigger (e.g. trigger-empty)
+            const hasRdvTrigger = rack?.triggers.some(id => id === 'rendezvous')
+            if (!hasRdvTrigger) return
+            const rdvTrigIdx = rack?.triggers.findIndex(id => id === 'rendezvous') ?? -1
+            const rdvTrigParams = rdvTrigIdx >= 0 ? (tpCache.get(bodyId)?.[rdvTrigIdx] as Record<string, unknown> | undefined) : undefined
+            const timerKey = `${bodyId}:rdv`
+            let rdvNote: number | undefined
+            if (rdvTrigParams) {
+              const arpMode = Boolean(rdvTrigParams.arpMode)
+              if (arpMode) {
+                const arpContextSource = String(rdvTrigParams.arpContextSource ?? 'manual')
+                const arpPlayMode = String(rdvTrigParams.arpPlayMode ?? 'arp')
+                const arpUseSeq = Boolean(rdvTrigParams.arpUseSeq)
+                const arpProgressionEnabled = Boolean(rdvTrigParams.arpChordProgressionEnabled)
+                const arpLen = Math.max(1, Math.min(4, Number(rdvTrigParams.arpLength ?? 4)))
+                const arpNotes = [
+                  Number(rdvTrigParams.arpNote0 ?? 48),
+                  Number(rdvTrigParams.arpNote1 ?? 52),
+                  Number(rdvTrigParams.arpNote2 ?? 55),
+                  Number(rdvTrigParams.arpNote3 ?? 59),
+                ]
+                const prevNotes = arpPrevNoteRef.current.get(timerKey) ?? []
+                if (prevNotes.length > 0) {
+                  const oscEng = getBodyOscSynthEngine(bodyId)
+                  const waveEng = getBodyWaveLabEngine(bodyId)
+                  for (const prevNote of prevNotes) {
+                    oscEng?.noteOff(prevNote)
+                    waveEng?.noteOff(prevNote)
+                  }
+                }
+                let fireNotes: number[]
+                if (arpContextSource === 'universal') {
+                  const universalConfig = readUniversalArpeggioParams(rdvTrigParams)
+                  const chordNotes = getUniversalArpeggioSnapshot(
+                    useUniversalConductorStore.getState(),
+                    rdvTrigParams,
+                  ).roleNotes
+                  if (arpPlayMode === 'chord') {
+                    fireNotes = chordNotes
+                  } else {
+                    const step = arpStepRef.current.get(timerKey) ?? 0
+                    const noteIndex = universalArpeggioStepIndex(chordNotes.length, universalConfig.order, step)
+                    fireNotes = [chordNotes[noteIndex] ?? 60]
+                    arpStepRef.current.set(timerKey, step + 1)
+                  }
+                } else if (arpUseSeq) {
+                  const chordStep = arpChordStepRef.current.get(timerKey) ?? 0
+                  const chordNotes = buildArpSeqChordNotes(rdvTrigParams, chordStep)
+                  if (arpPlayMode === 'chord') {
+                    fireNotes = chordNotes
+                    arpChordStepRef.current.set(timerKey, chordStep + 1)
+                  } else {
+                    const step = arpStepRef.current.get(timerKey) ?? 0
+                    fireNotes = [chordNotes[step % Math.max(1, chordNotes.length)] ?? 60]
+                    const nextStep = (step + 1) % Math.max(1, chordNotes.length)
+                    arpStepRef.current.set(timerKey, nextStep)
+                    if (nextStep === 0) arpChordStepRef.current.set(timerKey, chordStep + 1)
+                  }
+                } else if (arpProgressionEnabled) {
+                  const chordStep = arpChordStepRef.current.get(timerKey) ?? 0
+                  const chordNotes = buildArpProgressionChordNotes(rdvTrigParams, chordStep)
+                  if (arpPlayMode === 'chord') {
+                    fireNotes = chordNotes
+                    arpChordStepRef.current.set(timerKey, chordStep + 1)
+                  } else {
+                    const step = arpStepRef.current.get(timerKey) ?? 0
+                    fireNotes = [chordNotes[step % Math.max(1, chordNotes.length)] ?? 60]
+                    const nextStep = (step + 1) % Math.max(1, chordNotes.length)
+                    arpStepRef.current.set(timerKey, nextStep)
+                    if (nextStep === 0) arpChordStepRef.current.set(timerKey, chordStep + 1)
+                  }
+                } else if (arpPlayMode === 'chord') {
+                  fireNotes = buildArpChordNotes(rdvTrigParams)
+                } else {
+                  const step = arpStepRef.current.get(timerKey) ?? 0
+                  fireNotes = [arpNotes[step % arpLen]]
+                  arpStepRef.current.set(timerKey, (step + 1) % arpLen)
+                }
+                arpPrevNoteRef.current.set(timerKey, fireNotes)
+                rdvNote = fireNotes[0]
+              }
+            }
+
             // ── MIDI OUT ─ Note On to instrument ─────────────────────────────
             // Send MIDI Note On regardless of which path handles audio playback.
             // Instrument slot (OneShotLayer) listens via MIDI IN to play.
             sendMidiNote(
               sbi?.midiChannel  ?? 1,
-              sbi?.midiNote     ?? 60,
+              rdvNote ?? sbi?.midiNote ?? 60,
               sbi?.midiVelocity ?? 100,
               200,
             )
 
             // ── Instrument engine path (oneshot etc.) ─────────────────────────
             // If the body's instrument rack consumed the trigger, skip legacy path.
-            if (fireBodyInstrumentTrigger(bodyId)) {
+            if (fireBodyInstrumentTrigger(bodyId, rate, rdvNote)) {
               markTriggeredOnCanvas(bodyId)
               return
             }
@@ -1050,10 +1262,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           for (let i = 0; i < bodies.length; i++) {
             for (let j = i + 1; j < bodies.length; j++) {
               const bi = bodies[i], bj = bodies[j]
-              // Skip fixed (sun) bodies if exclude is enabled
+              // Skip sun-type bodies if exclude is enabled
               if (collExcludeSun) {
                 const sbi2 = sbMap.get(bi.id), sbj2 = sbMap.get(bj.id)
-                if (sbi2?.fixed || sbj2?.fixed) continue
+                if (sbi2?.type === 'sun' || sbj2?.type === 'sun') continue
               }
               const rdDist = globalRdDist
               if (rdDist <= 0) continue
@@ -1207,6 +1419,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
               const resolveFireNotes = () => {
                 const arpMode  = Boolean(tpRecord.arpMode)
                 const arpPlayMode = String(tpRecord.arpPlayMode ?? 'arp')
+                const arpContextSource = String(tpRecord.arpContextSource ?? 'manual')
                 const arpUseSeq = Boolean(tpRecord.arpUseSeq)
                 const arpProgressionEnabled = Boolean(tpRecord.arpChordProgressionEnabled)
                 const arpLen   = Math.max(1, Math.min(4, Number(tpRecord.arpLength ?? 4)))
@@ -1227,7 +1440,25 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                       waveEng?.noteOff(prevNote)
                     }
                   }
-                  if (arpUseSeq) {
+                  if (arpContextSource === 'universal') {
+                    const universalConfig = readUniversalArpeggioParams(tpRecord)
+                    const chordNotes = getUniversalArpeggioSnapshot(
+                      useUniversalConductorStore.getState(),
+                      tpRecord,
+                    ).roleNotes
+                    if (arpPlayMode === 'chord') {
+                      fireNotes = chordNotes
+                    } else {
+                      const step = arpStepRef.current.get(timerKey) ?? 0
+                      const noteIndex = universalArpeggioStepIndex(
+                        chordNotes.length,
+                        universalConfig.order,
+                        step,
+                      )
+                      fireNotes = [chordNotes[noteIndex] ?? 60]
+                      arpStepRef.current.set(timerKey, step + 1)
+                    }
+                  } else if (arpUseSeq) {
                     const chordStep = arpChordStepRef.current.get(timerKey) ?? 0
                     const chordNotes = buildArpSeqChordNotes(tpRecord, chordStep)
                     if (arpPlayMode === 'chord') {
@@ -1475,6 +1706,130 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                 }
               }
             }  // end for (ti)
+
+            // ── Universal Step triggers ───────────────────────────────────────
+            // Fires on wall-clock intervals derived from Universal Context (BPM, etc.)
+            // Handled separately since interval has nothing to do with orbit period.
+            for (let ti = 0; ti < triggerParamsList.length; ti++) {
+              const tp = triggerParamsList[ti]
+              if (rack.triggers[ti] !== 'trigger-universal-step') continue
+              const tpRecord = tp as Record<string, unknown>
+              const timerKey = ti === 0 ? `${b.id}:us` : `${b.id}:us:${ti}`
+              const nowMs = performance.now()
+
+              // Compute interval from Universal Context source
+              const usSource = String(tpRecord.universalStepSource ?? 'uBPM')
+              const usDivision = Math.max(0.0625, Number(tpRecord.universalStepDivision ?? 1))
+              const ucState = useUniversalConductorStore.getState()
+              let beatMs = 60000 / Math.max(1, ucState.bpm)
+              let intervalMs: number
+              if (usSource === 'uBar') {
+                intervalMs = beatMs * Math.max(1, ucState.timeSignatureNumerator) * usDivision
+              } else if (usSource === 'uBeat') {
+                intervalMs = beatMs * usDivision
+              } else {
+                // uBPM default — 1 beat
+                intervalMs = beatMs * usDivision
+              }
+              intervalMs = Math.max(16, intervalMs)
+
+              const lastWall = lastTriggerWallMsRef.current.get(timerKey)
+              if (lastWall !== undefined && (nowMs - lastWall) < intervalMs) continue
+              lastTriggerWallMsRef.current.set(timerKey, nowMs)
+
+              if (!shouldFireOrbitStep(tpRecord, timerKey)) continue
+
+              // Resolve arpeggio notes (same logic as orbit-complete resolveFireNotes)
+              const arpMode  = Boolean(tpRecord.arpMode)
+              const arpPlayMode = String(tpRecord.arpPlayMode ?? 'arp')
+              const arpContextSource = String(tpRecord.arpContextSource ?? 'manual')
+              const arpUseSeq = Boolean(tpRecord.arpUseSeq)
+              const arpProgressionEnabled = Boolean(tpRecord.arpChordProgressionEnabled)
+              const arpLen   = Math.max(1, Math.min(4, Number(tpRecord.arpLength ?? 4)))
+              const arpNotes = [
+                Number(tpRecord.arpNote0 ?? 48), Number(tpRecord.arpNote1 ?? 52),
+                Number(tpRecord.arpNote2 ?? 55), Number(tpRecord.arpNote3 ?? 59),
+              ]
+              let fireNotes = [sbi.midiNote ?? 60]
+              if (arpMode) {
+                const prevNotes = arpPrevNoteRef.current.get(timerKey) ?? []
+                for (const pn of prevNotes) {
+                  getBodyOscSynthEngine(b.id)?.noteOff(pn)
+                  getBodyWaveLabEngine(b.id)?.noteOff(pn)
+                }
+                if (arpContextSource === 'universal') {
+                  const universalConfig = readUniversalArpeggioParams(tpRecord)
+                  const chordNotes = getUniversalArpeggioSnapshot(ucState, tpRecord).roleNotes
+                  if (arpPlayMode === 'chord') {
+                    fireNotes = chordNotes
+                  } else {
+                    const step = arpStepRef.current.get(timerKey) ?? 0
+                    const ni = universalArpeggioStepIndex(chordNotes.length, universalConfig.order, step)
+                    fireNotes = [chordNotes[ni] ?? 60]
+                    arpStepRef.current.set(timerKey, step + 1)
+                  }
+                } else if (arpUseSeq) {
+                  const chordStep = arpChordStepRef.current.get(timerKey) ?? 0
+                  const chordNotes = buildArpSeqChordNotes(tpRecord, chordStep)
+                  if (arpPlayMode === 'chord') {
+                    fireNotes = chordNotes; arpChordStepRef.current.set(timerKey, chordStep + 1)
+                  } else {
+                    const step = arpStepRef.current.get(timerKey) ?? 0
+                    fireNotes = [chordNotes[step % Math.max(1, chordNotes.length)] ?? 60]
+                    const nextStep = (step + 1) % Math.max(1, chordNotes.length)
+                    arpStepRef.current.set(timerKey, nextStep)
+                    if (nextStep === 0) arpChordStepRef.current.set(timerKey, chordStep + 1)
+                  }
+                } else if (arpProgressionEnabled) {
+                  const chordStep = arpChordStepRef.current.get(timerKey) ?? 0
+                  const chordNotes = buildArpProgressionChordNotes(tpRecord, chordStep)
+                  if (arpPlayMode === 'chord') {
+                    fireNotes = chordNotes; arpChordStepRef.current.set(timerKey, chordStep + 1)
+                  } else {
+                    const step = arpStepRef.current.get(timerKey) ?? 0
+                    fireNotes = [chordNotes[step % Math.max(1, chordNotes.length)] ?? 60]
+                    const nextStep = (step + 1) % Math.max(1, chordNotes.length)
+                    arpStepRef.current.set(timerKey, nextStep)
+                    if (nextStep === 0) arpChordStepRef.current.set(timerKey, chordStep + 1)
+                  }
+                } else if (arpPlayMode === 'chord') {
+                  fireNotes = buildArpChordNotes(tpRecord)
+                } else {
+                  const step = arpStepRef.current.get(timerKey) ?? 0
+                  fireNotes = [arpNotes[step % arpLen]]
+                  arpStepRef.current.set(timerKey, (step + 1) % arpLen)
+                }
+                arpPrevNoteRef.current.set(timerKey, fireNotes)
+              }
+
+              for (const fireNote of fireNotes) {
+                sendMidiNote(sbi.midiChannel ?? 1, fireNote, sbi.midiVelocity ?? 100, 200)
+              }
+              const supportsPitchedNotes =
+                rack.instrument === 'instrument-wave-lab' ||
+                rack.instrument === 'instrument-osc-synth-orbit'
+              const instrumentNotes = supportsPitchedNotes ? fireNotes : [fireNotes[0]]
+              let consumed = false
+              for (const fn of instrumentNotes) {
+                consumed = fireBodyInstrumentTrigger(b.id, 1, arpMode ? fn : undefined) || consumed
+              }
+              if (consumed) {
+                markTriggeredOnCanvas(b.id)
+              } else {
+                const sample = resolveBodySamplerSample(b.id, sbi.sampleId, smpArr)
+                if (sample) {
+                  const spatial = computeBodyRackOutputSpatial(b.id, bodies, params, bodyParams)
+                  const bodyVol = sbi.volume ?? 1
+                  const finalVol = 0.85 * spatial.volume * bodyVol
+                  const adsr = params.adsrMode === 'off' ? ADSR_OFF
+                    : params.adsrMode === 'orbit' ? computeOrbitAdsr(b, bodies, params.G) : undefined
+                  const tPlayMode = (bodyParams.triggerPlaybackMode as string | undefined) ?? params.triggerPlaybackMode
+                  triggerBodySound(sample, { playbackRate: 1, volume: finalVol, adsr, overlap: tPlayMode === 'layer', pan: spatial.pan, detuneCents: 0 })
+                  setBodyOutputLevel(b.id, 'sampler', finalVol, 900)
+                  markTriggeredOnCanvas(b.id)
+                }
+              }
+            }  // end universal-step triggers
           }    // end if (!paused && sbi && !muted)
 
           // ── Sample playback: orbit-stretch and time-stretch modes ──────────────
@@ -2628,28 +2983,32 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   const y2 = b.y + r * Math.sin(endAngle)
                   const largeArc = halfConeRad * 2 > Math.PI ? 1 : 0
 
+                  // 4-pointed star path centered at origin, radius s, waist w
+                  const spS = (wr + 9 / zoom)
+                  const spW = spS * 0.22
+                  const spPath = `M 0 ${-spS} C ${-spW} ${-spW} ${-spW} ${-spW} ${-spS} 0 C ${-spW} ${spW} ${-spW} ${spW} 0 ${spS} C ${spW} ${spW} ${spW} ${spW} ${spS} 0 C ${spW} ${-spW} ${spW} ${-spW} 0 ${-spS} Z`
+                  const spColor = monochromeMode ? monoInk : '#06b6d4'
                   return (
                     <>
-                      <circle cx={b.x} cy={b.y} r={wr + 7 / zoom} fill="none"
-                        stroke={monochromeMode ? monoInk : '#06b6d4'} strokeWidth={worldStroke()} strokeOpacity={monochromeMode ? paperLineOpacity : 0.75} />
                       {/* Range: cone sector if directional, full circle otherwise */}
                       {dirOn ? (
-                        // Directional: arc only (no center lines, no fill)
                         <path
                           d={`M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`}
-                          fill="none" stroke={monochromeMode ? monoInk : '#06b6d4'} strokeWidth={worldStroke(0.67)} strokeOpacity={monochromeMode ? paperLineOpacity : 0.6}
+                          fill="none" stroke={spColor} strokeWidth={worldStroke(0.67)} strokeOpacity={monochromeMode ? paperLineOpacity : 0.6}
                           strokeDasharray={`${7 / zoom} ${5 / zoom}`} />
                       ) : (
                         <circle cx={b.x} cy={b.y} r={r} fill="none"
-                          stroke={monochromeMode ? monoInk : '#06b6d4'} strokeWidth={worldStroke(0.33)} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.22}
+                          stroke={spColor} strokeWidth={worldStroke(0.33)} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.22}
                           strokeDasharray={`${7 / zoom} ${5 / zoom}`} />
                       )}
-                      <text
-                        x={b.x + wr + 11 / zoom} y={b.y + 3 / zoom}
-                        fontSize={9 / zoom} fill={monochromeMode ? monoInk : '#06b6d4'} opacity={monochromeMode ? labelOpacity : 0.75}
-                        style={{ pointerEvents: 'none', userSelect: 'none' }}>
-                        SP
-                      </text>
+                      {/* 4-pointed star at body center */}
+                      <path
+                        d={spPath}
+                        transform={`translate(${b.x}, ${b.y})`}
+                        fill={spColor}
+                        opacity={monochromeMode ? paperLineOpacity : 0.75}
+                        style={{ pointerEvents: 'none' }}
+                      />
                     </>
                   )
                 })()}
@@ -2710,6 +3069,43 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   <circle cx={b.x + wr * 0.7} cy={b.y - wr * 0.7} r={2.5 / zoom}
                     fill={monochromeMode ? monoInk : simple ? '#2563eb' : '#60a5fa'} opacity={monochromeMode ? paperMainOpacity : 0.9} />
                 )}
+                {storeParams.showBodyNameCross && (() => {
+                  // 4-arm cross: rounded top/sides, pointed bottom
+                  const s  = 5.5 / zoom
+                  const aw = s * 0.16   // arm half-width
+                  const cr = s * 0.22   // rounded corner offset
+                  const sa = s * 0.52   // side arm reach
+                  const cy = -s * 0.18  // crossbar center y
+                  const d = [
+                    `M ${-aw} ${-s + cr}`,
+                    `Q ${-aw} ${-s} 0 ${-s}`,
+                    `Q ${aw} ${-s} ${aw} ${-s + cr}`,
+                    `L ${aw} ${cy - aw}`,
+                    `L ${sa - cr} ${cy - aw}`,
+                    `Q ${sa} ${cy - aw} ${sa} ${cy}`,
+                    `Q ${sa} ${cy + aw} ${sa - cr} ${cy + aw}`,
+                    `L ${aw} ${cy + aw}`,
+                    `L ${aw * 0.5} ${s * 0.72}`,
+                    `L 0 ${s}`,
+                    `L ${-aw * 0.5} ${s * 0.72}`,
+                    `L ${-aw} ${cy + aw}`,
+                    `L ${-(sa - cr)} ${cy + aw}`,
+                    `Q ${-sa} ${cy + aw} ${-sa} ${cy}`,
+                    `Q ${-sa} ${cy - aw} ${-(sa - cr)} ${cy - aw}`,
+                    `L ${-aw} ${cy - aw}`,
+                    `Z`,
+                  ].join(' ')
+                  const labelY = b.y - wr - 9 / zoom
+                  return (
+                    <path
+                      d={d}
+                      transform={`translate(${b.x - sa - 4 / zoom}, ${labelY - s * 0.2})`}
+                      fill={labelColor}
+                      opacity={labelOpacity}
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  )
+                })()}
                 <text x={b.x} y={b.y - wr - 9 / zoom} textAnchor="middle"
                   fontSize={10 / zoom} fill={labelColor} opacity={labelOpacity}
                   style={{ pointerEvents: 'none', userSelect: 'none' }}>
@@ -2884,68 +3280,36 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
             bottom: 8,
             right: rightPanelWidth + 8,
             zIndex: 5,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 7,
-            padding: '2px 0',
-            borderRadius: 0,
-            background: 'transparent',
-            border: 'none',
-            backdropFilter: 'none',
+            width: 160,
             overflowY: 'auto',
             overflowX: 'hidden',
             scrollbarWidth: 'none',
+          }}
+        >
+        <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-end',
+            gap: 7,
+            padding: '2px 0',
           }}
         >
           {storeBodies.map((body, index) => {
             const selected = body.id === selectedBodyId
             const bodyColor = monochromeMode && !paperCanvasKeepBodyColors ? monoInk : body.color
             return (
-              <button
+              <CanvasBodyIndicator
                 key={body.id}
-                type="button"
-                title={`${index + 1}. ${body.name}`}
-                aria-label={`Select ${body.name}`}
-                onMouseDown={e => e.stopPropagation()}
-                onMouseUp={e => e.currentTarget.blur()}
-                onClick={e => {
-                  e.stopPropagation()
-                  setSelectedBodyId(selected ? null : body.id)
-                  e.currentTarget.blur()
-                }}
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: '50%',
-                  border: selected
-                    ? `1.5px dashed ${bodyColor}`
-                    : 'none',
-                  background: 'transparent',
-                  boxShadow: selected
-                    ? `0 0 10px ${bodyColor}55`
-                    : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: 0,
-                  cursor: 'pointer',
-                  outline: 'none',
-                }}
-              >
-                <span
-                  style={{
-                    width: body.type === 'sun' ? 14 : 10,
-                    height: body.type === 'sun' ? 14 : 10,
-                    borderRadius: '50%',
-                    background: bodyColor,
-                    boxShadow: `0 0 7px ${bodyColor}88`,
-                    display: 'block',
-                  }}
-                />
-              </button>
+                body={body}
+                index={index}
+                selected={selected}
+                color={bodyColor}
+                onSelect={() => setSelectedBodyId(selected ? null : body.id)}
+                onVolumeChange={vol => usePlanetStore.getState().updateBody(body.id, { volume: vol })}
+              />
             )
           })}
+        </div>
         </div>
       )}
     </div>

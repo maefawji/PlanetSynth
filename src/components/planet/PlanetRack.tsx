@@ -28,7 +28,17 @@ import { getBodyOutputLevel } from '../../audio/bodyOutputMeter'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
 import { getBusOscilloscopeData } from '../../audio/rackBusMixer'
 import { useArpProgressionStore } from '../../store/arpProgressionStore'
-import { CONDUCTOR_NOTE_NAMES, useUniversalConductorStore } from '../../store/universalConductorStore'
+import {
+  CHORD_QUALITY_INTERVALS,
+  CONDUCTOR_NOTE_NAMES,
+  formatChordName,
+  useUniversalConductorStore,
+} from '../../store/universalConductorStore'
+import {
+  getUniversalArpeggioSnapshot,
+  readUniversalArpeggioParams,
+  type UniversalArpRole,
+} from '../../lib/universalArpeggio'
 import { ORBIT_T_DEFINITION, resolveOrbitDurationSource } from '../../lib/orbitDurationSource'
 import { generateFromGrammar, randomGrammar } from '../../sigil/sigilGenerator'
 import type { SigilGrammar } from '../../sigil/sigilGenerator'
@@ -589,6 +599,17 @@ function RackMixerColumn({ bodyId, simple }: { bodyId: string | null; simple: bo
   const dB = vuLevel > 0.0001 ? 20 * Math.log10(vuLevel) : -100
   const dBLabel = vuLevel > 0.001 ? `${Math.round(dB)}` : '—'
 
+  // dB-scaled meter: floor=-68dB (≈-∞), ceil=+6dB
+  const VU_FLOOR = -68
+  const VU_CEIL  = 6
+  const vuHeightPct = (lin: number) => {
+    if (lin < 0.000001) return 0
+    const db = 20 * Math.log10(lin)
+    return Math.max(0, Math.min(100, ((db - VU_FLOOR) / (VU_CEIL - VU_FLOOR)) * 100))
+  }
+  // tick positions in the dB scale (bottom %)
+  const vuTicks = [-6, -12, -18, 0].map(db => ((db - VU_FLOOR) / (VU_CEIL - VU_FLOOR)) * 100)
+
   return (
     <div style={{
       width: 70, flexShrink: 0,
@@ -618,9 +639,9 @@ function RackMixerColumn({ bodyId, simple }: { bodyId: string | null; simple: bo
       <div style={{ flex: 1, display: 'flex', gap: 4, alignItems: 'stretch', minHeight: 50, width: '100%', padding: '0 4px' }}>
         {/* VU bar — signal from instrument */}
         <div title="signal level" style={{ width: 8, flexShrink: 0, borderRadius: 3, overflow: 'hidden', background: trackBg, position: 'relative', alignSelf: 'stretch' }}>
-          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${vuLevel * 100}%`, background: vuColor, borderRadius: 3, transition: 'height 0.05s linear' }} />
-          {[0.5012, 0.2512, 0.1259].map((lin, i) => (
-            <div key={i} style={{ position: 'absolute', bottom: `${lin * 100}%`, left: 0, right: 0, height: 0.5, background: simple ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.12)' }} />
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${vuHeightPct(vuLevel)}%`, background: vuColor, borderRadius: 3, transition: 'height 0.05s linear' }} />
+          {vuTicks.map((pct, i) => (
+            <div key={i} style={{ position: 'absolute', bottom: `${pct}%`, left: 0, right: 0, height: 0.5, background: simple ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.12)' }} />
           ))}
         </div>
         {/* Vertical fader */}
@@ -1469,6 +1490,28 @@ function progressionLabel(overrides: Partial<PlanetSimParams>): string {
   return `${NOTE_NAMES[Math.max(0, Math.min(11, Number(getArpParam(overrides, 'arpChordRoot', 0))))]} ${scale} · ${String(getArpParam(overrides, 'arpChordProgression', '1 2 5 7'))}`
 }
 
+function buildUniversalRackChordNotes(): number[] {
+  const context = useUniversalConductorStore.getState()
+  const progressionLength = Math.max(1, Math.min(
+    context.chordProgression.length,
+    Math.round(context.chordProgressionLength),
+  ))
+  const chordIndex = ((Math.round(context.chordIndex) % progressionLength) + progressionLength) % progressionLength
+  const slot = context.chordProgression[chordIndex]
+  const root = slot?.root ?? context.chordRoot
+  const quality = slot?.quality ?? context.chordQuality
+  const octave = slot?.octave ?? context.chordOctave
+  const intervals = CHORD_QUALITY_INTERVALS[quality] ?? CHORD_QUALITY_INTERVALS.Maj7
+  const base = (Math.max(0, Math.min(8, octave)) + 1) * 12 + Math.max(0, Math.min(11, root))
+  const notes = intervals.map(interval => Math.max(0, Math.min(127, base + interval))).sort((a, b) => a - b)
+  if (slot?.bassRoot != null && slot.bassRoot !== root) {
+    let bass = (Math.max(0, Math.min(8, octave)) + 1) * 12 + slot.bassRoot
+    while (bass >= notes[0] && bass >= 12) bass -= 12
+    notes.unshift(Math.max(0, Math.min(127, bass)))
+  }
+  return notes.slice(0, Math.max(1, context.maxPolyphony))
+}
+
 function InlineArpContent({
   bodyId, slotKey, simple, accent,
 }: { bodyId: string | null; slotKey: string; simple: boolean; accent: string }) {
@@ -1479,10 +1522,19 @@ function InlineArpContent({
   const resetSlotParam  = useControlSetStore(s => s.resetSlotParam)
   const conductorKey    = useUniversalConductorStore(s => s.key)
   const conductorScale  = useUniversalConductorStore(s => s.scale)
+  const conductorChordRoot = useUniversalConductorStore(s => s.chordRoot)
+  const conductorChordQuality = useUniversalConductorStore(s => s.chordQuality)
+  const conductorChordOctave = useUniversalConductorStore(s => s.chordOctave)
+  const conductorProgression = useUniversalConductorStore(s => s.chordProgression)
+  const conductorProgressionLength = useUniversalConductorStore(s => s.chordProgressionLength)
+  const conductorChordIndex = useUniversalConductorStore(s => s.chordIndex)
   const dimText = simple ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.35)'
   const playMode = String(getArpParam(overrides, 'arpPlayMode', 'arp'))
+  const contextSource = String(getArpParam(overrides, 'arpContextSource', 'manual'))
   const progressionEnabled = Boolean(getArpParam(overrides, 'arpChordProgressionEnabled', false))
-  const chordNotes = progressionEnabled ? buildRackProgressionChordNotes(overrides, 0) : buildRackChordNotes(overrides)
+  const chordNotes = contextSource === 'universal'
+    ? buildUniversalRackChordNotes()
+    : progressionEnabled ? buildRackProgressionChordNotes(overrides, 0) : buildRackChordNotes(overrides)
   const chordLabel = chordNotes.map(midiToNoteName).join(' ')
   // eslint-disable-next-line react-hooks/purity
   const liveAge = liveState ? performance.now() - liveState.updatedAt : Infinity
@@ -1494,6 +1546,15 @@ function InlineArpContent({
   const division = Number(getArpParam(overrides, 'orbitTriggerDivision', 0.25))
   const divisionLabel = isNoteSlot ? 'note' : division === 1 ? '1/1' : division === 0.5 ? '1/2' : division === 0.25 ? '1/4' : division === 0.125 ? '1/8' : '1/16'
   const keyChordMap = buildKeyChordMap(conductorKey, conductorScale, 3)
+  const universalProgressionLength = Math.max(1, Math.min(conductorProgression.length, Math.round(conductorProgressionLength)))
+  const universalChordIndex = ((Math.round(conductorChordIndex) % universalProgressionLength) + universalProgressionLength) % universalProgressionLength
+  const universalSlot = conductorProgression[universalChordIndex]
+  const universalChordName = formatChordName(
+    universalSlot?.root ?? conductorChordRoot,
+    universalSlot?.quality ?? conductorChordQuality,
+    universalSlot?.bassRoot,
+  )
+  const universalOctave = universalSlot?.octave ?? conductorChordOctave
 
   // defaults C3 E3 G3 B3
   const DEFAULT_NOTES = [48, 52, 55, 59]
@@ -1567,13 +1628,22 @@ function InlineArpContent({
         fontSize: 7.5,
         lineHeight: 1.25,
       }}>
-        <span style={{ color: accent, fontWeight: 800 }}>
-          Key {CONDUCTOR_NOTE_NAMES[conductorKey]} {conductorScale}
-        </span>
-        <span> → </span>
-        {keyChordMap
-          ? keyChordMap.map(chord => `${chord.degree} ${chord.name}`).join(' · ')
-          : 'コード生成は major / minor に対応'}
+        {contextSource === 'universal' ? (
+          <>
+            <span style={{ color: accent, fontWeight: 800 }}>Universal Context</span>
+            <span> → {universalChordName}{universalOctave} · {chordLabel}</span>
+          </>
+        ) : (
+          <>
+            <span style={{ color: accent, fontWeight: 800 }}>
+              Key {CONDUCTOR_NOTE_NAMES[conductorKey]} {conductorScale}
+            </span>
+            <span> → </span>
+            {keyChordMap
+              ? keyChordMap.map(chord => `${chord.degree} ${chord.name}`).join(' · ')
+              : 'コード生成は major / minor に対応'}
+          </>
+        )}
       </div>
       {progressionEnabled && (
         <div style={{
@@ -1616,7 +1686,7 @@ function InlineArpContent({
           title="Click to preview chord"
         >
           <div style={{ fontSize: 7, color: dimText, lineHeight: 1, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            {progressionEnabled ? progressionLabel(overrides) : 'Chord'}
+            {contextSource === 'universal' ? `Universal · ${universalChordName}${universalOctave}` : progressionEnabled ? progressionLabel(overrides) : 'Chord'}
           </div>
           <div style={{ fontSize: 9, fontWeight: 800, color: accent, lineHeight: 1.2 }}>{chordLabel}</div>
         </div>
@@ -1655,7 +1725,325 @@ function InlineArpContent({
       </div>
       )}
       <div style={{ fontSize: 7, color: dimText, marginTop: 3, lineHeight: 1.3 }}>
-        {progressionEnabled ? 'progression: advances by degree' : playMode === 'chord' ? 'click: preview · expand: edit chord' : 'scroll: ±1st · click: preview · right-click: reset'}
+        {contextSource === 'universal' ? 'Universal Contextの現在コードに追従' : progressionEnabled ? 'progression: advances by degree' : playMode === 'chord' ? 'click: preview · expand: edit chord' : 'scroll: ±1st · click: preview · right-click: reset'}
+      </div>
+    </div>
+  )
+}
+
+const UNIVERSAL_ARP_ROLES: Record<2 | 3, Array<{
+  role: UniversalArpRole
+  short: string
+  title: string
+  description: string
+}>> = {
+  2: [
+    { role: 'bass', short: '1', title: 'Bass / Anchor', description: 'rootまたはslash bassで低域を固定' },
+    { role: 'body', short: '2', title: 'Chord Body + Tension', description: '3rd / 5thと拡張音をまとめて担当' },
+  ],
+  3: [
+    { role: 'bass', short: '1', title: 'Bass / Anchor', description: 'rootまたはslash bassで低域を固定' },
+    { role: 'body', short: '2', title: 'Chord Body', description: '3rd / 5thを中心に和音の輪郭を担当' },
+    { role: 'tension', short: '3', title: 'Add9 / Tension / Ornament', description: '7th以降の拡張音。ない場合は高域装飾音' },
+  ],
+}
+
+function InlineUniversalArpContent({
+  bodyId, slotKey, simple, accent,
+}: { bodyId: string | null; slotKey: string; simple: boolean; accent: string }) {
+  const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
+  const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
+  const context = useUniversalConductorStore()
+  const config = readUniversalArpeggioParams(overrides as Record<string, unknown>)
+  const snapshot = getUniversalArpeggioSnapshot(context, overrides as Record<string, unknown>)
+  const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.38)'
+  const playMode = String(getArpParam(overrides, 'arpPlayMode', 'arp'))
+  const roles = UNIVERSAL_ARP_ROLES[config.partCount]
+
+  function preview() {
+    const targetId = bodyId || usePlanetStore.getState().selectedBodyId
+    if (!targetId) return
+    const body = usePlanetStore.getState().bodies.find(candidate => candidate.id === targetId)
+    const notes = playMode === 'chord' ? snapshot.roleNotes : snapshot.roleNotes.slice(0, 1)
+    notes.forEach(note => {
+      sendMidiNote(body?.midiChannel ?? 1, note, body?.midiVelocity ?? 100, 350)
+      fireBodyInstrumentTrigger(targetId, 1, note)
+    })
+    markBodyTriggered(targetId)
+  }
+
+  return (
+    <div style={{ paddingTop: 4 }}>
+      <div style={{
+        padding: '4px 6px', marginBottom: 4, borderRadius: 4,
+        border: `0.5px solid ${accent}55`, background: `${accent}12`,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 5 }}>
+          <span style={{ color: accent, fontSize: 8, fontWeight: 900 }}>UNIVERSAL · {snapshot.chordName}</span>
+          <span style={{ color: dim, fontSize: 7 }}>{snapshot.chordIndex + 1}/{snapshot.chordCount}</span>
+        </div>
+        <div style={{ color: dim, fontSize: 7.5, marginTop: 2 }}>
+          {snapshot.roleLabel} → {snapshot.roleNotes.map(midiToNoteName).join(' · ')}
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${config.partCount}, 1fr)`, gap: 3, marginBottom: 4 }}>
+        {roles.map(role => {
+          const active = config.role === role.role
+          return (
+            <button
+              key={role.role}
+              onClick={() => setSlotOverride(slotKey, { universalArpRole: role.role } as Partial<PlanetSimParams>)}
+              title={role.title}
+              style={{
+                border: `0.5px solid ${active ? accent : accent + '33'}`,
+                borderRadius: 4,
+                background: active ? `${accent}24` : 'transparent',
+                color: active ? accent : dim,
+                padding: '3px 2px',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontSize: 7,
+                fontWeight: 800,
+              }}
+            >
+              {role.short} · {role.role === 'bass' ? 'ANCHOR' : role.role === 'body' ? 'BODY' : 'TENSION'}
+            </button>
+          )
+        })}
+      </div>
+      <button onClick={preview} style={{
+        width: '100%', border: `0.5px solid ${accent}55`, borderRadius: 4,
+        background: `${accent}0e`, color: accent, padding: '4px 6px',
+        cursor: 'pointer', fontFamily: 'inherit', fontSize: 8, fontWeight: 800,
+      }}>
+        ▶ {playMode === 'chord' ? 'STACK' : config.order.toUpperCase()} · {snapshot.roleNotes.map(midiToNoteName).join(' ')}
+      </button>
+    </div>
+  )
+}
+
+function UniversalArpeggioExpanded({
+  bodyId, slotKey, simple, onClose,
+}: { bodyId: string | null; slotKey: string; simple: boolean; onClose?: () => void }) {
+  const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
+  const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
+  const context = useUniversalConductorStore()
+  const config = readUniversalArpeggioParams(overrides as Record<string, unknown>)
+  const snapshot = getUniversalArpeggioSnapshot(context, overrides as Record<string, unknown>)
+  const accent = '#c084fc'
+  const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.38)'
+  const text = simple ? 'rgba(0,0,0,0.72)' : 'rgba(255,255,255,0.76)'
+  const border = simple ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.09)'
+  const panel = simple ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.035)'
+  const roles = UNIVERSAL_ARP_ROLES[config.partCount]
+  const playMode = String(getArpParam(overrides, 'arpPlayMode', 'arp'))
+
+  const setValue = (key: string, value: string | number) => {
+    setSlotOverride(slotKey, { [key]: value } as Partial<PlanetSimParams>)
+  }
+
+  function setPartCount(partCount: 2 | 3) {
+    const nextRole = partCount === 2 && config.role === 'tension' ? 'body' : config.role
+    setSlotOverride(slotKey, {
+      universalArpPartCount: partCount,
+      universalArpRole: nextRole,
+    } as Partial<PlanetSimParams>)
+  }
+
+  function preview(notes: number[]) {
+    const targetId = bodyId || usePlanetStore.getState().selectedBodyId
+    if (!targetId) return
+    const body = usePlanetStore.getState().bodies.find(candidate => candidate.id === targetId)
+    notes.forEach(note => {
+      sendMidiNote(body?.midiChannel ?? 1, note, body?.midiVelocity ?? 100, 400)
+      fireBodyInstrumentTrigger(targetId, 1, note)
+    })
+    markBodyTriggered(targetId)
+  }
+
+  const sectionLabel = (label: string) => (
+    <div style={{ fontSize: 8, fontWeight: 900, color: accent, textTransform: 'uppercase', letterSpacing: '0.11em', marginBottom: 7 }}>
+      {label}
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 330 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 9, padding: '7px 14px 7px 48px',
+        borderBottom: `0.5px solid ${border}`, flexShrink: 0,
+        background: `linear-gradient(90deg, ${accent}14, transparent 55%)`,
+      }}>
+        {onClose && <button onClick={onClose} style={{ fontSize: 9, color: dim, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>▼ close</button>}
+        <span style={{ color: accent, fontSize: 10, fontWeight: 900, letterSpacing: '0.06em' }}>✦ UNIVERSAL ARPEGGIO</span>
+        <span style={{ color: text, fontSize: 9 }}>{snapshot.chordName}</span>
+        <span style={{ color: dim, fontSize: 8 }}>context step {snapshot.chordIndex + 1}/{snapshot.chordCount}</span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr)', gap: 14, padding: '14px 14px 14px 48px' }}>
+        <div style={{ borderRight: `0.5px solid ${border}`, paddingRight: 16 }}>
+          {sectionLabel('Ensemble')}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
+            {([2, 3] as const).map(count => (
+              <button key={count} onClick={() => setPartCount(count)} style={{
+                border: `0.5px solid ${config.partCount === count ? accent : border}`,
+                borderRadius: 6, background: config.partCount === count ? `${accent}20` : panel,
+                color: config.partCount === count ? accent : text, padding: '9px 8px',
+                cursor: 'pointer', fontFamily: 'inherit', fontWeight: 900, fontSize: 10,
+              }}>
+                {count} PARTS
+              </button>
+            ))}
+          </div>
+
+          {sectionLabel('Universal Chord')}
+          <button onClick={() => preview(snapshot.allNotes)} style={{
+            width: '100%', textAlign: 'left', border: `0.5px solid ${accent}44`,
+            borderRadius: 6, background: `${accent}0d`, padding: '9px 10px',
+            cursor: 'pointer', fontFamily: 'inherit', marginBottom: 14,
+          }}>
+            <div style={{ color: accent, fontWeight: 900, fontSize: 13 }}>{snapshot.chordName}</div>
+            <div style={{ color: text, fontSize: 9, marginTop: 5 }}>{snapshot.allNotes.map(midiToNoteName).join(' · ')}</div>
+            <div style={{ color: dim, fontSize: 7.5, marginTop: 5 }}>Click to preview full chord</div>
+          </button>
+
+          <div style={{ color: dim, fontSize: 8, lineHeight: 1.55 }}>
+            各Universal Arpeggioを別bodyへ配置し、同じ編成数で異なるPartを選ぶと、1つのUniversal Chordを分担して演奏します。
+          </div>
+        </div>
+
+        <div>
+          {sectionLabel('Part Assignment')}
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${config.partCount}, minmax(0, 1fr))`, gap: 8 }}>
+            {roles.map((role, index) => {
+              const active = config.role === role.role
+              const roleSnapshot = getUniversalArpeggioSnapshot(context, {
+                ...(overrides as Record<string, unknown>),
+                universalArpRole: role.role,
+              })
+              return (
+                <button key={role.role} onClick={() => setValue('universalArpRole', role.role)} style={{
+                  minHeight: 150, textAlign: 'left', borderRadius: 8, padding: '11px 12px',
+                  border: `1px solid ${active ? accent : border}`,
+                  background: active
+                    ? `linear-gradient(145deg, ${accent}25, ${accent}0b)`
+                    : panel,
+                  boxShadow: active ? `0 0 0 1px ${accent}22, 0 10px 24px rgba(0,0,0,0.16)` : 'none',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ color: active ? accent : dim, fontSize: 8, fontWeight: 900, letterSpacing: '0.12em' }}>
+                      PART {index + 1}
+                    </span>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: active ? accent : 'transparent',
+                      border: `1px solid ${active ? accent : dim}`,
+                    }} />
+                  </div>
+                  <div style={{ color: active ? '#e9d5ff' : text, fontSize: 11, fontWeight: 900, marginTop: 9, lineHeight: 1.25 }}>
+                    {role.title}
+                  </div>
+                  <div style={{ color: dim, fontSize: 8, lineHeight: 1.45, marginTop: 7, minHeight: 34 }}>
+                    {role.description}
+                  </div>
+                  <div style={{
+                    color: active ? accent : text, fontFamily: 'monospace',
+                    fontSize: 10, fontWeight: 800, marginTop: 10,
+                  }}>
+                    {roleSnapshot.roleNotes.map(midiToNoteName).join(' · ')}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          <div style={{
+            marginTop: 12, borderRadius: 8, border: `0.5px solid ${accent}55`,
+            background: `${accent}0c`, padding: '11px 12px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <div>
+                <div style={{ color: accent, fontSize: 8, fontWeight: 900, letterSpacing: '0.1em' }}>THIS INSTANCE</div>
+                <div style={{ color: text, fontSize: 12, fontWeight: 900, marginTop: 4 }}>{snapshot.roleLabel}</div>
+              </div>
+              <button onClick={() => preview(snapshot.roleNotes)} style={{
+                border: `0.5px solid ${accent}77`, borderRadius: 5, background: `${accent}20`,
+                color: accent, padding: '7px 11px', cursor: 'pointer', fontFamily: 'inherit',
+                fontSize: 9, fontWeight: 900,
+              }}>▶ PREVIEW</button>
+            </div>
+            <div style={{ color: '#e9d5ff', fontFamily: 'monospace', fontSize: 14, fontWeight: 900, marginTop: 9 }}>
+              {snapshot.roleNotes.map(midiToNoteName).join('  ')}
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          gridColumn: '1 / -1',
+          display: 'grid',
+          gridTemplateColumns: '1.5fr 0.8fr 1.2fr',
+          gap: 14,
+          borderTop: `0.5px solid ${border}`,
+          paddingTop: 12,
+        }}>
+          <div>
+            {sectionLabel('Motion')}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 5 }}>
+              {(['up', 'down', 'updown', 'random'] as const).map(order => (
+                <button key={order} onClick={() => setValue('universalArpOrder', order)} style={{
+                  border: `0.5px solid ${config.order === order ? accent : border}`,
+                  borderRadius: 5, background: config.order === order ? `${accent}1c` : panel,
+                  color: config.order === order ? accent : text, padding: '7px 5px',
+                  cursor: 'pointer', fontFamily: 'inherit', fontSize: 8.5, fontWeight: 800,
+                  textTransform: 'uppercase',
+                }}>{order === 'updown' ? 'UP / DOWN' : order}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            {sectionLabel('Output')}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+              {([
+                ['arp', 'STEP'],
+                ['chord', 'STACK'],
+              ] as const).map(([mode, label]) => (
+                <button key={mode} onClick={() => setValue('arpPlayMode', mode)} style={{
+                  border: `0.5px solid ${playMode === mode ? accent : border}`,
+                  borderRadius: 5, background: playMode === mode ? `${accent}1c` : panel,
+                  color: playMode === mode ? accent : text, padding: '7px 5px',
+                  cursor: 'pointer', fontFamily: 'inherit', fontSize: 8.5, fontWeight: 900,
+                }}>{label}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            {sectionLabel('Register')}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 72px', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 28px', gap: 5, alignItems: 'center' }}>
+                <input type="range" min={-2} max={2} step={1} value={config.octaveShift}
+                  aria-label="octave shift"
+                  onChange={event => setValue('universalArpOctaveShift', Number(event.target.value))}
+                  style={{ accentColor: accent, minWidth: 0 }} />
+                <span style={{ color: accent, fontFamily: 'monospace', fontSize: 9, textAlign: 'center' }}>
+                  {config.octaveShift > 0 ? `+${config.octaveShift}` : config.octaveShift}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                {([1, 2] as const).map(span => (
+                  <button key={span} onClick={() => setValue('universalArpOctaveSpan', span)} style={{
+                    border: `0.5px solid ${config.octaveSpan === span ? accent : border}`,
+                    borderRadius: 5, background: config.octaveSpan === span ? `${accent}1c` : panel,
+                    color: config.octaveSpan === span ? accent : text, padding: '7px 3px',
+                    cursor: 'pointer', fontFamily: 'inherit', fontSize: 8, fontWeight: 800,
+                  }}>{span}O</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -1668,12 +2056,19 @@ function ArpeggioExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string
   const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
   const conductorKey = useUniversalConductorStore(s => s.key)
   const conductorScale = useUniversalConductorStore(s => s.scale)
+  const conductorChordRoot = useUniversalConductorStore(s => s.chordRoot)
+  const conductorChordQuality = useUniversalConductorStore(s => s.chordQuality)
+  const conductorChordOctave = useUniversalConductorStore(s => s.chordOctave)
+  const conductorProgression = useUniversalConductorStore(s => s.chordProgression)
+  const conductorProgressionLength = useUniversalConductorStore(s => s.chordProgressionLength)
+  const conductorChordIndex = useUniversalConductorStore(s => s.chordIndex)
   const accent = '#f59e0b'
   const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.38)'
   const dim2 = simple ? 'rgba(0,0,0,0.64)' : 'rgba(255,255,255,0.64)'
   const border = simple ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.08)'
   const panel = simple ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.04)'
   const playMode = String(getArpParam(overrides, 'arpPlayMode', 'arp'))
+  const contextSource = String(getArpParam(overrides, 'arpContextSource', 'manual'))
   const progressionEnabled = Boolean(getArpParam(overrides, 'arpChordProgressionEnabled', false))
   const progression = String(getArpParam(overrides, 'arpChordProgression', '1 2 5 7'))
   const scaleMode = String(getArpParam(overrides, 'arpChordScaleMode', 'major'))
@@ -1681,11 +2076,20 @@ function ArpeggioExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string
   const quality = String(getArpParam(overrides, 'arpChordQuality', 'Maj7'))
   const octave = Math.max(0, Math.min(8, Math.round(Number(getArpParam(overrides, 'arpChordOctave', 3)))))
   const inversion = Math.max(0, Math.min(3, Math.round(Number(getArpParam(overrides, 'arpChordInversion', 0)))))
-  const chordNotes = buildRackChordNotes(overrides)
+  const chordNotes = contextSource === 'universal' ? buildUniversalRackChordNotes() : buildRackChordNotes(overrides)
   const progressionPreview = parseRackProgression(progression).slice(0, 8).map((_, i) => buildRackProgressionChordNotes(overrides, i))
   const chordPcs = new Set(chordNotes.map(n => n % 12))
   const stepNotes = ARP_STEP_KEYS.map((key, i) => Number(getArpParam(overrides, key, [48, 52, 55, 59][i])))
   const keyChordMap = buildKeyChordMap(conductorKey, conductorScale, octave)
+  const universalProgressionLength = Math.max(1, Math.min(conductorProgression.length, Math.round(conductorProgressionLength)))
+  const universalChordIndex = ((Math.round(conductorChordIndex) % universalProgressionLength) + universalProgressionLength) % universalProgressionLength
+  const universalSlot = conductorProgression[universalChordIndex]
+  const universalChordName = formatChordName(
+    universalSlot?.root ?? conductorChordRoot,
+    universalSlot?.quality ?? conductorChordQuality,
+    universalSlot?.bassRoot,
+  )
+  const universalOctave = universalSlot?.octave ?? conductorChordOctave
 
   const useSeq = Boolean(getArpParam(overrides, 'arpUseSeq', false))
   const seqSteps = parseChordSeq(getArpParam(overrides, 'arpChordSeq', '[]'))
@@ -1758,6 +2162,33 @@ function ArpeggioExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string
           ))}
         </div>
 
+        {sectionLabel('Note Source')}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 12 }}>
+          {(['manual', 'universal'] as const).map(source => (
+            <button key={source} onClick={() => setStr('arpContextSource', source)} style={{
+              fontSize: 9, fontWeight: 800, padding: '6px 7px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+              border: `0.5px solid ${contextSource === source ? accent : border}`,
+              background: contextSource === source ? `${accent}18` : panel,
+              color: contextSource === source ? accent : dim2,
+              textTransform: 'uppercase',
+            }}>{source === 'universal' ? 'Universal' : 'Manual'}</button>
+          ))}
+        </div>
+        {contextSource === 'universal' && (
+          <div style={{
+            marginBottom: 12, padding: '7px 8px', borderRadius: 5,
+            border: `0.5px solid ${accent}55`, background: `${accent}0c`,
+          }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: accent, marginBottom: 4 }}>
+              {universalChordName}{universalOctave}
+            </div>
+            <div style={{ fontSize: 8, color: dim2 }}>{chordNotes.map(midiToNoteName).join(' · ')}</div>
+            <div style={{ fontSize: 7.5, color: dim, marginTop: 4 }}>
+              Universal Context chord {universalChordIndex + 1}/{universalProgressionLength}
+            </div>
+          </div>
+        )}
+
         {sectionLabel('Current Key')}
         <div style={{
           marginBottom: 12,
@@ -1799,6 +2230,7 @@ function ArpeggioExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string
           </div>
         </div>
 
+        <div style={{ opacity: contextSource === 'universal' ? 0.35 : 1, pointerEvents: contextSource === 'universal' ? 'none' : 'auto' }}>
         {sectionLabel('Progression')}
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9, color: dim2, marginBottom: 7 }}>
           <input
@@ -1835,6 +2267,7 @@ function ArpeggioExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string
               textTransform: 'uppercase',
             }}>{mode}</button>
           ))}
+        </div>
         </div>
 
         {!isNoteSlot && (
@@ -2805,6 +3238,7 @@ function InstrumentEffectorBridge({ bodyId, simple }: { bodyId: string | null; s
 // ── Wave Lab expanded panel ───────────────────────────────────────────────────
 
 const WAV_SIGS = ['x','y','r','angle','speed'] as const
+type OrbitStats = ReturnType<typeof computeOrbitStats>
 const WAV_SIG_COLORS: Record<string, string> = { x:'#60a5fa', y:'#34d399', r:'#a78bfa', angle:'#fbbf24', speed:'#f87171' }
 const WAV_SIG_LABELS: Record<string, string> = { x:'X', y:'Y', r:'r', angle:'θ', speed:'spd' }
 
@@ -2997,11 +3431,11 @@ function WaveLabLfoPreview({
 
 // Standalone slider row — must be module-level to avoid remount on every parent render
 function WLSliderRow({ label, paramKey, min, max, step, fmt, srcKey, rateKey, showSrc,
-  ep, dim, dim2, accent, liveValue, onSetNum, onSetStr }: {
+  ep, dim, dim2, accent, liveValue, srcRaw, onSetNum, onSetStr }: {
   label: string; paramKey: string; min: number; max: number; step: number
   fmt: (v: number) => string; srcKey?: string; rateKey?: string; showSrc: boolean
   ep: Record<string, unknown>; dim: string; dim2: string; accent: string
-  liveValue?: number | null
+  liveValue?: number | null; srcRaw?: number | null
   onSetNum: (key: string, val: number) => void
   onSetStr: (key: string, val: string) => void
 }) {
@@ -3016,11 +3450,44 @@ function WLSliderRow({ label, paramKey, min, max, step, fmt, srcKey, rateKey, sh
     <div style={{ marginBottom: 3 }}>
       <div style={{ display:'flex', alignItems:'center', gap:4 }}>
         <span style={{ fontSize:8.5, color:dim, width:50, flexShrink:0, textAlign:'right' }}>{label}</span>
-        <input type="range" min={min} max={max} step={step} value={val}
-          onMouseDown={() => setDrag(storeVal)}
-          onChange={e => setDrag(parseFloat(e.target.value))}
-          onMouseUp={e => { const v = parseFloat((e.target as HTMLInputElement).value); setDrag(null); onSetNum(paramKey, v) }}
-          style={{ flex:1, accentColor:accent, minWidth:0, cursor:'ew-resize' }} />
+        {(() => {
+          const displayVal = isMapped ? (liveValue ?? val) : val
+          const pct = Math.max(0, Math.min(1, (displayVal - min) / (max - min))) * 100
+          const trackFill = isMapped ? `${accent}55` : `${accent}99`
+          const thumbOpacity = isMapped ? 0.5 : 1
+          const thumbSize = isMapped ? 7 : 9
+          return (
+            <div
+              style={{ flex:1, minWidth:0, position:'relative', height:16, display:'flex', alignItems:'center', cursor: isMapped ? 'not-allowed' : 'ew-resize' }}
+              onMouseDown={isMapped ? undefined : e => {
+                setDrag(storeVal)
+                const el = e.currentTarget
+                const rect = el.getBoundingClientRect()
+                const move = (ev: MouseEvent) => {
+                  const ratio = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width))
+                  setDrag(min + ratio * (max - min))
+                }
+                const up = (ev: MouseEvent) => {
+                  const ratio = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width))
+                  const v = min + ratio * (max - min)
+                  setDrag(null)
+                  onSetNum(paramKey, parseFloat(v.toFixed(10)))
+                  window.removeEventListener('mousemove', move)
+                  window.removeEventListener('mouseup', up)
+                }
+                window.addEventListener('mousemove', move)
+                window.addEventListener('mouseup', up)
+              }}
+            >
+              {/* track */}
+              <div style={{ position:'absolute', left:0, right:0, height:3, borderRadius:2, background:'rgba(255,255,255,0.08)' }} />
+              {/* fill */}
+              <div style={{ position:'absolute', left:0, width:`${pct}%`, height:3, borderRadius:2, background:trackFill, transition: isMapped ? 'width 0.05s linear' : undefined }} />
+              {/* thumb */}
+              <div style={{ position:'absolute', left:`${pct}%`, transform:'translateX(-50%)', width:thumbSize, height:thumbSize, borderRadius:'50%', background:accent, opacity:thumbOpacity, boxShadow:`0 0 4px ${accent}66`, transition: isMapped ? 'left 0.05s linear' : undefined }} />
+            </div>
+          )
+        })()}
         <span style={{ fontSize:8.5, fontFamily:'monospace', color:accent, width:46, textAlign:'right', flexShrink:0 }}>
           {fmt(displayValue)}
         </span>
@@ -3036,6 +3503,11 @@ function WLSliderRow({ label, paramKey, min, max, step, fmt, srcKey, rateKey, sh
               color: src===s ? accent : dim,
             }}>{ORBIT_SRC_LABELS[s]}</button>
           ))}
+          {srcRaw !== null && srcRaw !== undefined && (
+            <span style={{ fontSize:7.5, color:dim2, fontFamily:'monospace', opacity:0.7 }}>
+              {Number.isInteger(srcRaw) ? srcRaw : srcRaw.toPrecision(3)}
+            </span>
+          )}
           <span style={{ fontSize:7.5, color:dim, marginLeft:4 }}>×</span>
           <input type="number" value={rate ?? 1} step={0.01}
             onChange={e => onSetNum(rateKey, parseFloat(e.target.value))}
@@ -3054,20 +3526,27 @@ function WLSliderRow({ label, paramKey, min, max, step, fmt, srcKey, rateKey, sh
 }
 
 function WaveLabInstrumentExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string | null; slotKey: string; simple: boolean; onClose?: () => void }) {
-  const { getBodyEffectiveParams, getControlSetById, globalRack, rackParamOverrides, setSlotOverride } = useControlSetStore()
-  const bodies = usePlanetStore(s => s.bodies)
-  const G = usePlanetStore(s => s.simParams.G)
+  const setSlotOverride      = useControlSetStore(s => s.setSlotOverride)
+  const getBodyEffectiveParams = useControlSetStore(s => s.getBodyEffectiveParams)
+  const globalRack           = useControlSetStore(s => s.globalRack)
+  const getControlSetById    = useControlSetStore(s => s.getControlSetById)
+  const slotOverride         = useControlSetStore(s => s.rackParamOverrides[slotKey])
   const globalInstrument = globalRack.instrument ? getControlSetById(globalRack.instrument) : null
   const ep = useMemo(
     () => (bodyId
       ? getBodyEffectiveParams(bodyId)
-      : { ...(globalInstrument?.params ?? {}), ...(rackParamOverrides[slotKey] ?? {}) }
+      : { ...(globalInstrument?.params ?? {}), ...(slotOverride ?? {}) }
     ) as Record<string, unknown>,
-    [bodyId, getBodyEffectiveParams, globalInstrument?.params, rackParamOverrides, slotKey],
+    [bodyId, getBodyEffectiveParams, globalInstrument?.params, slotOverride],
   )
 
   const [manualADSR, setManualADSR] = useState(false)
   const [, setWaveRefreshSeq] = useState(0)
+
+  // liveStats is computed in RAF and stored in a ref; setState only fires when
+  // values shift enough to matter visually (≥1%), avoiding 60fps re-renders.
+  const liveStatsRef = useRef<OrbitStats | null>(null)
+  const [liveStats, setLiveStats] = useState<OrbitStats | null>(null)
 
   useEffect(() => {
     if (!bodyId) return
@@ -3076,35 +3555,60 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple, onClose }: { bodyI
     })
   }, [bodyId])
 
+  useEffect(() => {
+    if (!bodyId) { liveStatsRef.current = null; setLiveStats(null); return }
+    let id: number
+    let last = 0
+    const loop = (t: number) => {
+      if (t - last >= 200) {
+        last = t
+        const { bodies, simParams: { G } } = usePlanetStore.getState()
+        const liveBodies = getPlanetLiveBodySnapshot()
+        const liveById = new Map(liveBodies.map(b => [b.id, b]))
+        const effective = bodies.map(b => {
+          const live = liveById.get(b.id)
+          return live ? { ...b, x: live.x, y: live.y, vx: live.vx, vy: live.vy, ax: live.ax, ay: live.ay } : b
+        })
+        const body = effective.find(b => b.id === bodyId)
+        const next = body ? computeOrbitStats(body, effective, G) : null
+        const prev = liveStatsRef.current
+        // Only re-render when a key value changes by ≥1%
+        const changed = !prev !== !next || (prev && next && (
+          Math.abs(prev.T_real - next.T_real) / (Math.abs(prev.T_real) + 1e-9) > 0.01 ||
+          Math.abs(prev.ecc   - next.ecc)    / (Math.abs(prev.ecc)    + 1e-9) > 0.01 ||
+          Math.abs(prev.r     - next.r)      / (Math.abs(prev.r)      + 1e-9) > 0.01 ||
+          Math.abs(prev.speed - next.speed)  / (Math.abs(prev.speed)  + 1e-9) > 0.01
+        ))
+        if (changed) { liveStatsRef.current = next; setLiveStats(next) }
+      }
+      id = requestAnimationFrame(loop)
+    }
+    id = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(id)
+  }, [bodyId])
+
   const dim    = simple ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'
   const dim2   = simple ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)'
   const bg2    = simple ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.04)'
   const accent = '#34d399'
 
-  const currentSig = String(ep.wavLabSig ?? 'x')
-  const selectedSigs = currentSig.split(',').filter(s => WAV_SIGS.includes(s as typeof WAV_SIGS[number]))
+  const parseSigList = (key: string, fallback = 'x,y') =>
+    String(ep[key] ?? fallback).split(',').filter(s => WAV_SIGS.includes(s as typeof WAV_SIGS[number])) as typeof WAV_SIGS[number][]
 
-  const toggleSig = useCallback((sig: string) => {
-    const prev = (ep.wavLabSig ? String(ep.wavLabSig) : 'x').split(',').filter(s => WAV_SIGS.includes(s as typeof WAV_SIGS[number]))
+  const sigsL = parseSigList('wavLabSigL')
+  const sigsR = parseSigList('wavLabSigR')
+
+  const toggleSigChannel = useCallback((channel: 'L' | 'R', sig: string) => {
+    const key = channel === 'L' ? 'wavLabSigL' : 'wavLabSigR'
+    const prev = String(ep[key] ?? 'x,y').split(',').filter(s => WAV_SIGS.includes(s as typeof WAV_SIGS[number]))
     const next = prev.includes(sig) ? prev.filter(s => s !== sig) : [...prev, sig]
-    setSlotOverride(slotKey, { wavLabSig: next.length > 0 ? next.join(',') : 'x' })
+    setSlotOverride(slotKey, { [key]: next.length > 0 ? next.join(',') : 'x' })
   }, [ep, slotKey, setSlotOverride])
 
   const setNum = useCallback((key: string, val: number) => setSlotOverride(slotKey, { [key]: val }), [slotKey, setSlotOverride])
   const setStr = useCallback((key: string, val: string) => setSlotOverride(slotKey, { [key]: val }), [slotKey, setSlotOverride])
 
   const trailPts = bodyId ? getBodyTrailPoints(bodyId) : null
-  const liveStats = (() => {
-    if (!bodyId) return null
-    const liveBodies = getPlanetLiveBodySnapshot()
-    const liveById = new Map(liveBodies.map(b => [b.id, b]))
-    const effective = bodies.map(b => {
-      const live = liveById.get(b.id)
-      return live ? { ...b, x: live.x, y: live.y, vx: live.vx, vy: live.vy, ax: live.ax, ay: live.ay } : b
-    })
-    const body = effective.find(b => b.id === bodyId)
-    return body ? computeOrbitStats(body, effective, G) : null
-  })()
   const lfoTarget = String(ep.oscSynthLfoTarget ?? 'off')
   const lfoWave   = String(ep.oscSynthLfoWaveform ?? 'sine')
   const lfoOn     = lfoTarget !== 'off'
@@ -3119,6 +3623,21 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple, onClose }: { bodyI
       min,
       max,
     )
+  }
+
+  function srcRawFor(srcKey?: string): number | null {
+    if (!srcKey || !liveStats) return null
+    const src = String(ep[srcKey] ?? 'manual')
+    switch (src) {
+      case 'period':       return liveStats.T_real
+      case 'eccentricity': return liveStats.ecc
+      case 'distance':     return liveStats.r
+      case 'velocity':
+      case 'speed':        return liveStats.speed
+      case 'acceleration': return liveStats.acc
+      case 'bound':        return liveStats.bound ? 1 : 0
+      default:             return null
+    }
   }
 
   const lfoRateLive = liveFor('oscSynthLfoRate', 'oscSynthLfoRateSource', 'oscSynthLfoRateRate', 0.01, 20)
@@ -3144,26 +3663,32 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple, onClose }: { bodyI
 
       {/* Left: signal selector / synthesis / oscilloscope */}
       <div style={{ width:200, flexShrink:0, borderRight:`0.5px solid ${simple?'rgba(0,0,0,0.07)':'rgba(255,255,255,0.06)'}`, padding:'8px 10px', display:'flex', flexDirection:'column', gap:0 }}>
-        {/* Signal selector */}
+        {/* Signal selector — L / R */}
         <div style={{ fontSize:8, fontWeight:700, color:dim, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:4 }}>Wavetable Signal</div>
-        <div style={{ display:'flex', gap:3, flexWrap:'wrap', marginBottom:6 }}>
-          {WAV_SIGS.map(s => {
-            const on = selectedSigs.includes(s)
-            return (
-              <button key={s} onClick={() => toggleSig(s)} style={{
-                fontSize:9, fontWeight:700, padding:'2px 8px', borderRadius:4, fontFamily:'inherit', cursor:'pointer',
-                border:`0.5px solid ${on ? WAV_SIG_COLORS[s]+'bb' : 'rgba(255,255,255,0.1)'}`,
-                background: on ? `${WAV_SIG_COLORS[s]}28` : 'transparent',
-                color: on ? WAV_SIG_COLORS[s] : dim,
-              }}>{WAV_SIG_LABELS[s]}</button>
-            )
-          })}
-        </div>
+        {(['L','R'] as const).map(ch => {
+          const sigs = ch === 'L' ? sigsL : sigsR
+          return (
+            <div key={ch} style={{ display:'flex', alignItems:'center', gap:3, marginBottom:4 }}>
+              <span style={{ fontSize:7.5, fontWeight:700, color:dim, width:10, flexShrink:0 }}>{ch}</span>
+              {WAV_SIGS.map(s => {
+                const on = sigs.includes(s)
+                return (
+                  <button key={s} onClick={() => toggleSigChannel(ch, s)} style={{
+                    fontSize:8, fontWeight:700, padding:'1px 6px', borderRadius:3, fontFamily:'inherit', cursor:'pointer',
+                    border:`0.5px solid ${on ? WAV_SIG_COLORS[s]+'bb' : 'rgba(255,255,255,0.1)'}`,
+                    background: on ? `${WAV_SIG_COLORS[s]}28` : 'transparent',
+                    color: on ? WAV_SIG_COLORS[s] : dim,
+                  }}>{WAV_SIG_LABELS[s]}</button>
+                )
+              })}
+            </div>
+          )
+        })}
         {/* Orbit Trail: individual signals */}
-        <div style={{ fontSize:7.5, color:dim, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Orbit Trail</div>
+        <div style={{ fontSize:7.5, color:dim, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2, marginTop:2 }}>Orbit Trail</div>
         <div style={{ height:72, background:bg2, borderRadius:3, overflow:'hidden', flexShrink:0, marginBottom:5 }}>
           {trailPts && trailPts.length >= 2
-            ? <WaveLabMiniCanvas pts={trailPts} sigs={selectedSigs} />
+            ? <WaveLabMiniCanvas pts={trailPts} sigs={sigsL} />
             : <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, color:dim }}>{trailPts ? '…' : 'no body'}</div>
           }
         </div>
@@ -3171,7 +3696,7 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple, onClose }: { bodyI
         <div style={{ fontSize:7.5, color:dim, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Synthesis</div>
         <div style={{ height:72, background:bg2, borderRadius:3, overflow:'hidden', flexShrink:0, marginBottom:5 }}>
           {trailPts && trailPts.length >= 2
-            ? <WaveLabMiniSynth pts={trailPts} sigs={selectedSigs} />
+            ? <WaveLabMiniSynth pts={trailPts} sigs={sigsL} />
             : <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, color:dim }}>{trailPts ? '…' : 'no body'}</div>
           }
         </div>
@@ -3183,7 +3708,7 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple, onClose }: { bodyI
       </div>
 
       {/* Center: Envelope + Filter */}
-      <div style={{ width:270, flexShrink:0, borderRight:`0.5px solid ${simple?'rgba(0,0,0,0.07)':'rgba(255,255,255,0.06)'}`, padding:'10px 12px', overflowY:'auto' }}>
+      <div style={{ flex:1, minWidth:300, borderRight:`0.5px solid ${simple?'rgba(0,0,0,0.07)':'rgba(255,255,255,0.06)'}`, padding:'10px 12px', overflowY:'auto' }}>
         <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
           <span style={{ fontSize:8, fontWeight:700, color:dim, textTransform:'uppercase', letterSpacing:'0.07em' }}>Envelope / Filter</span>
           <button onClick={() => setManualADSR(v => !v)} style={{
@@ -3194,11 +3719,11 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple, onClose }: { bodyI
           }}>{manualADSR ? '✎ manual' : '⟳ orbit src'}</button>
         </div>
         <WLSliderRow label="Level"   paramKey="oscSynthLevel"           min={0}     max={1}     step={0.01} fmt={v=>v.toFixed(2)}        {...sliderProps} />
-        <WLSliderRow label="Attack"  paramKey="oscSynthAttack"          min={0.001} max={20}    step={0.05} fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthAttackSource"  rateKey="oscSynthAttackRate"  liveValue={liveFor('oscSynthAttack', 'oscSynthAttackSource', 'oscSynthAttackRate', 0.005, 20)} {...sliderProps} />
-        <WLSliderRow label="Decay"   paramKey="oscSynthDecay"           min={0.01}  max={10}    step={0.05} fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthDecaySource"   rateKey="oscSynthDecayRate"   liveValue={liveFor('oscSynthDecay', 'oscSynthDecaySource', 'oscSynthDecayRate', 0.01, 20)} {...sliderProps} />
-        <WLSliderRow label="Sustain" paramKey="oscSynthSustain"         min={0}     max={1}     step={0.01} fmt={v=>v.toFixed(2)}        srcKey="oscSynthSustainSource" rateKey="oscSynthSustainRate" liveValue={liveFor('oscSynthSustain', 'oscSynthSustainSource', 'oscSynthSustainRate', 0, 1)} {...sliderProps} />
-        <WLSliderRow label="Release" paramKey="oscSynthRelease"         min={0.01}  max={30}    step={0.1}  fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthReleaseSource" rateKey="oscSynthReleaseRate" liveValue={liveFor('oscSynthRelease', 'oscSynthReleaseSource', 'oscSynthReleaseRate', 0.01, 30)} {...sliderProps} />
-        <WLSliderRow label="Cutoff"  paramKey="oscSynthFilterCutoff"    min={80}    max={12000}  step={50}  fmt={v=>`${Math.round(v)}Hz`} srcKey="oscSynthCutoffSource"  rateKey="oscSynthCutoffRate"  liveValue={liveFor('oscSynthFilterCutoff', 'oscSynthCutoffSource', 'oscSynthCutoffRate', 80, 12000)} {...sliderProps} />
+        <WLSliderRow label="Attack"  paramKey="oscSynthAttack"          min={0.001} max={20}    step={0.05} fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthAttackSource"  rateKey="oscSynthAttackRate"  liveValue={liveFor('oscSynthAttack', 'oscSynthAttackSource', 'oscSynthAttackRate', 0.005, 20)} srcRaw={srcRawFor('oscSynthAttackSource')} {...sliderProps} />
+        <WLSliderRow label="Decay"   paramKey="oscSynthDecay"           min={0.01}  max={10}    step={0.05} fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthDecaySource"   rateKey="oscSynthDecayRate"   liveValue={liveFor('oscSynthDecay', 'oscSynthDecaySource', 'oscSynthDecayRate', 0.01, 20)} srcRaw={srcRawFor('oscSynthDecaySource')} {...sliderProps} />
+        <WLSliderRow label="Sustain" paramKey="oscSynthSustain"         min={0}     max={1}     step={0.01} fmt={v=>v.toFixed(2)}        srcKey="oscSynthSustainSource" rateKey="oscSynthSustainRate" liveValue={liveFor('oscSynthSustain', 'oscSynthSustainSource', 'oscSynthSustainRate', 0, 1)} srcRaw={srcRawFor('oscSynthSustainSource')} {...sliderProps} />
+        <WLSliderRow label="Release" paramKey="oscSynthRelease"         min={0.01}  max={30}    step={0.1}  fmt={v=>`${v.toFixed(2)}s`}  srcKey="oscSynthReleaseSource" rateKey="oscSynthReleaseRate" liveValue={liveFor('oscSynthRelease', 'oscSynthReleaseSource', 'oscSynthReleaseRate', 0.01, 30)} srcRaw={srcRawFor('oscSynthReleaseSource')} {...sliderProps} />
+        <WLSliderRow label="Cutoff"  paramKey="oscSynthFilterCutoff"    min={80}    max={12000}  step={50}  fmt={v=>`${Math.round(v)}Hz`} srcKey="oscSynthCutoffSource"  rateKey="oscSynthCutoffRate"  liveValue={liveFor('oscSynthFilterCutoff', 'oscSynthCutoffSource', 'oscSynthCutoffRate', 80, 12000)} srcRaw={srcRawFor('oscSynthCutoffSource')} {...sliderProps} />
         <WLSliderRow label="Q"       paramKey="oscSynthFilterResonance" min={0.01}  max={15}    step={0.05} fmt={v=>v.toFixed(2)}        {...sliderProps} />
       </div>
 
@@ -3226,8 +3751,8 @@ function WaveLabInstrumentExpanded({ bodyId, slotKey, simple, onClose }: { bodyI
           ))}
         </div>
         <div style={{ opacity: lfoOn ? 1 : 0.4 }}>
-          <WLSliderRow label="Rate"  paramKey="oscSynthLfoRate"  min={0.01} max={20} step={0.01} fmt={v=>`${v.toFixed(2)}Hz`} srcKey="oscSynthLfoRateSource"  rateKey="oscSynthLfoRateRate"  liveValue={lfoRateLive} {...sliderProps} />
-          <WLSliderRow label="Depth" paramKey="oscSynthLfoDepth" min={0}    max={1}  step={0.01} fmt={v=>v.toFixed(2)}        srcKey="oscSynthLfoDepthSource" rateKey="oscSynthLfoDepthRate" liveValue={lfoDepthLive} {...sliderProps} />
+          <WLSliderRow label="Rate"  paramKey="oscSynthLfoRate"  min={0.01} max={20} step={0.01} fmt={v=>`${v.toFixed(2)}Hz`} srcKey="oscSynthLfoRateSource"  rateKey="oscSynthLfoRateRate"  liveValue={lfoRateLive}  srcRaw={srcRawFor('oscSynthLfoRateSource')}  {...sliderProps} />
+          <WLSliderRow label="Depth" paramKey="oscSynthLfoDepth" min={0}    max={1}  step={0.01} fmt={v=>v.toFixed(2)}        srcKey="oscSynthLfoDepthSource" rateKey="oscSynthLfoDepthRate" liveValue={lfoDepthLive} srcRaw={srcRawFor('oscSynthLfoDepthSource')} {...sliderProps} />
           <WaveLabLfoPreview
             waveform={lfoWave}
             rate={lfoRateLive ?? Number(ep.oscSynthLfoRate ?? 0.5)}
@@ -3600,6 +4125,159 @@ function OrbitStepExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: strin
               <OrbitInputBlock bodyId={bodyId} dimText={dim} accent={accent} triggerType={source} division={division} />
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function UniversalStepExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: string | null; slotKey: string; simple: boolean; onClose?: () => void }) {
+  const overrides = useControlSetStore(s => s.rackParamOverrides[slotKey] ?? EMPTY_PARAM_OVERRIDES)
+  const setSlotOverride = useControlSetStore(s => s.setSlotOverride)
+  const resetSlotParam = useControlSetStore(s => s.resetSlotParam)
+  const accent = '#818cf8'
+  const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.38)'
+  const dim2 = simple ? 'rgba(0,0,0,0.64)' : 'rgba(255,255,255,0.64)'
+  const border = simple ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.08)'
+  const panel = simple ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.04)'
+
+  const params = {
+    universalStepSource:   'uBPM',
+    universalStepDivision: 1,
+    orbitStepSeqEnabled:   false,
+    orbitStepSeqLength:    8,
+    orbitStepSeqPattern:   '11111111',
+    ...overrides,
+  } as Record<string, unknown>
+
+  const usSource   = String(params.universalStepSource ?? 'uBPM')
+  const usDivision = Number(params.universalStepDivision ?? 1)
+  const seqEnabled = Boolean(params.orbitStepSeqEnabled)
+  const seqLength  = Math.max(1, Math.min(16, Math.round(Number(params.orbitStepSeqLength ?? 8))))
+  const rawPattern = String(params.orbitStepSeqPattern ?? '11111111').replace(/[^01]/g, '')
+  const pattern    = (rawPattern || '11111111').padEnd(seqLength, '1').slice(0, seqLength)
+
+  const setPatch = (patch: Record<string, unknown>) => setSlotOverride(slotKey, patch as Partial<PlanetSimParams>)
+  const sectionLabel = (label: string) => (
+    <div style={{ fontSize: 8, fontWeight: 800, color: dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{label}</div>
+  )
+
+  function setPattern(next: string) { setPatch({ orbitStepSeqPattern: next }) }
+  function toggleStep(i: number) {
+    const chars = pattern.split('')
+    chars[i] = chars[i] === '1' ? '0' : '1'
+    setPattern(chars.join(''))
+  }
+  function setLength(nextLength: number) {
+    const len = Math.max(1, Math.min(16, nextLength))
+    setPatch({ orbitStepSeqLength: len, orbitStepSeqPattern: pattern.padEnd(len, '1').slice(0, len) })
+  }
+
+  const DIVISION_OPTIONS = [
+    { label: '4 beats', value: 4 },
+    { label: '2 beats', value: 2 },
+    { label: '1 beat',  value: 1 },
+    { label: '1/2',     value: 0.5 },
+    { label: '1/4',     value: 0.25 },
+    { label: '1/8',     value: 0.125 },
+    { label: '1/16',    value: 0.0625 },
+  ]
+
+  const SOURCE_OPTIONS = [
+    { label: 'uBPM (1 beat)',  value: 'uBPM' },
+    { label: 'uBeat (= uBPM)', value: 'uBeat' },
+    { label: 'uBar (1 bar)',   value: 'uBar' },
+  ]
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px 4px 48px', borderBottom:`0.5px solid ${border}`, flexShrink:0 }}>
+        {onClose && <button onClick={onClose} style={{ fontSize:9, color:dim, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:'0 4px' }}>▼ close</button>}
+        <span style={{ fontSize:10, fontWeight:700, color:accent }}>⟳ Universal Step</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr 240px', gap: 16, padding: '12px 14px 12px 48px', minHeight: 230 }}>
+        {/* ── Source / Rate ── */}
+        <div style={{ borderRight: `0.5px solid ${border}`, paddingRight: 14 }}>
+          {sectionLabel('Source / Rate')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ width: 50, fontSize: 8, color: dim, textAlign: 'right' }}>source</span>
+            <select
+              value={usSource}
+              onChange={e => setPatch({ universalStepSource: e.target.value })}
+              style={{ flex: 1, fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px' }}
+            >
+              {SOURCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ width: 50, fontSize: 8, color: dim, textAlign: 'right' }}>division</span>
+            <select
+              value={String(usDivision)}
+              onChange={e => setPatch({ universalStepDivision: Number(e.target.value) })}
+              style={{ flex: 1, fontSize: 10, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '4px 6px' }}
+            >
+              {DIVISION_OPTIONS.map(o => <option key={o.value} value={String(o.value)}>{o.label}</option>)}
+            </select>
+          </div>
+          <button
+            onClick={() => { resetSlotParam(slotKey, 'universalStepSource'); resetSlotParam(slotKey, 'universalStepDivision') }}
+            style={{ width: '100%', fontSize: 8, color: dim, background: 'transparent', border: `0.5px solid ${border}`, borderRadius: 4, padding: '5px 7px', cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            reset source/rate
+          </button>
+          <div style={{ marginTop: 12, padding: '6px 8px', background: panel, borderRadius: 5, fontSize: 8, color: dim, lineHeight: 1.6 }}>
+            <b style={{ color: accent }}>uBPM</b>: 1 beat from Universal BPM<br />
+            <b style={{ color: accent }}>uBar</b>: 1 bar (numerator × beat)<br />
+            division multiplies the interval
+          </div>
+        </div>
+
+        {/* ── Step Sequencer ── */}
+        <div>
+          {sectionLabel('Step Sequencer')}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 10, color: dim2, marginBottom: 10 }}>
+            <input type="checkbox" checked={seqEnabled} onChange={e => setPatch({ orbitStepSeqEnabled: e.target.checked })} style={{ accentColor: accent }} />
+            gate trigger events by step pattern
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, opacity: seqEnabled ? 1 : 0.45 }}>
+            <span style={{ width: 44, fontSize: 8, color: dim, textAlign: 'right' }}>steps</span>
+            <input type="range" min={1} max={16} step={1} value={seqLength} onChange={e => setLength(Number(e.target.value))} style={{ flex: 1, accentColor: accent }} />
+            <span style={{ width: 20, fontSize: 10, color: accent, fontFamily: 'monospace', textAlign: 'right' }}>{seqLength}</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, minmax(24px, 1fr))', gap: 5, opacity: seqEnabled ? 1 : 0.45 }}>
+            {Array.from({ length: seqLength }, (_, i) => {
+              const on = pattern[i] !== '0'
+              return (
+                <button
+                  key={i}
+                  onClick={() => toggleStep(i)}
+                  style={{ padding: '6px 0', borderRadius: 4, fontSize: 9, fontFamily: 'monospace', cursor: 'pointer', fontWeight: 700, border: `1px solid ${on ? accent : border}`, background: on ? `${accent}33` : panel, color: on ? accent : dim }}
+                >
+                  {i + 1}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* ── Pattern presets ── */}
+        <div style={{ borderLeft: `0.5px solid ${border}`, paddingLeft: 14 }}>
+          {sectionLabel('Pattern')}
+          <input
+            value={pattern}
+            onChange={e => setPattern(e.target.value.replace(/[^01]/g, '').slice(0, 16))}
+            style={{ width: '100%', boxSizing: 'border-box', fontSize: 12, fontFamily: 'monospace', color: accent, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '5px 7px', marginBottom: 8 }}
+          />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+            {([['All', '11111111'], ['Offbeat', '01010101'], ['Sparse', '10001000'], ['Clave', '10010100']] as [string, string][]).map(([label, value]) => (
+              <button key={label} onClick={() => setPattern(value.padEnd(seqLength, '0').slice(0, seqLength))} style={{ fontSize: 8, color: dim2, background: panel, border: `0.5px solid ${border}`, borderRadius: 4, padding: '5px 6px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 8, color: dim, lineHeight: 1.45, marginTop: 10 }}>
+            1 = fire, 0 = rest. Sequencer advances on every Universal Step interval.
+          </div>
         </div>
       </div>
     </div>
@@ -4258,7 +4936,11 @@ function SlotCard({
   // ── Manual trigger detection ───────────────────────────────────────────────
   const isManualTrigger    = cs.id === 'trigger-manual'
   const isChordTestTrigger = cs.id === 'trigger-chord-test'
-  const isArpTrigger       = cs.id === 'trigger-arpeggio' || cs.id === 'note-arpeggio'
+  const isUniversalArp     = cs.id === 'note-universal-arpeggio'
+  const isArpTrigger       =
+    cs.id === 'trigger-arpeggio' ||
+    cs.id === 'note-arpeggio' ||
+    isUniversalArp
 
   // ── Loaded samples (for sample dropdown) ──────────────────────────────────
   const loadedSamples = useProjectStore(s => s.project.samples)
@@ -4700,8 +5382,13 @@ function SlotCard({
         <InlineChordTestContent bodyId={bodyId} simple={simple} accent={accent} />
       )}
 
-      {/* Arpeggio trigger — 4-step note sequencer */}
-      {isArpTrigger && (
+      {/* Universal Arpeggio — role-based Universal Context distribution */}
+      {isUniversalArp && (
+        <InlineUniversalArpContent bodyId={bodyId} slotKey={slotKey} simple={simple} accent={accent} />
+      )}
+
+      {/* Legacy/manual Arpeggio */}
+      {isArpTrigger && !isUniversalArp && (
         <InlineArpContent bodyId={bodyId} slotKey={slotKey} simple={simple} accent={accent} />
       )}
 
@@ -5041,6 +5728,8 @@ interface PlanetRackProps {
   onExtendSampler?:  (bodyId: string, slotKey: string) => void
   onExtendOneShot?:  (bodyId: string, slotKey: string) => void
   planetTool?: PlanetTool
+  leftPanelWidth?: number
+  rightPanelWidth?: number
 }
 
 function MakeUniqueButton({ slot, bodyId, simple, makeBodyRackUnique }: {
@@ -5090,7 +5779,7 @@ function MakeUniqueButton({ slot, bodyId, simple, makeBodyRackUnique }: {
   )
 }
 
-export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampler, onExtendOneShot: _onExtendOneShot, planetTool }: PlanetRackProps) {
+export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampler, onExtendOneShot: _onExtendOneShot, planetTool, leftPanelWidth = 0, rightPanelWidth = 0 }: PlanetRackProps) {
   const simpleTheme    = usePlanetStore(s => s.simParams.simpleTheme)
   const monochromeMode = useCanvasSettingsStore(s => s.monochromeMode)
   const simple         = simpleTheme || monochromeMode
@@ -5366,7 +6055,14 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
         <LongSamplerExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
       ) : expandedCs?.id === 'trigger-orbit-step' ? (
         <OrbitStepExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
-      ) : (expandedCs?.id === 'trigger-arpeggio' || expandedCs?.id === 'note-arpeggio') ? (
+      ) : expandedCs?.id === 'trigger-universal-step' ? (
+        <UniversalStepExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
+      ) : expandedCs?.id === 'note-universal-arpeggio' ? (
+        <UniversalArpeggioExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
+      ) : (
+        expandedCs?.id === 'trigger-arpeggio' ||
+        expandedCs?.id === 'note-arpeggio'
+      ) ? (
         <ArpeggioExpanded bodyId={isBodyMode ? bodyId : null} slotKey={expandedSlotKey} simple={simple} onClose={() => setExpandedSlotKey(null)} />
       ) : (
         <GenericSlotExpanded slotKey={expandedSlotKey} cs={expandedCs} simple={simple} onClose={() => setExpandedSlotKey(null)} />
@@ -5384,6 +6080,19 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
       position: 'relative',
       zIndex: 10,
     }}>
+      <div
+        id="rack-extension-panel-root"
+        style={{
+          position: 'absolute',
+          bottom: '100%',
+          left: leftPanelWidth,
+          right: rightPanelWidth,
+          height: 400,
+          zIndex: 40,
+          pointerEvents: 'none',
+          overflow: 'visible',
+        }}
+      />
       {expandedPanel && extensionHost && createPortal(expandedPanel, extensionHost)}
       {/* ── Left strip — collapse toggle (always visible) ── */}
       <div style={{

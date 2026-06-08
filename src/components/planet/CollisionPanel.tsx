@@ -36,10 +36,9 @@ export function CollisionPanel() {
         {/* Distance */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <span style={{ fontSize: 9, color: dim, width: 72, flexShrink: 0, textAlign: 'right' }}>Distance</span>
-          <input type="range" min={0} max={500} step={10} value={rendezvousDistance}
+          <input type="number" min={0} max={9999} step={10} value={rendezvousDistance}
             onChange={e => updateSimParams({ rendezvousDistance: Number(e.target.value) })}
-            style={{ flex: 1, accentColor: '#f87171' }} />
-          <span style={{ fontSize: 8.5, fontFamily: 'monospace', color: '#f87171', width: 32, textAlign: 'right' }}>{rendezvousDistance}</span>
+            style={{ flex: 1, fontSize: 10, fontFamily: 'monospace', color: '#f87171', background: 'transparent', border: `0.5px solid ${border}`, borderRadius: 3, padding: '2px 4px' }} />
         </div>
 
         {/* Toggles */}

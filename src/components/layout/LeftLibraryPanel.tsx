@@ -284,14 +284,7 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         >
           <SlidersHorizontal size={14} />
         </RailButton>
-        <RailButton
-          active={activePanel === 'planet-collision' && !collapsed}
-          title="Collision / Rendezvous"
-          onClick={() => handleSelectPanel('planet-collision')}
-        >
-          <Zap size={14} />
-        </RailButton>
-        <RailButton
+<RailButton
           active={activePanel === 'planet-auto' && !collapsed}
           title="Auto Spawn"
           onClick={() => handleSelectPanel('planet-auto')}
@@ -372,10 +365,7 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
       {!collapsed && activePanel === 'planet-triggers' && (
         <PlanetTriggersPanel />
       )}
-      {!collapsed && activePanel === 'planet-collision' && (
-        <CollisionPanel />
-      )}
-      {!collapsed && activePanel === 'planet-auto' && (
+{!collapsed && activePanel === 'planet-auto' && (
         <PlanetAutoSpawnPanel />
       )}
       {!collapsed && activePanel === 'planet-controls-trigger' && (
@@ -407,19 +397,6 @@ export function LeftLibraryPanel({ collapsed, onToggleCollapsed }: LeftLibraryPa
         <HelpPanel />
       )}
 
-      <div
-        id="rack-extension-panel-root"
-        style={{
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          left: 'calc(100% + 0.5px)',
-          width: 'min(560px, calc(100vw - 100%))',
-          zIndex: 40,
-          pointerEvents: 'none',
-          overflow: 'visible',
-        }}
-      />
     </div>
   )
 }
@@ -866,6 +843,7 @@ function PlanetTriggersPanel() {
             Retrigger は現在の同じサンプルを止めて再スタート。Layer はトリガーごとに重ねて鳴らします。
           </div>
         </SettingsGroup>
+        <CollisionPanel />
       </div>
     </div>
   )
@@ -2618,6 +2596,11 @@ function CanvasSettingsPanel() {
             onChange={bodyRadiusMassScalePlanet => updateSimParams({ bodyRadiusMassScalePlanet })} />
           <NumberSetting label="Sun rate" value={simParams.bodyRadiusMassScaleSun} min={0} step={0.01}
             onChange={bodyRadiusMassScaleSun => updateSimParams({ bodyRadiusMassScaleSun })} />
+          <label style={checkboxRowStyle}>
+            <input type="checkbox" checked={simParams.showBodyNameCross ?? false}
+              onChange={e => updateSimParams({ showBodyNameCross: e.target.checked })} />
+            <span style={{ fontSize: 10, color: t.textMid }}>✛ Cross prefix on name</span>
+          </label>
         </SettingsGroup>
 
         <SettingsGroup label="Trigger Stars">

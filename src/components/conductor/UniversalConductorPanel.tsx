@@ -72,7 +72,7 @@ export function UniversalConductorPanel() {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <Field label="Key" color={t.textMid}>
-            <select value={conductor.key} onChange={e => conductor.update({ key: Number(e.target.value) })} style={inputStyle}>
+            <select value={conductor.key} onChange={e => conductor.transposeToKey(Number(e.target.value))} style={inputStyle}>
               {CONDUCTOR_NOTE_NAMES.map((name, index) => <option key={name} value={index}>{name}</option>)}
             </select>
           </Field>

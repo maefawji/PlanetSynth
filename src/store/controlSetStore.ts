@@ -63,6 +63,7 @@ export function findBuiltinControlSet(id: string | null): ControlSet | null {
 const ARPEGGIO_NOTE_PARAMS: Partial<PlanetSimParams> = {
   arpMode:   true,
   arpPlayMode: 'arp',
+  arpContextSource: 'manual',
   arpLength: 4,
   arpNote0:  48,
   arpNote1:  52,
@@ -178,6 +179,37 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
     },
   },
   {
+    id: 'trigger-universal-step',
+    name: 'Universal Step',
+    icon: '⟳',
+    color: '#818cf8',
+    category: 'trigger',
+    description:
+      'Universal Contextの数値（BPM, 拍子, etc.）を元に一定間隔でtrigger eventを送信。\n' +
+      'ソースはuBPM（Universal BPMから1拍の長さ）をデフォルトとし、\n' +
+      '分割数(division)で細分化できます。',
+    params: {
+      orbitTriggerMode:          'orbit-complete',  // reuse same path marker
+      universalStepSource:       'uBPM',
+      universalStepDivision:     1,                // multiplier: 1 = 1 beat, 0.5 = 1/2 beat, 2 = 2 beats
+      orbitStepSeqEnabled:       false,
+      orbitStepSeqLength:        8,
+      orbitStepSeqPattern:       '11111111',
+      rendezvousDistance:        0,
+    },
+  },
+  {
+    id: 'note-empty',
+    name: 'Empty',
+    icon: '∅',
+    color: '#6b7280',
+    category: 'note',
+    description:
+      'グローバルnoteを上書きするための空スロット。\n' +
+      'このボディにだけnoteを無効にしたいときに使う。',
+    params: {},
+  },
+  {
     id: 'note-arpeggio',
     name: 'Arpeggio Note',
     icon: '♜',
@@ -188,6 +220,26 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       'Arp mode はステップを巡回、Chord mode は選択したコードを同時発音。\n' +
       '拡張パネルで root / quality / voicing を編集できます。',
     params: ARPEGGIO_NOTE_PARAMS,
+  },
+  {
+    id: 'note-universal-arpeggio',
+    name: 'Universal Arpeggio',
+    icon: '♜',
+    color: '#c084fc',
+    category: 'note',
+    description:
+      'Universal Contextの現在コードをTrigger eventごとに参照します。\n' +
+      'Arp modeは構成音を順番に、Chord modeは同時にinstrumentへ送ります。\n' +
+      'Universal Contextのコード進行とchord indexにも追従します。',
+    params: {
+      ...ARPEGGIO_NOTE_PARAMS,
+      arpContextSource: 'universal',
+      universalArpPartCount: 2,
+      universalArpRole: 'bass',
+      universalArpOrder: 'up',
+      universalArpOctaveShift: 0,
+      universalArpOctaveSpan: 1,
+    },
   },
   {
     id: 'trigger-arpeggio',
@@ -539,6 +591,8 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
     params: {
       wavLabType:              'wave-lab',
       wavLabSig:               'x,y',         // comma-separated: 'x', 'x,y', 'r', etc.
+      wavLabSigL:              'x,y',         // left channel signal (overrides wavLabSig when L≠R)
+      wavLabSigR:              'x,y',         // right channel signal
       oscSynthAttack:          0.5,
       oscSynthDecay:           2.0,
       oscSynthSustain:         0.8,
@@ -600,8 +654,8 @@ export const MAX_EFFECTS  = 6
 export const MAX_TRIGGERS = 4
 
 export const DEFAULT_BODY_RACKS: Record<string, BodyRackOverride> = {
-  sun:       { triggers: ['trigger-empty'], note: null, instrument: 'instrument-empty', effects: ['effect-freeze'] },
-  perturber: { triggers: ['trigger-orbit-step'], note: 'note-arpeggio', instrument: 'instrument-wave-lab', effects: ['effect-empty'] },
+  sun:       { triggers: ['trigger-empty'], note: 'note-empty', instrument: 'instrument-empty', effects: ['effect-freeze'] },
+  perturber: { triggers: ['trigger-orbit-step'], effects: ['effect-empty'] },
 }
 
 /** Blank rack — used when clearing. Empty trigger list = no trigger. */
@@ -611,7 +665,7 @@ function emptyRack(): BodyRack {
 
 /** Initial global rack — arpeggio trigger + Wave Lab instrument as defaults. */
 function defaultGlobalRack(): BodyRack {
-  return { triggers: ['trigger-orbit-step'], note: 'note-arpeggio', instrument: 'instrument-wave-lab', effects: [] }
+  return { triggers: ['trigger-orbit-step', 'rendezvous'], note: 'note-universal-arpeggio', instrument: 'instrument-wave-lab', effects: [] }
 }
 
 function defaultBodyRacks(): Record<string, BodyRackOverride> {

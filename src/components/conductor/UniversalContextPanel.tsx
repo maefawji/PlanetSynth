@@ -99,6 +99,12 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
     padding: '3px 5px',
     outline: 'none',
     width: '100%',
+    colorScheme: 'dark',
+  }
+
+  const optionCss: React.CSSProperties = {
+    background: '#1d1c25',
+    color: '#f3f0ff',
   }
 
   const accentColor = '#a78bfa'
@@ -215,13 +221,13 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
             {/* Key / Scale / Time Sig / Grid */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr 1fr', gap: 6, marginBottom: 9 }}>
               <FG label="Key">
-                <select value={c.key} onChange={e => c.update({ key: Number(e.target.value) })} style={inputCss}>
-                  {CONDUCTOR_NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+                <select value={c.key} onChange={e => c.transposeToKey(Number(e.target.value))} style={inputCss}>
+                  {CONDUCTOR_NOTE_NAMES.map((n, i) => <option key={n} value={i} style={optionCss}>{n}</option>)}
                 </select>
               </FG>
               <FG label="Scale">
                 <select value={c.scale} onChange={e => c.update({ scale: e.target.value as typeof c.scale })} style={inputCss}>
-                  {CONDUCTOR_SCALES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {CONDUCTOR_SCALES.map(s => <option key={s} value={s} style={optionCss}>{s}</option>)}
                 </select>
               </FG>
               <FG label="Time Sig">
@@ -237,7 +243,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
               </FG>
               <FG label="Grid">
                 <select value={c.gridResolution} onChange={e => c.update({ gridResolution: e.target.value as typeof c.gridResolution })} style={inputCss}>
-                  {CONDUCTOR_GRID_RESOLUTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                  {CONDUCTOR_GRID_RESOLUTIONS.map(r => <option key={r} value={r} style={optionCss}>{r}</option>)}
                 </select>
               </FG>
             </div>
@@ -246,7 +252,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
             <div style={{ marginBottom: 9 }}>
               <FG label="Harmonic Mode">
                 <select value={c.harmonicMode} onChange={e => c.update({ harmonicMode: e.target.value as typeof c.harmonicMode })} style={inputCss}>
-                  {HARMONIC_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                  {HARMONIC_MODES.map(m => <option key={m} value={m} style={optionCss}>{m}</option>)}
                 </select>
               </FG>
             </div>
@@ -326,7 +332,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
               </button>
               <button
                 onClick={() => c.update({ autoAdvance: !c.autoAdvance })}
-                title="Auto-advance on each bar"
+                title={`Auto-advance every ${c.autoAdvanceBars} bar${c.autoAdvanceBars === 1 ? '' : 's'}`}
                 style={{
                   padding: '2px 7px', borderRadius: 3, fontFamily: 'inherit',
                   fontSize: 8, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em',
@@ -472,10 +478,10 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr 34px 1fr', gap: 5, alignItems: 'center' }}>
                 <select value={c.chordRoot} onChange={e => c.update({ chordRoot: Number(e.target.value) })} style={inputCss}>
-                  {CONDUCTOR_NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+                  {CONDUCTOR_NOTE_NAMES.map((n, i) => <option key={n} value={i} style={optionCss}>{n}</option>)}
                 </select>
                 <select value={c.chordQuality} onChange={e => c.update({ chordQuality: e.target.value as typeof c.chordQuality })} style={inputCss}>
-                  {CONDUCTOR_CHORD_QUALITIES.map(q => <option key={q} value={q}>{q}</option>)}
+                  {CONDUCTOR_CHORD_QUALITIES.map(q => <option key={q} value={q} style={optionCss}>{q}</option>)}
                 </select>
                 <input type="number" min={0} max={8} value={c.chordOctave}
                   onChange={e => c.update({ chordOctave: Number(e.target.value) })}
@@ -503,6 +509,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                   contextKey={c.key}
                   contextScale={c.scale}
                   inputCss={inputCss}
+                  optionCss={optionCss}
                   onChange={slot => c.updateChordSlot(i, slot)}
                   onActivate={() => {
                     const slot = c.chordProgression[i]
@@ -535,7 +542,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
 
 
 function ChordProgressionSlot({
-  index, isActive, slot, contextKey, contextScale, inputCss, onChange, onActivate,
+  index, isActive, slot, contextKey, contextScale, inputCss, optionCss, onChange, onActivate,
 }: {
   index: number
   isActive: boolean
@@ -543,6 +550,7 @@ function ChordProgressionSlot({
   contextKey: number
   contextScale: ConductorScale
   inputCss: React.CSSProperties
+  optionCss: React.CSSProperties
   onChange: (slot: ChordSlot | null) => void
   onActivate: () => void
 }) {
@@ -580,18 +588,18 @@ function ChordProgressionSlot({
         </button>
         <input
           type="checkbox" checked={enabled}
-          onChange={e => onChange(e.target.checked ? { root: 0, quality: 'Min-add9', octave: 3, bassRoot: null } : null)}
+          onChange={e => onChange(e.target.checked ? { root: contextKey, quality: 'Min-add9', octave: 3, bassRoot: null } : null)}
           style={{ cursor: 'pointer', accentColor: '#a78bfa', justifySelf: 'center' }}
         />
         <select disabled={!enabled} value={cur.root}
           onChange={e => onChange({ ...cur, root: Number(e.target.value) })}
           style={{ ...inputCss, fontSize: 9 }}>
-          {CONDUCTOR_NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+          {CONDUCTOR_NOTE_NAMES.map((n, i) => <option key={n} value={i} style={optionCss}>{n}</option>)}
         </select>
         <select disabled={!enabled} value={cur.quality}
           onChange={e => onChange({ ...cur, quality: e.target.value as ConductorChordQuality })}
           style={{ ...inputCss, fontSize: 9 }}>
-          {CONDUCTOR_CHORD_QUALITIES.map(q => <option key={q} value={q}>{q}</option>)}
+          {CONDUCTOR_CHORD_QUALITIES.map(q => <option key={q} value={q} style={optionCss}>{q}</option>)}
         </select>
         <input type="number" min={0} max={8} disabled={!enabled} value={cur.octave}
           onChange={e => onChange({ ...cur, octave: Number(e.target.value) })}
@@ -599,8 +607,8 @@ function ChordProgressionSlot({
         <select disabled={!enabled} value={cur.bassRoot ?? ''}
           onChange={e => onChange({ ...cur, bassRoot: e.target.value === '' ? null : Number(e.target.value) })}
           style={{ ...inputCss, fontSize: 9 }}>
-          <option value="">—</option>
-          {CONDUCTOR_NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+          <option value="" style={optionCss}>—</option>
+          {CONDUCTOR_NOTE_NAMES.map((n, i) => <option key={n} value={i} style={optionCss}>{n}</option>)}
         </select>
       </div>
       {enabled && (

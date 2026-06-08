@@ -259,6 +259,7 @@ const DIATONIC_QUALITIES: Record<ConductorScale, ConductorChordQuality[]> = {
 
 interface UniversalConductorState extends UniversalConductorValues {
   update: (patch: Partial<UniversalConductorValues>) => void
+  transposeToKey: (key: number) => void
   updateChordSlot: (index: number, slot: ChordSlot | null) => void
   applyPreset: (preset: HarmonicPreset) => void
   advanceChordIndex: () => void
@@ -396,6 +397,47 @@ export const useUniversalConductorStore = create<UniversalConductorState>()(
           const index = normalized.chordIndex ?? state.chordIndex
           const clampedIndex = Math.min(index, length - 1)
           return clampedIndex !== index ? { ...normalized, chordIndex: clampedIndex } : normalized
+        })
+      },
+      transposeToKey(key) {
+        const nextKey = clamp(Math.round(Number(key) || 0), 0, 11)
+        set(state => {
+          const firstProgressionRoot = state.chordProgression
+            .slice(0, state.chordProgressionLength)
+            .find((slot): slot is ChordSlot => slot !== null)
+            ?.root
+          // Older persisted presets could have a changed key while their chord slots
+          // remained in the preset's original key. Non-custom progressions start on
+          // their tonal center, so use that root to repair them while transposing.
+          const sourceKey = state.harmonicMode !== 'custom' && firstProgressionRoot != null
+            ? firstProgressionRoot
+            : state.key
+          const delta = ((nextKey - sourceKey) % 12 + 12) % 12
+          if (delta === 0) {
+            const activeSlot = state.chordProgression[state.chordIndex]
+            return {
+              key: nextKey,
+              ...(activeSlot ? {
+                chordRoot: activeSlot.root,
+                chordQuality: activeSlot.quality,
+                chordOctave: activeSlot.octave,
+              } : {}),
+            }
+          }
+          const transposePitchClass = (pitchClass: number) => (pitchClass + delta) % 12
+          const chordProgression = state.chordProgression.map(slot => slot ? {
+            ...slot,
+            root: transposePitchClass(slot.root),
+            bassRoot: slot.bassRoot == null ? null : transposePitchClass(slot.bassRoot),
+          } : null)
+          const activeSlot = chordProgression[state.chordIndex]
+          return {
+            key: nextKey,
+            chordRoot: activeSlot?.root ?? transposePitchClass(state.chordRoot),
+            chordQuality: activeSlot?.quality ?? state.chordQuality,
+            chordOctave: activeSlot?.octave ?? state.chordOctave,
+            chordProgression,
+          }
         })
       },
       updateChordSlot(index, slot) {
