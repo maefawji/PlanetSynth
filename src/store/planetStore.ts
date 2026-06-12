@@ -222,10 +222,12 @@ export interface PlanetSimParams {
   samplerLoopStart:   number   // normalized 0–1 within [sampleStart, sampleEnd]
   samplerLoopEnd:     number   // normalized 0–1 within slice (> loopStart)
   samplerReverse:     boolean
-  samplerDetune:      number   // semitones ±24
-  samplerAttack:      number   // seconds
-  samplerRelease:     number   // seconds
-  samplerReverbMix:   number   // 0–1
+  samplerDetune:        number   // semitones ±24
+  samplerNoteTracking:  boolean  // false=fixed pitch, true=track MIDI note relative to C3
+  samplerRetrigger:     boolean  // true=restart on trigger, false=ignore if already playing
+  samplerAttack:        number   // seconds
+  samplerRelease:       number   // seconds
+  samplerReverbMix:     number   // 0–1
 
   // ── Long Sampler instrument ──────────────────────────────────────────────
   longSamplerDurationMode: 'seconds' | 'orbit'
@@ -546,8 +548,10 @@ export const DEFAULT_SIM_PARAMS: PlanetSimParams = {
   samplerLoopStart:   0,
   samplerLoopEnd:     1,
   samplerReverse:     false,
-  samplerDetune:      0,
-  samplerAttack:      0.01,
+  samplerDetune:        0,
+  samplerNoteTracking:  false,
+  samplerRetrigger:     true,
+  samplerAttack:        0.01,
   samplerRelease:     1.0,
   samplerReverbMix:   0.3,
   longSamplerDurationMode: 'seconds',

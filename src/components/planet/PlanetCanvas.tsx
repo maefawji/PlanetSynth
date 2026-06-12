@@ -118,6 +118,15 @@ function CanvasBodyIndicator({
     window.addEventListener('mouseup', onUp)
   }
 
+  const vol = body.volume ?? 1
+  const r = 10
+  // Clip path for volume arc: sector from SVG-local right (= visual 12 o'clock after -90deg CSS rotation)
+  const θ = vol * 2 * Math.PI
+  const endX = 12 + r * Math.cos(θ)
+  const endY = 12 + r * Math.sin(θ)
+  const largeArc = θ > Math.PI ? 1 : 0
+  const clipId = `vol-clip-${body.id}`
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       {selected && (
@@ -134,15 +143,16 @@ function CanvasBodyIndicator({
       )}
       <button
         type="button"
-        title={`${index + 1}. ${body.name}  |  vol: ${Math.round((body.volume ?? 1) * 100)}%`}
+        title={`${index + 1}. ${body.name}  |  vol: ${Math.round(vol * 100)}%`}
         aria-label={`Select ${body.name}`}
         onMouseDown={handleMouseDown}
         onMouseUp={event => event.currentTarget.blur()}
         style={{
+          position: 'relative',
           width: 24,
           height: 24,
           borderRadius: '50%',
-          border: selected ? `1.5px dashed ${color}` : 'none',
+          border: 'none',
           background: 'transparent',
           boxShadow: selected ? `0 0 10px ${color}55` : 'none',
           display: 'flex',
@@ -153,6 +163,40 @@ function CanvasBodyIndicator({
           outline: 'none',
         }}
       >
+        {/* Volume arc SVG — dashed circle clipped to volume sector, clockwise from 12 o'clock */}
+        <svg
+          width={24}
+          height={24}
+          viewBox="0 0 24 24"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            pointerEvents: 'none',
+            transform: 'rotate(-90deg)',
+          }}
+        >
+          <defs>
+            {vol < 0.999 && (
+              <clipPath id={clipId}>
+                <path d={`M 12 12 L ${12 + r} 12 A ${r} ${r} 0 ${largeArc} 1 ${endX.toFixed(3)} ${endY.toFixed(3)} Z`} />
+              </clipPath>
+            )}
+          </defs>
+          {selected && (
+            <>
+              {/* Track: full dashed circle at low opacity */}
+              <circle cx={12} cy={12} r={r} fill="none" stroke={color} strokeWidth={1.5}
+                strokeDasharray="3 3" opacity={0.22} />
+              {/* Volume: same dashed circle, clipped to filled sector */}
+              {vol > 0.01 && (
+                <circle cx={12} cy={12} r={r} fill="none" stroke={color} strokeWidth={1.5}
+                  strokeDasharray="3 3" opacity={0.9}
+                  clipPath={vol < 0.999 ? `url(#${clipId})` : undefined} />
+              )}
+            </>
+          )}
+        </svg>
         <span
           ref={dotRef}
           style={{

@@ -546,11 +546,13 @@ export const BUILTIN_CONTROL_SETS: ControlSet[] = [
       'preservesPitch によりブラウザのフェーズボコーダを使用。\n' +
       'ループ比で何周期分に引き伸ばすか設定可能。',
     params: {
-      oneShotType:       'stretch-sampler',
-      orbitLoopNumer:    1,
-      orbitLoopDenom:    1,
-      sampleOrbitSource: 'current',
+      oneShotType:          'stretch-sampler',
+      orbitLoopNumer:       1,
+      orbitLoopDenom:       1,
+      sampleOrbitSource:    'current',
       sampleTargetExpression: 'T',
+      samplerNoteTracking:  false,
+      samplerRetrigger:     true,
     },
   },
   {
@@ -665,7 +667,7 @@ function emptyRack(): BodyRack {
 
 /** Initial global rack — arpeggio trigger + Wave Lab instrument as defaults. */
 function defaultGlobalRack(): BodyRack {
-  return { triggers: ['trigger-orbit-step', 'rendezvous'], note: 'note-universal-arpeggio', instrument: 'instrument-wave-lab', effects: [] }
+  return { triggers: ['trigger-orbit-step', 'rendezvous'], note: 'note-universal-arpeggio', instrument: 'instrument-sampler', effects: [] }
 }
 
 function defaultBodyRacks(): Record<string, BodyRackOverride> {

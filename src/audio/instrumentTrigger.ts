@@ -84,24 +84,41 @@ export function fireBodyInstrumentTrigger(
     if (eng?.hasBuffer) {
       let timing = samplerTiming
       let rate = playbackRate
+      const params = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
       if (!timing) {
         const state = usePlanetStore.getState()
         const body = state.bodies.find(candidate => candidate.id === bodyId)
-        const params = useControlSetStore.getState().getBodyEffectiveParams(bodyId) as Record<string, unknown>
         if (body) {
           const expression = String(params.sampleTargetExpression ?? 'T')
-          const resolved = resolveOrbitDurationSource(expression, body, state.bodies)
-          const sourceDuration =
-            (computeOrbitStats(resolved.body, state.bodies, state.simParams.G)?.T_real ?? 0) *
-            resolved.multiplier
-          const numer = Math.max(1, Number(params.orbitLoopNumer ?? 1))
-          const denom = Math.max(1, Number(params.orbitLoopDenom ?? 1))
-          const targetDuration = sourceDuration * (numer / denom)
-          if (targetDuration > 0) {
-            timing = { expression, sourceDuration, targetDuration }
-            rate = eng.bufferDuration / targetDuration
+          if (expression.trim().toLowerCase() === 'sampledur') {
+            // "sampledur" keyword: play at natural sample speed (rate = 1)
+            const bufDur = eng.bufferDuration
+            if (bufDur > 0) {
+              timing = { expression, sourceDuration: bufDur, targetDuration: bufDur }
+              rate = 1
+            }
+          } else {
+            const resolved = resolveOrbitDurationSource(expression, body, state.bodies)
+            const sourceDuration =
+              (computeOrbitStats(resolved.body, state.bodies, state.simParams.G)?.T_real ?? 0) *
+              resolved.multiplier
+            const numer = Math.max(1, Number(params.orbitLoopNumer ?? 1))
+            const denom = Math.max(1, Number(params.orbitLoopDenom ?? 1))
+            const targetDuration = sourceDuration * (numer / denom)
+            if (targetDuration > 0) {
+              timing = { expression, sourceDuration, targetDuration }
+              rate = eng.bufferDuration / targetDuration
+            }
           }
         }
+      }
+      // Retrigger: when off, skip if already playing
+      if (!Boolean(params.samplerRetrigger ?? true) && eng.state === 'playing') {
+        return true
+      }
+      // Note tracking: when on, pitch-shift relative to C3 (MIDI 48)
+      if (noteOverride !== undefined && Boolean(params.samplerNoteTracking)) {
+        rate = rate * Math.pow(2, (noteOverride - 48) / 12)
       }
       eng.trigger(rate, timing)
       return true

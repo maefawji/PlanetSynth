@@ -2634,8 +2634,11 @@ function InlineOneShotContent({
   const borderCol = simple ? 'rgba(0,0,0,0.10)'  : 'rgba(255,255,255,0.10)'
 
   // ── Resolved sample ─────────────────────────────────────────────────────────
-  const samplerMode = (overrides as Record<string, unknown>).samplerMode as string ?? 'auto'
-  const fixedId     = (overrides as Record<string, unknown>).samplerSampleId as string | null ?? null
+  const samplerMode         = (overrides as Record<string, unknown>).samplerMode as string ?? 'auto'
+  const fixedId             = (overrides as Record<string, unknown>).samplerSampleId as string | null ?? null
+  const noteTracking        = Boolean((overrides as Record<string, unknown>).samplerNoteTracking ?? false)
+  const miniStretchMode     = String((overrides as Record<string, unknown>).sampleStretchMode ?? 'rate') as 'off' | 'rate' | 'time'
+  const miniStretchOn       = miniStretchMode !== 'off'
   const body        = usePlanetStore(s => bodyId ? (s.bodies.find(b => b.id === bodyId) ?? null) : null)
   const sample      = samplerMode === 'fixed'
     ? (fixedId ? (samples.find(s => s.id === fixedId) ?? null) : null)
@@ -2773,6 +2776,53 @@ function InlineOneShotContent({
     } as Partial<PlanetSimParams>)
   }
 
+  const miniRetrigger = Boolean((overrides as Record<string, unknown>).samplerRetrigger ?? true)
+
+  // ── Mini toggle helper ────────────────────────────────────────────────────────
+  const miniToggle = (label: string, value: boolean, onToggle: () => void, onText: string, offText: string) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+      <span style={{ fontSize: 7, color: dimText, flexShrink: 0 }}>{label}</span>
+      <button
+        onClick={onToggle}
+        style={{
+          flex: 1, fontSize: 7.5, fontWeight: 600, padding: '1px 4px', borderRadius: 3,
+          border: `0.5px solid ${value ? accent : borderCol}`,
+          background: value ? `${accent}20` : inputBg,
+          color: value ? accent : dimText, cursor: 'pointer', fontFamily: 'inherit',
+          textAlign: 'left',
+        }}
+      >
+        {value ? onText : offText}
+      </button>
+    </div>
+  )
+
+  // ── Stretch on/off toggle row ─────────────────────────────────────────────────
+  const stretchToggleRow = isSamplerStretch
+    ? miniToggle(
+        'stretch',
+        miniStretchOn,
+        () => setSlotOverride(slotKey, { sampleStretchMode: miniStretchOn ? 'off' : (miniStretchMode === 'off' ? 'rate' : miniStretchMode) } as Partial<PlanetSimParams>),
+        'on', 'off',
+      )
+    : null
+
+  // ── Note tracking toggle row ─────────────────────────────────────────────────
+  const noteTrackingRow = miniToggle(
+    'note',
+    noteTracking,
+    () => setSlotOverride(slotKey, { samplerNoteTracking: !noteTracking } as Partial<PlanetSimParams>),
+    'on  (C3 base)', 'off  (fixed)',
+  )
+
+  // ── Retrigger toggle row ─────────────────────────────────────────────────────
+  const retriggerRow = miniToggle(
+    'retrig',
+    miniRetrigger,
+    () => setSlotOverride(slotKey, { samplerRetrigger: !miniRetrigger } as Partial<PlanetSimParams>),
+    'on  (restart)', 'off  (hold)',
+  )
+
   // ── Source selector row (always visible) ────────────────────────────────────
   const srcSelector = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -2848,6 +2898,9 @@ function InlineOneShotContent({
           <span style={{ fontSize: 7, color: dimText, opacity: 0.6 }}>wav · mp3 · ogg · aiff</span>
           {loadError && <span style={{ fontSize: 7, color: '#ef4444' }}>{loadError}</span>}
         </div>
+        {stretchToggleRow}
+        {noteTrackingRow}
+        {retriggerRow}
         {srcSelector}
         <input ref={fileInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleFileInput} />
       </>
@@ -2934,7 +2987,10 @@ function InlineOneShotContent({
         </div>
       )}
 
-      {/* Source selector row */}
+      {/* Stretch / note / retrigger / source */}
+      {stretchToggleRow}
+      {noteTrackingRow}
+      {retriggerRow}
       {srcSelector}
 
       {loadError && <span style={{ fontSize: 7, color: '#ef4444' }}>{loadError}</span>}
@@ -4468,14 +4524,21 @@ function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
   const G = usePlanetStore(s => s.simParams.G)
   const body = bodyId ? (bodies.find(b => b.id === bodyId) ?? null) : null
   const targetExpression = String((effectiveParams as Record<string, unknown> | null)?.sampleTargetExpression ?? 'T')
-  const resolvedSource = body ? resolveOrbitDurationSource(targetExpression, body, bodies) : null
+  const isSampleKeyword = targetExpression.trim().toLowerCase() === 'sampledur'
+  const resolvedSource = (!isSampleKeyword && body) ? resolveOrbitDurationSource(targetExpression, body, bodies) : null
   const orbitStats = resolvedSource ? computeOrbitStats(resolvedSource.body, bodies, G) : null
   const bufDurSec = bodyId ? (getBodyStretchSamplerEngine(bodyId)?.bufferDuration ?? 0) : 0
-  const sourceSec = orbitStats ? orbitStats.T_real * (resolvedSource?.multiplier ?? 1) : null
+  const sourceSec = isSampleKeyword
+    ? (bufDurSec > 0 ? bufDurSec : null)
+    : (orbitStats ? orbitStats.T_real * (resolvedSource?.multiplier ?? 1) : null)
   const numer = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopNumer ?? 1))
   const denom = Math.max(1, Number((effectiveParams as Record<string, unknown> | null)?.orbitLoopDenom ?? 1))
   const stretchRatio = numer / denom
-  const targetDurSec = sourceSec !== null && stretchRatio > 0 ? sourceSec * stretchRatio : null
+  const stretchMode = String((effectiveParams as Record<string, unknown> | null)?.sampleStretchMode ?? 'rate') as 'off' | 'rate' | 'time'
+  const stretchOn = stretchMode !== 'off'
+  const targetDurSec = isSampleKeyword
+    ? (bufDurSec > 0 ? bufDurSec : null)
+    : (sourceSec !== null && stretchRatio > 0 ? sourceSec * stretchRatio : null)
   const playbackRate = bufDurSec > 0 && targetDurSec !== null && targetDurSec > 0 ? (bufDurSec / targetDurSec) : null
   const accent = '#818cf8'
   const dim = simple ? 'rgba(0,0,0,0.42)' : 'rgba(255,255,255,0.38)'
@@ -4489,6 +4552,7 @@ function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
   const sourceMetricRef = useRef<HTMLDivElement>(null)
   const targetMetricRef = useRef<HTMLDivElement>(null)
   const rateMetricRef = useRef<HTMLDivElement>(null)
+  const resultMetricRef = useRef<HTMLDivElement>(null)
   const capturedExpressionRef = useRef<HTMLSpanElement>(null)
   const capturedAtRef = useRef<HTMLSpanElement>(null)
   const setPatch = (patch: Partial<PlanetSimParams>) => setSlotOverride(slotKey, patch)
@@ -4538,6 +4602,11 @@ function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
           const heldRate = bufDurSec > 0 && snapshot.targetDuration > 0 ? bufDurSec / snapshot.targetDuration : 0
           rateMetricRef.current.textContent = heldRate > 0 ? `×${heldRate.toFixed(3)}` : '—'
         }
+        if (resultMetricRef.current) {
+          resultMetricRef.current.textContent = stretchOn
+            ? `${snapshot.targetDuration.toFixed(2)}s`
+            : (bufDurSec > 0 ? `${bufDurSec.toFixed(2)}s` : '—')
+        }
         if (capturedExpressionRef.current) capturedExpressionRef.current.textContent = snapshot.expression
         if (capturedAtRef.current) {
           capturedAtRef.current.textContent = new Date(snapshot.capturedAt).toLocaleTimeString([], {
@@ -4551,7 +4620,7 @@ function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [bodyId, targetDurSec, bufDurSec, dim])
+  }, [bodyId, targetDurSec, bufDurSec, stretchOn, dim])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -4559,6 +4628,15 @@ function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
         {onClose && <button onClick={onClose} style={{ fontSize:9, color:dim, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:'0 4px' }}>▼ close</button>}
         <span style={{ fontSize:10, fontWeight:700, color:accent }}>⟿ Sampler</span>
         <span style={{ fontSize:8, color:dim, marginLeft:4 }}>pitch-preserving time stretch</span>
+        <div style={{ marginLeft: 'auto' }}>
+          <button
+            onClick={() => setPatch({ sampleStretchMode: stretchOn ? 'off' : (stretchMode === 'off' ? 'rate' : stretchMode) })}
+            style={{ fontSize: 8, fontWeight: 700, padding: '2px 10px', borderRadius: 3, cursor: 'pointer', fontFamily: 'inherit',
+              border: `0.5px solid ${stretchOn ? accent : border}`,
+              background: stretchOn ? `${accent}18` : 'transparent',
+              color: stretchOn ? accent : dim }}
+          >Stretch: {stretchOn ? 'On' : 'Off'}</button>
+        </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 250px', gap: 16, padding: '12px 14px 12px 48px', minHeight: 180 }}>
         <div style={{ borderRight: `0.5px solid ${border}`, paddingRight: 14 }}>
@@ -4584,6 +4662,49 @@ function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
             onClick={() => { resetSlotParam(slotKey, 'orbitLoopNumer'); resetSlotParam(slotKey, 'orbitLoopDenom') }}
             style={{ width: '100%', fontSize: 8, color: dim, background: 'transparent', border: `0.5px solid ${border}`, borderRadius: 4, padding: '5px 7px', cursor: 'pointer', fontFamily: 'inherit' }}
           >reset loop ratio</button>
+
+          <div style={{ marginTop: 14 }}>
+            {sectionLabel('Note tracking')}
+            {(() => {
+              const current = Boolean((_overrides as Record<string, unknown>).samplerNoteTracking ?? false)
+              return (
+                <button
+                  onClick={() => setPatch({ samplerNoteTracking: !current })}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left',
+                    fontSize: 8.5, fontWeight: current ? 700 : 400, padding: '4px 7px',
+                    marginBottom: 3, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+                    border: `0.5px solid ${current ? accent : border}`,
+                    background: current ? `${accent}18` : 'transparent',
+                    color: current ? accent : dim,
+                  }}
+                >
+                  {current ? 'On — C3 base (pitch tracking)' : 'Off — fixed pitch'}
+                </button>
+              )
+            })()}
+          </div>
+          <div style={{ marginTop: 10 }}>
+            {sectionLabel('Retrigger')}
+            {(() => {
+              const current = Boolean((_overrides as Record<string, unknown>).samplerRetrigger ?? true)
+              return (
+                <button
+                  onClick={() => setPatch({ samplerRetrigger: !current })}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left',
+                    fontSize: 8.5, fontWeight: current ? 700 : 400, padding: '4px 7px',
+                    marginBottom: 3, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+                    border: `0.5px solid ${current ? accent : border}`,
+                    background: current ? `${accent}18` : 'transparent',
+                    color: current ? accent : dim,
+                  }}
+                >
+                  {current ? 'On — restart on trigger' : 'Off — hold until end'}
+                </button>
+              )
+            })()}
+          </div>
         </div>
         <div>
           {sectionLabel('Info')}
@@ -4602,18 +4723,24 @@ function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
               <div ref={playheadRef} style={{ position: 'absolute', top: -3, bottom: -3, left: '0%', width: 2, transform: 'translateX(-1px)', opacity: 0, background: accent, boxShadow: `0 0 5px ${accent}` }} />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
             {metric('Sample dur', bufDurSec > 0 ? `${bufDurSec.toFixed(2)}s` : '—')}
-            {metric('Target dur', targetDurSec != null ? `${targetDurSec.toFixed(2)}s` : '—', dim2, targetMetricRef)}
-            {metric('Rate', playbackRate != null ? `×${playbackRate.toFixed(3)}` : '—', accent, rateMetricRef)}
-            {metric('Source', sourceSec != null ? `${sourceSec.toFixed(2)}s` : '—', dim2, sourceMetricRef)}
+            {metric(
+              stretchOn ? 'Result (stretched)' : 'Result (native)',
+              stretchOn
+                ? (targetDurSec != null ? `${targetDurSec.toFixed(2)}s` : '—')
+                : (bufDurSec > 0 ? `${bufDurSec.toFixed(2)}s` : '—'),
+              stretchOn ? accent : dim2,
+              resultMetricRef,
+            )}
+            {metric('Rate', stretchOn ? (playbackRate != null ? `×${playbackRate.toFixed(3)}` : '—') : '×1.000', accent, rateMetricRef)}
           </div>
           <div style={{ fontSize: 8, color: dim, lineHeight: 1.5, marginTop: 10 }}>
             preservesPitch: ピッチを維持したままブラウザのフェーズボコーダでテンポを変更。
           </div>
         </div>
         <div>
-          {sectionLabel('Orbit source')}
+          {sectionLabel('Target Stretch Source')}
           <input
             type="text"
             value={targetExpression}
@@ -4624,16 +4751,18 @@ function SamplerStretchExpanded({ bodyId, slotKey, simple, onClose }: { bodyId: 
               width: '100%',
               boxSizing: 'border-box',
               fontSize: 11,
-              color: resolvedSource?.error ? '#fb7185' : dim2,
+              color: (!isSampleKeyword && resolvedSource?.error) ? '#fb7185' : dim2,
               fontFamily: 'monospace',
               background: panel,
-              border: `0.5px solid ${resolvedSource?.error ? '#fb718588' : border}`,
+              border: `0.5px solid ${(!isSampleKeyword && resolvedSource?.error) ? '#fb718588' : border}`,
               borderRadius: 4,
               padding: '6px 8px',
             }}
           />
-          <div style={{ marginTop: 7, fontSize: 8, color: resolvedSource?.error ? '#fb7185' : dim, lineHeight: 1.45 }}>
-            {resolvedSource?.error ?? `→ ${resolvedSource?.label ?? 'T'}`}
+          <div style={{ marginTop: 7, fontSize: 8, color: (!isSampleKeyword && resolvedSource?.error) ? '#fb7185' : dim, lineHeight: 1.45 }}>
+            {isSampleKeyword
+              ? `→ sample dur (${bufDurSec > 0 ? `${bufDurSec.toFixed(2)}s` : '—'})`
+              : (resolvedSource?.error ?? `→ ${resolvedSource?.label ?? 'T'}`)}
           </div>
           <div style={{ marginTop: 8, padding: '6px 7px', border: `0.5px solid ${border}`, borderRadius: 4, background: panel }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 8, marginBottom: 3 }}>
