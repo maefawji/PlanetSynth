@@ -128,7 +128,6 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
   const mono      = t.activeBg === '#111' || t.activeBg === '#f7f7f7'
   const monoActiveText = t.activeBg === '#111' ? '#fff' : '#050505'
   const project   = useProjectStore(s => s.project)
-  const isDirty   = useProjectStore(s => s.isDirty)
   const loadProj  = useProjectStore(s => s.loadProject)
   const markClean = useProjectStore(s => s.markClean)
   const _isRunning = useAudioStore(s => s.isRunning)
@@ -285,20 +284,13 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
       <div
         className="top-bar-context"
         role="status"
-        aria-label={`再生状態: ${simParams.paused ? '停止中' : '再生中'}。選択: ${selectedBody?.name ?? 'Universe'}。Instrument: ${instrumentName}。Trigger: ${triggerMode}`}
+        aria-label={`Instrument: ${instrumentName}。Trigger: ${triggerMode}`}
         style={{
           minWidth: 0, maxWidth: 420, flex: '1 1 300px',
           display: 'flex', alignItems: 'center', gap: 5,
           overflow: 'hidden',
         }}
       >
-        <StatusChip
-          label="Playback"
-          value={simParams.paused ? '停止中' : '再生中'}
-          color={simParams.paused ? '#fbbf24' : '#22c55e'}
-          t={t}
-        />
-        <StatusChip label="選択" value={selectedBody?.name ?? 'Universe'} color={selectedBody?.color} t={t} />
         <StatusChip label="Instrument" value={instrumentName} t={t} />
         <StatusChip label="Trigger" value={triggerMode} t={t} />
       </div>
@@ -420,9 +412,6 @@ export function TopBar({ appMode = 'planet', onSetAppMode }: TopBarProps) {
           ))}
         </div>
       )}
-
-      {/* Dirty indicator */}
-      {isDirty && <span style={{ color: '#f59e0b', fontSize: 14, lineHeight: 1 }}>●</span>}
 
     </div>
   )

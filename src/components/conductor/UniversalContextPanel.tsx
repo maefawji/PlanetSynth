@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import * as Tone from 'tone'
 import { useTheme } from '../../lib/theme'
+import { useCanvasSettingsStore } from '../../store/canvasSettingsStore'
 import {
   CONDUCTOR_CHORD_QUALITIES,
   CONDUCTOR_GRID_RESOLUTIONS,
@@ -102,12 +103,21 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
     colorScheme: 'dark',
   }
 
-  const optionCss: React.CSSProperties = {
-    background: '#1d1c25',
-    color: '#f3f0ff',
-  }
+  // Monochrome-aware accent palette: drop all hue for pure ink when monochrome.
+  const mono    = useCanvasSettingsStore(s => s.monochromeMode)
+  const monoInv = useCanvasSettingsStore(s => s.monochromeInverted)
+  const ink         = monoInv ? '#f7f7f7' : '#050505'
+  const accentColor = mono ? ink : '#a78bfa'
+  const accentBright = mono ? ink : '#c4b5fd'
+  const goodColor   = mono ? ink : '#22c55e'   // auto / playing
+  const warnColor   = mono ? t.textMid : '#fbbf24'
+  const accentRgb   = mono ? (monoInv ? '247,247,247' : '5,5,5') : '167,139,250'
+  const goodRgb     = mono ? (monoInv ? '247,247,247' : '5,5,5') : '34,197,94'
 
-  const accentColor = '#a78bfa'
+  const optionCss: React.CSSProperties = {
+    background: mono ? t.inputBg : '#1d1c25',
+    color: mono ? t.inputText : '#f3f0ff',
+  }
   const dimSectionLabel: React.CSSProperties = {
     fontSize: 7.5,
     fontWeight: 800,
@@ -138,7 +148,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
           right: anchorRight,
           zIndex: 50,
           background: t.panelBg,
-          border: `0.5px solid rgba(167,139,250,0.35)`,
+          border: `0.5px solid rgba(${accentRgb},0.35)`,
           borderTop: 'none',
           borderRadius: '0 0 8px 8px',
           boxShadow: '0 12px 40px rgba(0,0,0,0.38)',
@@ -157,15 +167,15 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
             <div style={{
               display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12,
               padding: '7px 9px', borderRadius: 5,
-              background: isPlay ? 'rgba(34,197,94,0.06)' : t.sectionBg,
-              border: `0.5px solid ${isPlay ? 'rgba(34,197,94,0.25)' : t.panelBorder}`,
+              background: isPlay ? `rgba(${goodRgb},0.06)` : t.sectionBg,
+              border: `0.5px solid ${isPlay ? `rgba(${goodRgb},0.25)` : t.panelBorder}`,
             }}>
               <button onClick={toggleTransport} style={{
                 padding: '3px 11px', borderRadius: 3, fontFamily: 'inherit',
                 fontSize: 10, fontWeight: 700, cursor: 'pointer',
-                border: `0.5px solid ${isPlay ? 'rgba(34,197,94,0.45)' : t.panelBorder}`,
-                background: isPlay ? 'rgba(34,197,94,0.12)' : t.inputBg,
-                color: isPlay ? '#22c55e' : t.textMid,
+                border: `0.5px solid ${isPlay ? `rgba(${goodRgb},0.45)` : t.panelBorder}`,
+                background: isPlay ? `rgba(${goodRgb},0.12)` : t.inputBg,
+                color: isPlay ? goodColor : t.textMid,
               }}>
                 {isPlay ? '⏸ Pause' : '▶ Play'}
               </button>
@@ -180,15 +190,15 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
               <span style={{
                 marginLeft: 'auto',
                 fontFamily: 'monospace', fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
-                color: isPlay ? '#22c55e' : t.textDim,
+                color: isPlay ? goodColor : t.textDim,
               }}>
                 {String(transport.bar).padStart(3, ' ')}.{transport.beat}.{String(transport.tick).padStart(3, '0')}
               </span>
               <span style={{
                 fontSize: 8, fontWeight: 800, padding: '2px 5px', borderRadius: 3,
                 letterSpacing: '0.08em',
-                background: isPlay ? 'rgba(34,197,94,0.14)' : 'rgba(255,255,255,0.04)',
-                color: isPlay ? '#22c55e' : transport.state === 'PAUSE' ? '#fbbf24' : t.textDim,
+                background: isPlay ? `rgba(${goodRgb},0.14)` : 'rgba(255,255,255,0.04)',
+                color: isPlay ? goodColor : transport.state === 'PAUSE' ? warnColor : t.textDim,
               }}>
                 {transport.state}
               </span>
@@ -200,7 +210,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   <input type="range" min={20} max={300} step={1} value={c.bpm}
                     onChange={e => c.update({ bpm: Number(e.target.value) })}
-                    style={{ flex: 1, minWidth: 0 }} />
+                    style={{ flex: 1, minWidth: 0, accentColor }} />
                   <input type="number" min={20} max={300} value={c.bpm}
                     onChange={e => c.update({ bpm: Number(e.target.value) })}
                     style={{ ...inputCss, width: 46, textAlign: 'right', fontFamily: 'monospace' }} />
@@ -210,7 +220,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   <input type="range" min={400} max={480} step={1} value={c.tuning}
                     onChange={e => c.update({ tuning: Number(e.target.value) })}
-                    style={{ flex: 1, minWidth: 0 }} />
+                    style={{ flex: 1, minWidth: 0, accentColor }} />
                   <input type="number" min={400} max={480} value={c.tuning}
                     onChange={e => c.update({ tuning: Number(e.target.value) })}
                     style={{ ...inputCss, width: 46, textAlign: 'right', fontFamily: 'monospace' }} />
@@ -268,14 +278,14 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
 
             {/* Max Polyphony */}
             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 8, fontWeight: 700, color: 'rgba(167,139,250,0.7)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Max Polyphony</span>
+              <span style={{ fontSize: 8, fontWeight: 700, color: `rgba(${accentRgb},0.7)`, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Max Polyphony</span>
               <div style={{ display: 'flex', gap: 3 }}>
                 {[2, 3, 4, 5, 6, 8].map(n => (
                   <button key={n} onClick={() => c.update({ maxPolyphony: n })} style={{
                     width: 22, height: 22, borderRadius: 3, fontFamily: 'monospace',
                     fontSize: 9, fontWeight: 700, cursor: 'pointer',
-                    border: `0.5px solid ${c.maxPolyphony === n ? 'rgba(167,139,250,0.6)' : t.panelBorder}`,
-                    background: c.maxPolyphony === n ? 'rgba(167,139,250,0.15)' : t.inputBg,
+                    border: `0.5px solid ${c.maxPolyphony === n ? `rgba(${accentRgb},0.6)` : t.panelBorder}`,
+                    background: c.maxPolyphony === n ? `rgba(${accentRgb},0.15)` : t.inputBg,
                     color: c.maxPolyphony === n ? accentColor : t.textDim,
                   }}>{n}</button>
                 ))}
@@ -324,8 +334,8 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                 style={{
                   padding: '2px 7px', borderRadius: 3, fontFamily: 'inherit',
                   fontSize: 8, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em',
-                  border: `0.5px solid rgba(167,139,250,0.4)`,
-                  background: 'rgba(167,139,250,0.1)', color: accentColor, flexShrink: 0,
+                  border: `0.5px solid rgba(${accentRgb},0.4)`,
+                  background: `rgba(${accentRgb},0.1)`, color: accentColor, flexShrink: 0,
                 }}
               >
                 ▶ Next
@@ -336,9 +346,9 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                 style={{
                   padding: '2px 7px', borderRadius: 3, fontFamily: 'inherit',
                   fontSize: 8, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em',
-                  border: `0.5px solid ${c.autoAdvance ? 'rgba(34,197,94,0.5)' : 'rgba(167,139,250,0.25)'}`,
-                  background: c.autoAdvance ? 'rgba(34,197,94,0.1)' : t.inputBg,
-                  color: c.autoAdvance ? '#22c55e' : t.textDim, flexShrink: 0,
+                  border: `0.5px solid ${c.autoAdvance ? `rgba(${goodRgb},0.5)` : `rgba(${accentRgb},0.25)`}`,
+                  background: c.autoAdvance ? `rgba(${goodRgb},0.1)` : t.inputBg,
+                  color: c.autoAdvance ? goodColor : t.textDim, flexShrink: 0,
                 }}
               >
                 ⟳ Auto
@@ -376,9 +386,9 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                   }} style={{
                     padding: '3px 7px', borderRadius: 4, cursor: 'pointer',
                     fontFamily: 'monospace', fontSize: 8, fontWeight: 700,
-                    border: `0.5px solid ${isActive && c.autoAdvance ? 'rgba(34,197,94,0.5)' : isActive ? 'rgba(167,139,250,0.6)' : slot ? 'rgba(167,139,250,0.2)' : t.panelBorder}`,
-                    background: isActive && c.autoAdvance ? 'rgba(34,197,94,0.1)' : isActive ? 'rgba(167,139,250,0.2)' : slot ? 'rgba(167,139,250,0.06)' : t.inputBg,
-                    color: isActive && c.autoAdvance ? '#22c55e' : isActive ? '#c4b5fd' : slot ? 'rgba(167,139,250,0.75)' : t.textDim,
+                    border: `0.5px solid ${isActive && c.autoAdvance ? `rgba(${goodRgb},0.5)` : isActive ? `rgba(${accentRgb},0.6)` : slot ? `rgba(${accentRgb},0.2)` : t.panelBorder}`,
+                    background: isActive && c.autoAdvance ? `rgba(${goodRgb},0.1)` : isActive ? `rgba(${accentRgb},0.2)` : slot ? `rgba(${accentRgb},0.06)` : t.inputBg,
+                    color: isActive && c.autoAdvance ? goodColor : isActive ? accentBright : slot ? `rgba(${accentRgb},0.75)` : t.textDim,
                     lineHeight: 1.2,
                   }}>
                     {isActive && c.autoAdvance && <span style={{ fontSize: 6.5, marginRight: 3 }}>⟳</span>}
@@ -395,16 +405,16 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
               <button onClick={c.fillDiatonic} style={{
                 padding: '3px 8px', borderRadius: 3, fontFamily: 'inherit',
                 fontSize: 8.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em',
-                border: '0.5px solid rgba(167,139,250,0.35)', background: 'rgba(167,139,250,0.07)',
-                color: 'rgba(167,139,250,0.8)',
+                border: `0.5px solid rgba(${accentRgb},0.35)`, background: `rgba(${accentRgb},0.07)`,
+                color: `rgba(${accentRgb},0.8)`,
               }} title="Fill slots with sequential diatonic chords">
                 ✦ diatonic
               </button>
               <button onClick={c.randomizeDiatonic} style={{
                 padding: '3px 8px', borderRadius: 3, fontFamily: 'inherit',
                 fontSize: 8.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em',
-                border: '0.5px solid rgba(167,139,250,0.25)', background: 'rgba(167,139,250,0.05)',
-                color: 'rgba(167,139,250,0.65)',
+                border: `0.5px solid rgba(${accentRgb},0.25)`, background: `rgba(${accentRgb},0.05)`,
+                color: `rgba(${accentRgb},0.65)`,
               }} title="Randomize slots with diatonic chords from current scale">
                 ⟳ random
               </button>
@@ -414,9 +424,9 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                   <button key={p.name} onClick={() => c.applyPreset(p)} style={{
                     padding: '3px 8px', borderRadius: 3, fontFamily: 'inherit',
                     fontSize: 8.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em',
-                    border: `0.5px solid ${isMatch ? 'rgba(167,139,250,0.6)' : 'rgba(167,139,250,0.25)'}`,
-                    background: isMatch ? 'rgba(167,139,250,0.18)' : 'rgba(167,139,250,0.06)',
-                    color: isMatch ? '#c4b5fd' : accentColor,
+                    border: `0.5px solid ${isMatch ? `rgba(${accentRgb},0.6)` : `rgba(${accentRgb},0.25)`}`,
+                    background: isMatch ? `rgba(${accentRgb},0.18)` : `rgba(${accentRgb},0.06)`,
+                    color: isMatch ? accentBright : accentColor,
                   }}>
                     {p.name}
                   </button>
@@ -436,7 +446,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                 <span style={{
                   fontSize: 7, fontFamily: 'monospace', fontWeight: 700,
                   padding: '1px 5px', borderRadius: 2,
-                  background: 'rgba(167,139,250,0.15)', color: '#a78bfa',
+                  background: `rgba(${accentRgb},0.15)`, color: accentColor,
                 }}>
                   step {c.chordIndex + 1}
                 </span>
@@ -452,8 +462,8 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                           style={{
                             padding: '1px 6px', borderRadius: 2, cursor: 'pointer',
                             fontSize: 7, fontWeight: 700, fontFamily: 'inherit',
-                            border: '0.5px solid rgba(167,139,250,0.4)', background: 'rgba(167,139,250,0.1)',
-                            color: '#a78bfa',
+                            border: `0.5px solid rgba(${accentRgb},0.4)`, background: `rgba(${accentRgb},0.1)`,
+                            color: accentColor,
                           }}
                         >
                           ↻ load slot
@@ -465,9 +475,9 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                         style={{
                           padding: '1px 6px', borderRadius: 2, cursor: 'pointer',
                           fontSize: 7, fontWeight: 700, fontFamily: 'inherit',
-                          border: `0.5px solid ${inSync ? 'rgba(167,139,250,0.2)' : 'rgba(167,139,250,0.55)'}`,
-                          background: inSync ? 'transparent' : 'rgba(167,139,250,0.14)',
-                          color: inSync ? 'rgba(167,139,250,0.4)' : '#a78bfa',
+                          border: `0.5px solid ${inSync ? `rgba(${accentRgb},0.2)` : `rgba(${accentRgb},0.55)`}`,
+                          background: inSync ? 'transparent' : `rgba(${accentRgb},0.14)`,
+                          color: inSync ? `rgba(${accentRgb},0.4)` : accentColor,
                         }}
                       >
                         → save to slot
@@ -486,7 +496,7 @@ export function UniversalContextPanel({ onClose, anchorLeft, anchorRight, anchor
                 <input type="number" min={0} max={8} value={c.chordOctave}
                   onChange={e => c.update({ chordOctave: Number(e.target.value) })}
                   style={{ ...inputCss, fontFamily: 'monospace', textAlign: 'center' }} />
-                <div style={{ fontSize: 8.5, color: '#a78bfa', fontFamily: 'monospace', whiteSpace: 'nowrap', letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ fontSize: 8.5, color: accentColor, fontFamily: 'monospace', whiteSpace: 'nowrap', letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {getChordNoteNames(c.chordRoot, c.chordQuality)}
                 </div>
               </div>
@@ -554,6 +564,13 @@ function ChordProgressionSlot({
   onChange: (slot: ChordSlot | null) => void
   onActivate: () => void
 }) {
+  const mono    = useCanvasSettingsStore(s => s.monochromeMode)
+  const monoInv = useCanvasSettingsStore(s => s.monochromeInverted)
+  const ink         = monoInv ? '#f7f7f7' : '#050505'
+  const accentColor = mono ? ink : '#a78bfa'
+  const accentBright = mono ? ink : '#c4b5fd'
+  const accentRgb   = mono ? (monoInv ? '247,247,247' : '5,5,5') : '167,139,250'
+
   const enabled = slot !== null
   const cur = slot ?? { root: 0, quality: 'Min-add9' as ConductorChordQuality, octave: 3, bassRoot: null }
   const chordLabel = enabled ? formatChordName(cur.root, cur.quality, cur.bassRoot) : null
@@ -564,8 +581,8 @@ function ChordProgressionSlot({
     <div style={{
       opacity: enabled ? 1 : 0.32,
       borderRadius: 4,
-      border: isActive ? '0.5px solid rgba(167,139,250,0.5)' : '0.5px solid transparent',
-      background: isActive ? 'rgba(167,139,250,0.06)' : 'transparent',
+      border: isActive ? `0.5px solid rgba(${accentRgb},0.5)` : '0.5px solid transparent',
+      background: isActive ? `rgba(${accentRgb},0.06)` : 'transparent',
       padding: '2px 3px',
     }}>
       <div style={{
@@ -580,8 +597,8 @@ function ChordProgressionSlot({
           style={{
             width: 16, height: 16, padding: 0, border: 'none', cursor: 'pointer',
             borderRadius: 2, fontFamily: 'monospace', fontSize: 8, fontWeight: 700,
-            background: isActive ? 'rgba(167,139,250,0.25)' : enabled ? 'rgba(167,139,250,0.08)' : 'transparent',
-            color: isActive ? '#a78bfa' : enabled ? 'rgba(167,139,250,0.5)' : 'transparent',
+            background: isActive ? `rgba(${accentRgb},0.25)` : enabled ? `rgba(${accentRgb},0.08)` : 'transparent',
+            color: isActive ? accentColor : enabled ? `rgba(${accentRgb},0.5)` : 'transparent',
           }}
         >
           {index + 1}
@@ -589,7 +606,7 @@ function ChordProgressionSlot({
         <input
           type="checkbox" checked={enabled}
           onChange={e => onChange(e.target.checked ? { root: contextKey, quality: 'Min-add9', octave: 3, bassRoot: null } : null)}
-          style={{ cursor: 'pointer', accentColor: '#a78bfa', justifySelf: 'center' }}
+          style={{ cursor: 'pointer', accentColor: accentColor, justifySelf: 'center' }}
         />
         <select disabled={!enabled} value={cur.root}
           onChange={e => onChange({ ...cur, root: Number(e.target.value) })}
@@ -618,7 +635,7 @@ function ChordProgressionSlot({
           {romanNumeral && (
             <span style={{
               fontSize: 7.5, fontFamily: 'monospace', fontWeight: 800, letterSpacing: '0.04em',
-              color: isActive ? 'rgba(167,139,250,0.9)' : 'rgba(167,139,250,0.5)',
+              color: isActive ? `rgba(${accentRgb},0.9)` : `rgba(${accentRgb},0.5)`,
               minWidth: 16,
             }}>
               {romanNumeral}
@@ -627,7 +644,7 @@ function ChordProgressionSlot({
           {chordLabel && (
             <span style={{
               fontSize: 8.5, fontFamily: 'monospace', fontWeight: 700, letterSpacing: '0.03em',
-              color: isActive ? '#c4b5fd' : 'rgba(167,139,250,0.8)',
+              color: isActive ? accentBright : `rgba(${accentRgb},0.8)`,
             }}>
               {chordLabel}
             </span>
@@ -635,7 +652,7 @@ function ChordProgressionSlot({
           {noteNames && (
             <span style={{
               fontSize: 7, fontFamily: 'monospace', letterSpacing: '0.05em',
-              color: 'rgba(167,139,250,0.35)',
+              color: `rgba(${accentRgb},0.35)`,
             }}>
               {noteNames}
             </span>
@@ -647,11 +664,14 @@ function ChordProgressionSlot({
 }
 
 function FG({ label, children }: { label: string; children: React.ReactNode }) {
+  const mono    = useCanvasSettingsStore(s => s.monochromeMode)
+  const monoInv = useCanvasSettingsStore(s => s.monochromeInverted)
+  const accentRgb = mono ? (monoInv ? '247,247,247' : '5,5,5') : '167,139,250'
   return (
     <div style={{ display: 'grid', gap: 3 }}>
       <span style={{
         fontSize: 7.5, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase',
-        color: 'rgba(167,139,250,0.7)',
+        color: `rgba(${accentRgb},0.7)`,
       }}>
         {label}
       </span>
@@ -668,11 +688,14 @@ function SliderField({
   onChange: (v: number) => void
   t: ReturnType<typeof import('../../lib/theme').useTheme>
 }) {
+  const mono    = useCanvasSettingsStore(s => s.monochromeMode)
+  const monoInv = useCanvasSettingsStore(s => s.monochromeInverted)
+  const accentColor = mono ? (monoInv ? '#f7f7f7' : '#050505') : '#a78bfa'
   return (
     <FG label={label}>
       <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
         <input type="range" min={0} max={1} step={0.01} value={value}
-          onChange={e => onChange(Number(e.target.value))} style={{ flex: 1, minWidth: 0 }} />
+          onChange={e => onChange(Number(e.target.value))} style={{ flex: 1, minWidth: 0, accentColor }} />
         <span style={{ fontFamily: 'monospace', fontSize: 8.5, color: t.textDim, width: 26, textAlign: 'right' }}>
           {value.toFixed(2)}
         </span>

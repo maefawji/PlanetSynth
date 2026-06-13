@@ -25,6 +25,7 @@ import { registerRealtimeSync, unregisterRealtimeSync } from '../../audio/realti
 import { getPlanetLiveBodySnapshot } from './PlanetCanvas'
 import type { SamplerEngine as SamplerEngineType } from '../../audio/SamplerEngine'
 import type { SampleAsset } from '../../patch/types'
+import { loopSamplerEngines } from '../../audio/loopSamplerRegistry'
 
 // ── Lazy import ───────────────────────────────────────────────────────────────
 
@@ -125,7 +126,12 @@ async function syncAllEngines(engines: EngineMap): Promise<void> {
       sampleChanged = true
     }
 
-    if (!eng.isPlaying) {
+    // Only (re)start on first activation or when the sample changed — NOT every
+    // time the engine is idle. Otherwise a oneshot (loop=false) would be restarted
+    // on the next 66ms tick the moment it finishes, turning it into an endless loop.
+    // Looping modes start once here and keep cycling on their own; after a mute the
+    // engine is disposed by the cleanup below and re-created (isNew) on unmute.
+    if (!eng.isPlaying && (isNew || sampleChanged)) {
       // Await start so that AudioContext nodes (incl. panner) are initialized
       // before we try to connect to the rack bus below.
       await eng.start(sample.objectUrl)
@@ -159,7 +165,7 @@ async function syncAllEngines(engines: EngineMap): Promise<void> {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function SamplerLayer() {
-  const enginesRef     = useRef<EngineMap>(new Map())
+  const enginesRef     = useRef<EngineMap>(loopSamplerEngines)
   const syncRunningRef = useRef(false)
 
   // Per-frame RAF — playhead only (smooth scrubbing, no React state)

@@ -6087,7 +6087,7 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
     ]
     return (
       <div style={{
-        height: 30, flexShrink: 0, background: bg,
+        height: 46, flexShrink: 0, background: bg,
         borderTop: `0.5px solid ${border}`,
         display: 'flex', alignItems: 'stretch',
         overflow: 'hidden', cursor: 'pointer',
@@ -6097,43 +6097,43 @@ export function PlanetRack({ height, collapsed, onToggleCollapsed, onExtendSampl
       >
         {/* ▲ label */}
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 4,
-          padding: '0 10px',
+          display: 'flex', alignItems: 'center', gap: 5,
+          padding: '0 14px',
           borderRight: `0.5px solid ${divCol}`,
           flexShrink: 0,
         }}>
-          <span style={{ fontSize: 7, color: hdrCol, lineHeight: 1 }}>▲</span>
+          <span style={{ fontSize: 9, color: hdrCol, lineHeight: 1 }}>▲</span>
           <span style={{
-            fontSize: 7, fontWeight: 800, letterSpacing: '0.12em',
+            fontSize: 9, fontWeight: 800, letterSpacing: '0.12em',
             textTransform: 'uppercase', color: hdrCol,
           }}>RACK</span>
         </div>
         {/* Active slot pills */}
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px', overflow: 'hidden' }}>
           {slots.map((s, i) => (
             <div key={i} style={{
-              display: 'flex', alignItems: 'center', gap: 3,
-              padding: '2px 6px', borderRadius: 3,
+              display: 'flex', alignItems: 'center', gap: 4,
+              padding: '4px 9px', borderRadius: 4,
               border: `0.5px solid ${s.col}44`,
               background: `${s.col}12`,
               flexShrink: 0,
             }}>
-              <span style={{ fontSize: 9, lineHeight: 1 }}>{s.icon}</span>
-              <span style={{ fontSize: 7.5, fontWeight: 600, color: s.col, lineHeight: 1 }}>{s.name}</span>
+              <span style={{ fontSize: 13, lineHeight: 1 }}>{s.icon}</span>
+              <span style={{ fontSize: 10.5, fontWeight: 600, color: s.col, lineHeight: 1 }}>{s.name}</span>
             </div>
           ))}
           {slots.length === 0 && (
-            <span style={{ fontSize: 8, color: hdrCol, opacity: 0.4, fontStyle: 'italic' }}>empty</span>
+            <span style={{ fontSize: 11, color: hdrCol, opacity: 0.4, fontStyle: 'italic' }}>empty</span>
           )}
         </div>
         {/* Body indicator */}
         {isBodyMode && (
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 4,
-            padding: '0 10px', borderLeft: `0.5px solid ${divCol}`, flexShrink: 0,
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: '0 14px', borderLeft: `0.5px solid ${divCol}`, flexShrink: 0,
           }}>
-            <div style={{ width: 6, height: 6, borderRadius: '50%', background: selectedBody.color, boxShadow: `0 0 4px ${selectedBody.color}88` }} />
-            <span style={{ fontSize: 7.5, color: selectedBody.color, fontWeight: 700, maxWidth: 60, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: selectedBody.color, boxShadow: `0 0 5px ${selectedBody.color}88` }} />
+            <span style={{ fontSize: 10.5, color: selectedBody.color, fontWeight: 700, maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {selectedBody.name}
             </span>
           </div>

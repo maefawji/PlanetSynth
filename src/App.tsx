@@ -31,6 +31,7 @@ import type { PlanetTool } from './components/planet/PlanetCanvas'
 import { MobileHud } from './components/layout/MobileHud'
 import { UniversalConductorSync } from './components/conductor/UniversalConductorSync'
 import { UniversalContextBar } from './components/conductor/UniversalContextBar'
+import { BodyControlOrbit } from './components/planet/BodyControlOrbit'
 import { usePlanetStore } from './store/planetStore'
 import { useCanvasSettingsStore } from './store/canvasSettingsStore'
 import { useWholeInstrumentStore } from './store/wholeInstrumentStore'
@@ -79,7 +80,7 @@ export default function App() {
   const orbitHubPanelOpen = useOrbitHubStore(s => s.panelOpen)
   const [leftCollapsed, setLeftCollapsed] = useState(true)
   const [rightCollapsed, setRightCollapsed] = useState(true)
-  const [rackCollapsed, setRackCollapsed] = useState(false)
+  const [rackCollapsed, setRackCollapsed] = useState(true)
   const [rackH, setRackH] = useState(RACK_DEFAULT)
   const [oneShotPanel, setOneShotPanel]   = useState<{ bodyId: string; slotKey: string } | null>(null)
   const rackDragging = useRef(false)
@@ -285,6 +286,16 @@ export default function App() {
               <PlanetCanvas tool={planetTool} onSelectTool={() => setPlanetTool('select')} rightPanelWidth={rightCollapsed ? 34 : 260} />
               <UniversalContextBar />
 
+              {/* Body control orbit — bottom-right radial panel for the selected body */}
+              {selectedBodyId && (
+                <div style={{
+                  position: 'absolute', bottom: 14, right: (rightCollapsed ? 34 : 260) + 14,
+                  zIndex: 15, pointerEvents: 'auto',
+                }}>
+                  <BodyControlOrbit simple={paperTheme} />
+                </div>
+              )}
+
               {/* Planet toolbar — top-left */}
               <div style={{
                 position: 'absolute', top: 8, left: 8,
@@ -396,33 +407,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-
-              {!selectedBodyId && (
-                <div
-                  role="status"
-                  style={{
-                    position: 'absolute', top: 48, left: 8,
-                    maxWidth: 'min(360px, calc(100% - 58px))',
-                    padding: '5px 8px',
-                    borderRadius: monoUi ? 2 : 6,
-                    border: monoUi ? monoBorder : paperTheme ? '0.5px solid rgba(0,0,0,0.10)' : '0.5px solid rgba(255,255,255,0.10)',
-                    background: monoUi ? monoPanelBg : paperTheme ? 'rgba(255,255,255,0.88)' : 'rgba(10,10,20,0.76)',
-                    color: monoUi ? monoTextMid : paperTheme ? '#555' : 'rgba(255,255,255,0.66)',
-                    fontSize: 9.5,
-                    lineHeight: 1.35,
-                    backdropFilter: monoUi ? undefined : 'blur(4px)',
-                    pointerEvents: 'none',
-                  }}
-                >
-                  {planetTool === 'select'
-                    ? 'First: select a body, then shape its sound in the Rack below'
-                    : planetTool === 'add-sun'
-                      ? 'First: drag on the canvas to place a sun'
-                      : planetTool === 'probe'
-                        ? 'First: drag on the canvas to launch a probe'
-                        : 'First: drag on the canvas to place a planet'}
-                </div>
-              )}
 
               {/* Mixer panel overlays the canvas so opening it does not resize or shift the canvas. */}
               <div style={{

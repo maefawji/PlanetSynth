@@ -32,6 +32,8 @@ import { clearBusOscilloscopeAnalysers, getBusOscilloscopeData, setBusStandpoint
 import { fireBodyInstrumentTrigger } from '../../audio/instrumentTrigger'
 import { getBodyOneShotEngine } from '../../audio/OneShotSamplerEngine'
 import { getBodyStretchSamplerEngine } from '../../audio/StretchSamplerEngine'
+import { getBodyLongSamplerEngine } from '../../audio/LongSamplerEngine'
+import { stopBodyLoopSampler } from '../../audio/loopSamplerRegistry'
 import { getBodyOscSynthEngine } from './OscSynthLayer'
 import { getBodyWaveLabEngine } from './WaveLabInstrumentLayer'
 import { sendMidiNote } from '../../audio/midiManager'
@@ -46,8 +48,8 @@ import {
 } from '../../lib/universalArpeggio'
 import { resolveOrbitDurationSource } from '../../lib/orbitDurationSource'
 import { computeOrbitStats } from './DroneLayer'
-import { randomGrammar, randomSeed, generateFromGrammar } from '../../sigil/sigilGenerator'
-import type { SigilGrammar, SigilShape } from '../../sigil/sigilGenerator'
+import { randomGrammar, randomSeed } from '../../sigil/sigilGenerator'
+import type { SigilGrammar } from '../../sigil/sigilGenerator'
 
 export type PlanetTool = 'select' | 'add-sun' | 'add-planet' | 'probe'
 
@@ -453,9 +455,8 @@ function computeSampleStretchRate(args: {
     : args.orbitSource === 'predicted'
       ? (args.smoothedPeriod ?? args.period)
       : args.period
-  const frameSeconds = Math.max(0.001, args.frameSeconds)
-  const simStep = Math.max(0.000001, args.dt * STEPS_PER_FRAME)
-  const realSecondsPerOrbit = effectivePeriod / simStep * frameSeconds
+  // Real seconds per orbit at the fixed sim clock (FPS-independent).
+  const realSecondsPerOrbit = (effectivePeriod / Math.max(0.000001, args.dt)) * SIM_SEC_PER_STEP
   if (!isFinite(realSecondsPerOrbit) || realSecondsPerOrbit <= 0) return null
   return Math.max(0.001, Math.min(4, args.sampleDuration * args.stretchRatio / realSecondsPerOrbit))
 }
@@ -570,15 +571,60 @@ function launchVelocityFromDrag(dp: DragPlaceState): { vx: number; vy: number } 
 
 const MOBILE_MAX_PLANETS = 10
 
-function trailToPoints(ring: TrailRing): string {
-  if (ring.count < 2) return ''
-  const parts = new Array<string>(ring.count)
+/** Cheap numeric pass: world-space bounding box of a trail (no string allocation).
+ *  Used to viewport-cull and to size the trail before building its point string. */
+function trailBounds(ring: TrailRing): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  if (ring.count < 2) return null
   const start = ring.count < ring.capacity ? 0 : ring.head
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (let i = 0; i < ring.count; i++) {
     const idx = (start + i) % ring.capacity
-    parts[i] = `${ring.xs[idx].toFixed(1)},${ring.ys[idx].toFixed(1)}`
+    const x = ring.xs[idx], y = ring.ys[idx]
+    if (x < minX) minX = x; if (x > maxX) maxX = x
+    if (y < minY) minY = y; if (y > maxY) maxY = y
   }
-  return parts.join(' ')
+  return { minX, minY, maxX, maxY }
+}
+
+/** Build a trail's polyline points string, keeping every `step`-th point (always
+ *  including the newest one so the trail connects to the body). `prec` is the
+ *  coordinate decimal precision — 0 is fine once the trail is sub-pixel-dense. */
+function trailToPointsDecimated(ring: TrailRing, step: number, prec: number): string {
+  if (ring.count < 2) return ''
+  const start = ring.count < ring.capacity ? 0 : ring.head
+  const stride = Math.max(1, Math.floor(step))
+  const parts: string[] = []
+  const last = ring.count - 1
+  for (let i = 0; i <= last; i++) {
+    if (i % stride !== 0 && i !== last) continue
+    const idx = (start + i) % ring.capacity
+    parts.push(`${ring.xs[idx].toFixed(prec)},${ring.ys[idx].toFixed(prec)}`)
+  }
+  return parts.length < 2 ? '' : parts.join(' ')
+}
+
+/** Axis-aligned world-space viewport rectangle (with padding). */
+interface ViewRect { minX: number; minY: number; maxX: number; maxY: number }
+
+/** True if a bounding box overlaps the viewport rectangle. */
+function bboxInView(minX: number, minY: number, maxX: number, maxY: number, v: ViewRect): boolean {
+  return maxX >= v.minX && minX <= v.maxX && maxY >= v.minY && minY <= v.maxY
+}
+
+/** True if a circle *outline* of radius r centered at (cx,cy) crosses the viewport.
+ *  Precise: invisible when the whole rect is inside the circle, or wholly outside it. */
+function ringInView(cx: number, cy: number, r: number, v: ViewRect): boolean {
+  // Nearest point of rect to center (0 distance if center inside rect).
+  const nx = Math.max(v.minX, Math.min(cx, v.maxX))
+  const ny = Math.max(v.minY, Math.min(cy, v.maxY))
+  const minDist = Math.hypot(cx - nx, cy - ny)
+  if (minDist > r) return false  // rect entirely outside the circle
+  // Farthest corner of rect from center.
+  const fx = (cx - v.minX) > (v.maxX - cx) ? v.minX : v.maxX
+  const fy = (cy - v.minY) > (v.maxY - cy) ? v.minY : v.maxY
+  const maxDist = Math.hypot(cx - fx, cy - fy)
+  if (maxDist < r) return false  // rect entirely inside the circle
+  return true
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -617,6 +663,12 @@ function projectedBodyScreenR(
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STEPS_PER_FRAME   = 4
+// Fixed-timestep clock: physics advances at this constant real-time rate (one step
+// every SIM_MS_PER_STEP ms = the nominal 60fps × STEPS_PER_FRAME), decoupled from the
+// actual frame rate so motion speed doesn't vary as rendering gets heavier.
+const SIM_MS_PER_STEP   = 1000 / (60 * STEPS_PER_FRAME)   // ≈ 4.1667 ms
+const SIM_SEC_PER_STEP  = SIM_MS_PER_STEP / 1000
+const MAX_STEPS_PER_FRAME = STEPS_PER_FRAME * 5           // catch-up cap (avoid spiral-of-death)
 const TRAIL_STEP_INTERVAL = 2
 const VELOCITY_SCALE    = 0.02   // bow-and-arrow: velocity per world-unit of drag pullback
 const PREDICT_STEPS     = 800    // forward-sim steps for drag-place orbit preview
@@ -766,9 +818,11 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const arpPrevNoteRef  = useRef<Map<string, number[]>>(new Map())
   // eslint-disable-next-line react-hooks/purity
   const lastAutoSpawnMsRef = useRef(performance.now())
-  // Sigil shape cache: keyed by body id — recomputed only when identity/grammar changes
-  const sigilCacheRef = useRef<Map<string, { key: string; shapes: SigilShape[] }>>(new Map())
   const triggerStarMarkersRef = useRef<TriggerStarMarker[]>([])
+  // Monotonic counter for marker ids — guarantees unique React keys even when
+  // multiple stars trigger on the same body within the same frame (array length
+  // stops disambiguating once the array is capped by slice()).
+  const markerSeqRef = useRef(0)
   // Stardust: persistent dots left after trigger star animations
   const stardustDotsRef = useRef<TriggerStarMarker[]>([])
   // expose for external clear
@@ -794,6 +848,13 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       for (const lb of removed) {
         const sb = storeBodiesRef.current.find(b => b.id === lb.id)
         if (sb?.sampleId) stopStandpointSound(sb.sampleId)
+        // Halt any in-flight instrument voices immediately — don't wait for the
+        // 66ms audio-layer sync to dispose them (a long stretched one-shot would
+        // otherwise keep sounding for the rest of its orbit-stretched duration).
+        getBodyOneShotEngine(lb.id)?.stop()
+        getBodyStretchSamplerEngine(lb.id)?.stop()
+        getBodyLongSamplerEngine(lb.id)?.stop()
+        stopBodyLoopSampler(lb.id)   // continuous-loop SamplerEngine (samplerType === 'sampler')
         useControlSetStore.getState().clearBodyRack(lb.id)
         destroyEffectorBus(lb.id)
       }
@@ -877,6 +938,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
 
   // Frame timing (EMA) for real-time orbit-stretch rate calculation
   const frameTimeRef    = useRef(16.67)
+  // Fixed-timestep accumulator (ms of real time not yet consumed by physics steps)
+  const simAccumRef     = useRef(0)
   // eslint-disable-next-line react-hooks/purity
   const lastFrameMsRef  = useRef(performance.now())
   const lastRenderMsRef = useRef(0)   // throttle React re-renders to ~30fps
@@ -890,7 +953,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     const storeBody = storeBodiesMapRef.current.get(bodyId)
     const nowMs = performance.now()
     const marker: TriggerStarMarker = {
-      id: `${bodyId}:${nowMs.toFixed(2)}:${triggerStarMarkersRef.current.length}`,
+      id: `${bodyId}:${nowMs.toFixed(2)}:${markerSeqRef.current++}`,
       bodyId,
       x: live.x,
       y: live.y,
@@ -1010,6 +1073,12 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const dragPlaceRef = useRef<DragPlaceState | null>(null)
   const [, setTick]  = useState(0)
 
+  // ── "drag to shooting" cursor hint (add-planet tool, until first launch) ──
+  const [showShootHint, setShowShootHint] = useState(
+    () => localStorage.getItem('planet-shoot-hint-done') !== '1',
+  )
+  const shootHintRef = useRef<HTMLDivElement>(null)
+
   // ── Drag-rect multi-select ────────────────────────────────────────────────
   interface DragSelRect { sx: number; sy: number; ex: number; ey: number }
   const [dragSel, setDragSel]         = useState<DragSelRect | null>(null)
@@ -1076,11 +1145,24 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
       _liveBodiesSnap = bodies.map(b => ({ ...b }))
       _simParamsSnap  = { G: params.G, epsilon: params.epsilon, dt: params.dt }
 
+      // Fixed-timestep accumulator: run as many constant-dt physics steps as the
+      // real elapsed time calls for, so motion runs at the same speed regardless of
+      // frame rate. At a steady 60fps this is exactly STEPS_PER_FRAME steps/frame.
+      let nSteps = 0
       if (!params.paused) {
+        simAccumRef.current += Math.min(rawDt, 100)   // clamp long stalls (tab blur, GC)
+        nSteps = Math.floor(simAccumRef.current / SIM_MS_PER_STEP)
+        if (nSteps > MAX_STEPS_PER_FRAME) { nSteps = MAX_STEPS_PER_FRAME; simAccumRef.current = 0 }
+        else simAccumRef.current -= nSteps * SIM_MS_PER_STEP
+      } else {
+        simAccumRef.current = 0   // reset so unpausing doesn't burst-advance
+      }
+
+      if (!params.paused && nSteps > 0) {
         const probeMode = toolRef.current === 'probe'
         const mp = mousePosWorldRef.current
 
-        for (let s = 0; s < STEPS_PER_FRAME; s++) {
+        for (let s = 0; s < nSteps; s++) {
           // Temporarily add mouse-probe as a virtual fixed body so it affects physics
           if (probeMode && params.probeMass > 0 && mp) {
             bodies.push({
@@ -1365,7 +1447,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
         const params   = simParamsRef.current
 
         // Advance simulation clock (only when running)
-        if (!params.paused) simTimeRef.current += params.dt * STEPS_PER_FRAME
+        if (!params.paused) simTimeRef.current += params.dt * nSteps
         const smpArr   = projectSamplesRef.current
         const mp       = mousePosWorldRef.current
 
@@ -1660,7 +1742,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   const effectiveP = (smoothedP && isFinite(smoothedP) && smoothedP > 0) ? smoothedP
                     : (isFinite(period) && period > 0 ? period : 0)
                   if (effectiveP <= 0) continue
-                  intervalMs = (effectiveP / (params.dt * STEPS_PER_FRAME)) * frameTimeRef.current * tpDiv
+                  intervalMs = (effectiveP / params.dt) * SIM_MS_PER_STEP * tpDiv
                 }
                 intervalMs = Math.max(16, intervalMs)
 
@@ -1979,7 +2061,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
               : 0.25
             const effSmoothedPeriod = _smoothedPeriods.get(eff.id) ?? (planetBodyStatsCache.get(eff.id)?.period ?? 0)
             const effT_real = effSmoothedPeriod > 0 && isFinite(effSmoothedPeriod)
-              ? effSmoothedPeriod / (params.dt * STEPS_PER_FRAME) * (frameTimeRef.current / 1000)
+              ? (effSmoothedPeriod / params.dt) * SIM_SEC_PER_STEP
               : 0.25  // fallback to 250ms if no orbit data
             const delayTime = Math.max(0.01, Math.min(7.5, effT_real * delayDivision))
 
@@ -2163,6 +2245,12 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     const { wx, wy } = screenToWorld(sx, sy)
     mousePosWorldRef.current = { x: wx, y: wy }
 
+    if (shootHintRef.current) {
+      shootHintRef.current.style.left = `${sx}px`
+      shootHintRef.current.style.top = `${sy - 14}px`
+      shootHintRef.current.style.visibility = 'visible'
+    }
+
     if (panStartRef.current) {
       setViewOffsetSync({
         x: panStartRef.current.ox + (panStartRef.current.sx - sx) / zoomRef.current,
@@ -2198,6 +2286,7 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   function handleMouseLeave() {
     // Keep last known position — probe cursor hides only when null
     // (we don't reset mousePosWorldRef to avoid cursor disappearing on slight exit)
+    if (shootHintRef.current) shootHintRef.current.style.visibility = 'hidden'
   }
 
   // ── commitDragPlace: shared by mouse and touch handlers ──────────────────────
@@ -2216,6 +2305,10 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   }
 
   function commitDragPlace(dp: DragPlaceState) {
+    if (dp.tool === 'add-planet' && showShootHint) {
+      localStorage.setItem('planet-shoot-hint-done', '1')
+      setShowShootHint(false)
+    }
     const isSun = dp.tool === 'add-sun'
     const storeState  = usePlanetStore.getState()
     const _starCount   = storeState.bodies.filter(b => b.type === 'sun').length
@@ -2628,6 +2721,18 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
   const cx = w / 2, cy = h / 2
   const camTx = `translate(${cx},${cy}) scale(${zoom}) translate(${-viewOffset.x},${-viewOffset.y})`
 
+  // Visible world rectangle (padded ~12% so things just off-edge aren't popped).
+  const halfW = (w / 2) / zoom, halfH = (h / 2) / zoom
+  const padX = halfW * 0.12, padY = halfH * 0.12
+  const viewRect: ViewRect = {
+    minX: viewOffset.x - halfW - padX, maxX: viewOffset.x + halfW + padX,
+    minY: viewOffset.y - halfH - padY, maxY: viewOffset.y + halfH + padY,
+  }
+  // Trail point precision: integer coords are plenty once a trail is sub-pixel dense.
+  const trailPrec = zoom >= 0.5 ? 1 : 0
+  // Target on-screen spacing between kept trail points (px). Larger = coarser/lighter.
+  const TRAIL_PX_PER_POINT = 2.5
+
   const simple       = storeParams.simpleTheme || monochromeMode
   const paperTone    = Math.max(0, Math.min(1, paperCanvasTone))
   const monoPaper    = monochromeInverted ? paperCanvasInk : paperCanvasBackground
@@ -2725,28 +2830,31 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
     : dragSel ? 'crosshair'
     : 'default'
 
-  // ── Sigil helper ─────────────────────────────────────────────────────────────
-  function getBodySigilShapes(body: { id: string; name: string; sigilGrammar?: SigilGrammar | null }): SigilShape[] {
-    const cacheKey = `${body.id}:${body.name}:${body.sigilGrammar ? JSON.stringify(body.sigilGrammar) : ''}`
-    const cached = sigilCacheRef.current.get(body.id)
-    if (cached && cached.key === cacheKey) return cached.shapes
-    // stableSigilSeed: FNV-1a hash of input string
-    let h = 2166136261
-    const s = `${body.id}:${body.name}`
-    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) }
-    const seed = h >>> 0
-    const grammar = body.sigilGrammar ?? randomGrammar(seed, {})
-    const shapes = generateFromGrammar(grammar).shapes
-    sigilCacheRef.current.set(body.id, { key: cacheKey, shapes })
-    return shapes
-  }
-
   /* eslint-disable react-hooks/refs */
   return (
     <div
       ref={containerRef}
       style={{ width: '100%', height: '100%', overflow: 'hidden', background: bgColor, userSelect: 'none', position: 'relative' }}
     >
+      {tool === 'add-planet' && showShootHint && !dragPlace && (
+        <div
+          ref={shootHintRef}
+          style={{
+            position: 'absolute',
+            transform: 'translate(-50%, -100%)',
+            visibility: 'hidden',
+            pointerEvents: 'none',
+            fontSize: 10,
+            letterSpacing: 0.5,
+            color: monochromeMode ? monoInk : simple ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.65)',
+            opacity: monochromeMode ? 0.65 : 1,
+            whiteSpace: 'nowrap',
+            zIndex: 5,
+          }}
+        >
+          drag to shooting
+        </div>
+      )}
       <svg
         ref={svgRef}
         width={w} height={h}
@@ -2799,11 +2907,19 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
         })}
 
         <g transform={camTx}>
-          {/* Trails */}
+          {/* Trails — viewport-culled, and decimated to ~constant on-screen point
+              density so a trail that's small on screen is drawn with far fewer points. */}
           {storeParams.showTrails && bodies.map(b => {
             const ring = trailsRef.current.get(b.id)
             if (!ring || ring.count < 2) return null
-            const pts = trailToPoints(ring)
+            const bnds = trailBounds(ring)
+            if (!bnds) return null
+            if (!bboxInView(bnds.minX, bnds.minY, bnds.maxX, bnds.maxY, viewRect)) return null
+            // On-screen size → target point count → decimation step.
+            const screenDiag = Math.hypot(bnds.maxX - bnds.minX, bnds.maxY - bnds.minY) * zoom
+            const target = Math.max(12, Math.min(ring.count, Math.round(screenDiag / TRAIL_PX_PER_POINT)))
+            const step = Math.max(1, Math.ceil(ring.count / target))
+            const pts = trailToPointsDecimated(ring, step, trailPrec)
             if (!pts) return null
             const sb = storeBodiesMapRef.current.get(b.id)
             const trailColor = monochromeMode && !paperCanvasKeepBodyColors ? monoInk : sb?.color ?? '#888'
@@ -2917,7 +3033,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
             const sampleLabel = storeParams.showSampleName && samplerSample
               ? samplerSample.name
               : (sb?.name ?? b.id)
-            const name  = sampleLabel
+            const isStandpoint = storeParams.standpointBodyId === b.id && storeParams.showStandpointVisual !== false
+            const name  = isStandpoint ? `†${sampleLabel}` : sampleLabel
             const wr        = projectedBodyScreenR(
               b.mass,
               type,
@@ -2996,9 +3113,11 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                       <circle cx={b.x} cy={b.y} r={wr + 6 / zoom} fill="none"
                         stroke={effCol} strokeWidth={worldStroke()} strokeOpacity={monochromeMode ? paperLineOpacity : 0.65}
                         strokeDasharray={`${3 / zoom} ${2 / zoom}`} />
-                      <circle cx={b.x} cy={b.y} r={effDist} fill="none"
-                        stroke={effCol} strokeWidth={worldStroke(0.33)} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.20}
-                        strokeDasharray={`${8 / zoom} ${5 / zoom}`} />
+                      {ringInView(b.x, b.y, effDist, viewRect) && (
+                        <circle cx={b.x} cy={b.y} r={effDist} fill="none"
+                          stroke={effCol} strokeWidth={worldStroke(0.33)} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.20}
+                          strokeDasharray={`${8 / zoom} ${5 / zoom}`} />
+                      )}
                       <text
                         x={b.x + wr + 10 / zoom} y={b.y - 2 / zoom}
                         fontSize={8 / zoom} fill={effCol} opacity={monochromeMode ? labelOpacity : 0.75}
@@ -3027,11 +3146,8 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                   const y2 = b.y + r * Math.sin(endAngle)
                   const largeArc = halfConeRad * 2 > Math.PI ? 1 : 0
 
-                  // 4-pointed star path centered at origin, radius s, waist w
-                  const spS = (wr + 9 / zoom)
-                  const spW = spS * 0.22
-                  const spPath = `M 0 ${-spS} C ${-spW} ${-spW} ${-spW} ${-spW} ${-spS} 0 C ${-spW} ${spW} ${-spW} ${spW} 0 ${spS} C ${spW} ${spW} ${spW} ${spW} ${spS} 0 C ${spW} ${-spW} ${spW} ${-spW} 0 ${-spS} Z`
                   const spColor = monochromeMode ? monoInk : '#06b6d4'
+                  if (!ringInView(b.x, b.y, r, viewRect)) return null
                   return (
                     <>
                       {/* Range: cone sector if directional, full circle otherwise */}
@@ -3045,14 +3161,6 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                           stroke={spColor} strokeWidth={worldStroke(0.33)} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.22}
                           strokeDasharray={`${7 / zoom} ${5 / zoom}`} />
                       )}
-                      {/* 4-pointed star at body center */}
-                      <path
-                        d={spPath}
-                        transform={`translate(${b.x}, ${b.y})`}
-                        fill={spColor}
-                        opacity={monochromeMode ? paperLineOpacity : 0.75}
-                        style={{ pointerEvents: 'none' }}
-                      />
                     </>
                   )
                 })()}
@@ -3085,13 +3193,14 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
                     )
                   })
                 })()}
-                {hasSample && storeParams.rendezvousDistance > 0 && storeParams.collisionShowCircles !== false && (
+                {hasSample && storeParams.rendezvousDistance > 0 && storeParams.collisionShowCircles !== false
+                  && ringInView(b.x, b.y, storeParams.rendezvousDistance, viewRect) && (
                   <circle cx={b.x} cy={b.y} r={storeParams.rendezvousDistance} fill="none"
                     stroke={inkColor} strokeWidth={worldStroke(0.33)} strokeOpacity={monochromeMode ? paperSubtleOpacity : 0.18}
                     strokeDasharray={`${8 / zoom} ${6 / zoom}`} />
                 )}
                 <circle cx={b.x} cy={b.y} r={wr} fill={inkColor}
-                  opacity={monochromeMode ? paperMainOpacity : 1}
+                  opacity={1}
                   stroke={monochromeMode ? monoInk : simple ? 'rgba(0,0,0,0.15)' : 'none'}
                   strokeWidth={simple ? worldStroke(0.67) : 0}
                   style={{
@@ -3250,52 +3359,6 @@ export function PlanetCanvas({ tool = 'select', onSelectTool, mobileMode = false
           opacity={monochromeMode ? hudOpacity : 1}>
           {bodies.length} bodies · speed={(storeParams.dt / 0.2).toFixed(storeParams.dt < 0.2 ? 2 : 1)}x · G={storeParams.G} · ε={storeParams.epsilon} · dt={storeParams.dt}
         </text>
-
-        {/* Selected body sigil — fixed bottom-right corner */}
-        {selectedBodyId && (() => {
-          const sb2 = storeBodiesMapRef.current.get(selectedBodyId)
-          if (!sb2) return null
-          const shapes = getBodySigilShapes(sb2)
-          const sz = 72  // display size in screen px
-          const pad = 12
-          const cx = w - rightPanelWidth - pad - sz
-          const cy = h - pad - sz
-          const sigilColor = monochromeMode ? monoInk
-            : storeBodies.find(b => b.id === selectedBodyId)?.color ?? '#fff'
-          return (
-            <g style={{ pointerEvents: 'none' }} opacity={monochromeMode ? 0.22 : 0.45}>
-              {shapes.map((shape, si) => {
-                const tx = cx
-                const ty = cy
-                const sc = sz / 100
-                if (shape.kind === 'circle') {
-                  return <circle key={si}
-                    cx={tx + shape.cx * sc} cy={ty + shape.cy * sc} r={shape.r * sc}
-                    fill={shape.renderMode === 'stroke' ? 'none' : sigilColor}
-                    stroke={shape.renderMode === 'fill' ? 'none' : sigilColor}
-                    strokeWidth={1.2} />
-                }
-                if (shape.kind === 'polygon') {
-                  return <polygon key={si}
-                    points={shape.points.map(p => `${(tx + p.x * sc).toFixed(2)},${(ty + p.y * sc).toFixed(2)}`).join(' ')}
-                    fill={shape.renderMode === 'stroke' ? 'none' : sigilColor}
-                    stroke={shape.renderMode === 'fill' ? 'none' : sigilColor}
-                    strokeWidth={1.2} strokeLinejoin="round" />
-                }
-                // path: re-translate by parsing is complex, use transform instead
-                return (
-                  <g key={si} transform={`translate(${tx},${ty}) scale(${sc})`}>
-                    <path d={shape.d}
-                      fill={shape.renderMode === 'stroke' ? 'none' : sigilColor}
-                      stroke={shape.renderMode === 'fill' ? 'none' : sigilColor}
-                      strokeWidth={1.2 / sc}
-                      strokeLinecap="round" strokeLinejoin="round" />
-                  </g>
-                )
-              })}
-            </g>
-          )
-        })()}
 
         {/* Drag-rect multi-select overlay (screen coords, no camera transform) */}
         {dragSel && tool === 'select' && (() => {

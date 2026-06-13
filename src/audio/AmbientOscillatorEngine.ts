@@ -291,9 +291,13 @@ export class AmbientOscillatorEngine {
     this._killVoice(note, this.params.release)
   }
 
-  noteOffAll(): void {
+  /** Release all voices. Pass immediate=true for a short fade-out (e.g. when the body is
+   *  deleted) instead of fading over the full configured release time. */
+  noteOffAll(immediate = false): void {
+    // Short fade on delete: gentle enough to avoid a click, but stops promptly.
+    const release = immediate ? Math.min(0.25, this.params.release) : this.params.release
     for (const note of [...this.voices.keys()]) {
-      this._killVoice(note, this.params.release)
+      this._killVoice(note, release)
     }
   }
 

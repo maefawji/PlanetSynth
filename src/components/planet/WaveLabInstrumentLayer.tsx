@@ -218,9 +218,13 @@ async function syncEngines(engines: EngineMap): Promise<void> {
     setBodyOutputLevel(body.id, 'wave-lab', eng.isActive ? p.level * (body.volume ?? 1) : 0, 300)
   }
 
+  const bodyIdSet = new Set(bodies.map(b => b.id))
   for (const [id, eng] of engines) {
     if (!activeIds.has(id)) {
-      eng.noteOffAll()
+      // Body deleted → cut immediately (no long release tail left ringing).
+      // Body still present but inactive (muted / instrument changed) → graceful release.
+      const deleted = !bodyIdSet.has(id)
+      eng.noteOffAll(deleted)
       engines.delete(id)
       _engines.delete(id)
       _sigsKeyCache.delete(id)

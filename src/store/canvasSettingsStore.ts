@@ -39,7 +39,7 @@ export const useCanvasSettingsStore = create<CanvasSettingsState>(set => ({
   pathSpan: 200,
   wayLength: 300,
   zoom: 1,
-  monochromeMode: false,
+  monochromeMode: true,
   monochromeInverted: false,
   paperCanvasBackground: '#ffffff',
   paperCanvasInk: '#050505',
@@ -55,7 +55,7 @@ export const useCanvasSettingsStore = create<CanvasSettingsState>(set => ({
   canvasBackgroundImageFit: 'cover',
   canvasBackgroundImageColorInMonochrome: false,
   showCanvasBodyList: true,
-  showModeBar: true,
+  showModeBar: false,
   updateCanvasSettings(settings) {
     set(settings)
   },

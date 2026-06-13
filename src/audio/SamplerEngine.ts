@@ -266,12 +266,14 @@ export class SamplerEngine {
     this.isPlaying = true
   }
 
-  /** Fade out and stop. */
-  stop(): void {
+  /** Fade out and stop. Pass immediate=true (e.g. when the body is deleted) for a
+   *  short fade so a looping sample doesn't keep cycling for the whole release time. */
+  stop(immediate = false): void {
     if (!this.ctx || !this.master || !this.isPlaying) return
     this._stopping = true
+    const fade = immediate ? Math.min(0.15, this.params.release) : this.params.release
     const now = this.ctx.currentTime
-    const end = now + this.params.release
+    const end = now + fade
 
     this.master.gain.cancelScheduledValues(now)
     this.master.gain.setValueAtTime(Math.max(this.master.gain.value, 0.0001), now)
@@ -283,7 +285,7 @@ export class SamplerEngine {
       this.source    = null
       this.isPlaying = false
       this._stopping = false
-    }, (this.params.release + 0.2) * 1000)
+    }, (fade + 0.2) * 1000)
   }
 
   /** Restart from current buffer with updated loop/play settings. */
@@ -295,9 +297,15 @@ export class SamplerEngine {
   // ── Parameter updates ─────────────────────────────────────────────────────────
 
   setParams(patch: Partial<SamplerParams>): void {
+    // Rebuild + restart only when a structural param actually CHANGES value — not
+    // merely because it's present in the patch. The sync layer re-sends the full
+    // param set every tick, so an "undefined-check" here would restart the source
+    // 15×/second, turning a oneshot into an endless stutter-loop.
     const needsRebuild =
-      patch.sampleStart !== undefined || patch.sampleEnd  !== undefined ||
-      patch.reverse     !== undefined || patch.playMode   !== undefined
+      (patch.sampleStart !== undefined && patch.sampleStart !== this.params.sampleStart) ||
+      (patch.sampleEnd   !== undefined && patch.sampleEnd   !== this.params.sampleEnd)   ||
+      (patch.reverse     !== undefined && patch.reverse     !== this.params.reverse)     ||
+      (patch.playMode    !== undefined && patch.playMode    !== this.params.playMode)
 
     this.params = { ...this.params, ...patch }
 
